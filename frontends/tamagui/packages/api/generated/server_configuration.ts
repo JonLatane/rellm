@@ -855,7 +855,54 @@ export interface ServerConfiguration {
     | SendgridConfig
     | undefined;
   /** Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users. */
-  mailgunConfig?: MailgunConfig | undefined;
+  mailgunConfig?:
+    | MailgunConfig
+    | undefined;
+  /**
+   * Set *only* on the virtual configuration a server returns to requests addressed to a user's
+   * Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
+   * Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is
+   * derived from the owner's `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through
+   * [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by
+   * checking `subdomain_settings?.subdomain_of`.
+   */
+  subdomainSettings?: SubdomainSettings | undefined;
+}
+
+/**
+ * A user's Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
+ * A server answers requests whose `Host` is `<subdomain>.<its frontend_host>` (`ExternalCDNConfig.frontend_host`) over
+ * both gRPC and HTTP, as a "virtual server" that shares everything with its parent (CDN configuration, contact
+ * integrations, media, login) except that it is scoped to one user: `GetPosts`/`GetEvents` only return that user's
+ * content (plus whatever the `share_content_from_*` toggles add), and `GetServerConfiguration` describes the user
+ * (see `subdomain_of`) rather than the whole server. The subscription's `details` hold these settings; the
+ * subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+ */
+export interface SubdomainSettings {
+  /**
+   * The user ID of the subdomain's owner -- the user whose profile the subdomain's About tab shows and whose content it
+   * is scoped to. Server-assigned; ignored on `SaveMarketSubscription`.
+   */
+  subdomainOf: string;
+  /**
+   * The subdomain's DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner's username when the
+   * subscription is fulfilled. Server-assigned; ignored on `SaveMarketSubscription`.
+   */
+  subdomain: string;
+  /** Also show posts/events by users who *follow* the owner (an accepted `Follow` of the owner). */
+  shareContentFromFollowers: boolean;
+  /** Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner). */
+  shareContentFromFollowing: boolean;
+  /** Also show posts/events by the owner's *friends* -- users who follow the owner and whom the owner follows back. */
+  shareContentFromFriends: boolean;
+  /**
+   * The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
+   * Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
+   * `custom_css` is only included in the subscription's own copy (`GetMarketSubscriptions`), never in
+   * `GetServerConfiguration`'s, same as `ServerConfiguration.custom_css_configuration`. On
+   * `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet.
+   */
+  customCssConfiguration?: CustomCSSConfiguration | undefined;
 }
 
 /**
@@ -1890,6 +1937,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     postmarkConfig: undefined,
     sendgridConfig: undefined,
     mailgunConfig: undefined,
+    subdomainSettings: undefined,
   };
 }
 
@@ -1998,13 +2046,16 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     writer.join();
     if (message.postmarkConfig !== undefined) {
-      PostmarkConfig.encode(message.postmarkConfig, writer.uint32(1042).fork()).join();
+      PostmarkConfig.encode(message.postmarkConfig, writer.uint32(1050).fork()).join();
     }
     if (message.sendgridConfig !== undefined) {
-      SendgridConfig.encode(message.sendgridConfig, writer.uint32(1050).fork()).join();
+      SendgridConfig.encode(message.sendgridConfig, writer.uint32(1058).fork()).join();
     }
     if (message.mailgunConfig !== undefined) {
-      MailgunConfig.encode(message.mailgunConfig, writer.uint32(1058).fork()).join();
+      MailgunConfig.encode(message.mailgunConfig, writer.uint32(1066).fork()).join();
+    }
+    if (message.subdomainSettings !== undefined) {
+      SubdomainSettings.encode(message.subdomainSettings, writer.uint32(1042).fork()).join();
     }
     return writer;
   },
@@ -2330,20 +2381,12 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
 
           break;
         }
-        case 130: {
-          if (tag !== 1042) {
-            break;
-          }
-
-          message.postmarkConfig = PostmarkConfig.decode(reader, reader.uint32());
-          continue;
-        }
         case 131: {
           if (tag !== 1050) {
             break;
           }
 
-          message.sendgridConfig = SendgridConfig.decode(reader, reader.uint32());
+          message.postmarkConfig = PostmarkConfig.decode(reader, reader.uint32());
           continue;
         }
         case 132: {
@@ -2351,7 +2394,23 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
             break;
           }
 
+          message.sendgridConfig = SendgridConfig.decode(reader, reader.uint32());
+          continue;
+        }
+        case 133: {
+          if (tag !== 1066) {
+            break;
+          }
+
           message.mailgunConfig = MailgunConfig.decode(reader, reader.uint32());
+          continue;
+        }
+        case 130: {
+          if (tag !== 1042) {
+            break;
+          }
+
+          message.subdomainSettings = SubdomainSettings.decode(reader, reader.uint32());
           continue;
         }
       }
@@ -2420,6 +2479,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       postmarkConfig: isSet(object.postmarkConfig) ? PostmarkConfig.fromJSON(object.postmarkConfig) : undefined,
       sendgridConfig: isSet(object.sendgridConfig) ? SendgridConfig.fromJSON(object.sendgridConfig) : undefined,
       mailgunConfig: isSet(object.mailgunConfig) ? MailgunConfig.fromJSON(object.mailgunConfig) : undefined,
+      subdomainSettings: isSet(object.subdomainSettings)
+        ? SubdomainSettings.fromJSON(object.subdomainSettings)
+        : undefined,
     };
   },
 
@@ -2518,6 +2580,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     if (message.mailgunConfig !== undefined) {
       obj.mailgunConfig = MailgunConfig.toJSON(message.mailgunConfig);
     }
+    if (message.subdomainSettings !== undefined) {
+      obj.subdomainSettings = SubdomainSettings.toJSON(message.subdomainSettings);
+    }
     return obj;
   },
 
@@ -2600,6 +2665,167 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     message.mailgunConfig = (object.mailgunConfig !== undefined && object.mailgunConfig !== null)
       ? MailgunConfig.fromPartial(object.mailgunConfig)
       : undefined;
+    message.subdomainSettings = (object.subdomainSettings !== undefined && object.subdomainSettings !== null)
+      ? SubdomainSettings.fromPartial(object.subdomainSettings)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseSubdomainSettings(): SubdomainSettings {
+  return {
+    subdomainOf: "",
+    subdomain: "",
+    shareContentFromFollowers: false,
+    shareContentFromFollowing: false,
+    shareContentFromFriends: false,
+    customCssConfiguration: undefined,
+  };
+}
+
+export const SubdomainSettings: MessageFns<SubdomainSettings> = {
+  encode(message: SubdomainSettings, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.subdomainOf !== "") {
+      writer.uint32(10).string(message.subdomainOf);
+    }
+    if (message.subdomain !== "") {
+      writer.uint32(18).string(message.subdomain);
+    }
+    if (message.shareContentFromFollowers !== false) {
+      writer.uint32(24).bool(message.shareContentFromFollowers);
+    }
+    if (message.shareContentFromFollowing !== false) {
+      writer.uint32(32).bool(message.shareContentFromFollowing);
+    }
+    if (message.shareContentFromFriends !== false) {
+      writer.uint32(40).bool(message.shareContentFromFriends);
+    }
+    if (message.customCssConfiguration !== undefined) {
+      CustomCSSConfiguration.encode(message.customCssConfiguration, writer.uint32(50).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SubdomainSettings {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSubdomainSettings();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.subdomainOf = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.subdomain = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.shareContentFromFollowers = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.shareContentFromFollowing = reader.bool();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.shareContentFromFriends = reader.bool();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.customCssConfiguration = CustomCSSConfiguration.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SubdomainSettings {
+    return {
+      subdomainOf: isSet(object.subdomainOf) ? globalThis.String(object.subdomainOf) : "",
+      subdomain: isSet(object.subdomain) ? globalThis.String(object.subdomain) : "",
+      shareContentFromFollowers: isSet(object.shareContentFromFollowers)
+        ? globalThis.Boolean(object.shareContentFromFollowers)
+        : false,
+      shareContentFromFollowing: isSet(object.shareContentFromFollowing)
+        ? globalThis.Boolean(object.shareContentFromFollowing)
+        : false,
+      shareContentFromFriends: isSet(object.shareContentFromFriends)
+        ? globalThis.Boolean(object.shareContentFromFriends)
+        : false,
+      customCssConfiguration: isSet(object.customCssConfiguration)
+        ? CustomCSSConfiguration.fromJSON(object.customCssConfiguration)
+        : undefined,
+    };
+  },
+
+  toJSON(message: SubdomainSettings): unknown {
+    const obj: any = {};
+    if (message.subdomainOf !== "") {
+      obj.subdomainOf = message.subdomainOf;
+    }
+    if (message.subdomain !== "") {
+      obj.subdomain = message.subdomain;
+    }
+    if (message.shareContentFromFollowers !== false) {
+      obj.shareContentFromFollowers = message.shareContentFromFollowers;
+    }
+    if (message.shareContentFromFollowing !== false) {
+      obj.shareContentFromFollowing = message.shareContentFromFollowing;
+    }
+    if (message.shareContentFromFriends !== false) {
+      obj.shareContentFromFriends = message.shareContentFromFriends;
+    }
+    if (message.customCssConfiguration !== undefined) {
+      obj.customCssConfiguration = CustomCSSConfiguration.toJSON(message.customCssConfiguration);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SubdomainSettings>, I>>(base?: I): SubdomainSettings {
+    return SubdomainSettings.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SubdomainSettings>, I>>(object: I): SubdomainSettings {
+    const message = createBaseSubdomainSettings();
+    message.subdomainOf = object.subdomainOf ?? "";
+    message.subdomain = object.subdomain ?? "";
+    message.shareContentFromFollowers = object.shareContentFromFollowers ?? false;
+    message.shareContentFromFollowing = object.shareContentFromFollowing ?? false;
+    message.shareContentFromFriends = object.shareContentFromFriends ?? false;
+    message.customCssConfiguration =
+      (object.customCssConfiguration !== undefined && object.customCssConfiguration !== null)
+        ? CustomCSSConfiguration.fromPartial(object.customCssConfiguration)
+        : undefined;
     return message;
   },
 };

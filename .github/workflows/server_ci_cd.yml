@@ -50,7 +50,7 @@ permissions:
 jobs:
   test_consistency:
     name: Test Proto/Docs Consistency
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: Install protoc
@@ -127,7 +127,7 @@ jobs:
 
   test_deploys:
     name: Test Deploy Scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       # No cluster needed: the tests run the deploys/ Makefiles and scripts against stub kubectl/tmux.
@@ -135,7 +135,7 @@ jobs:
 
   build_flutter_ui:
     name: Build Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -168,15 +168,18 @@ jobs:
       - name: Build Flutter Web UI
         run: make -C frontends/flutter build_web
 
-      - uses: actions/cache/save@v6
-        id: flutter-app-cache
+      - name: Upload Flutter web build
+        uses: actions/upload-artifact@v7
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   build_tamagui_ui:
     name: Build Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -234,17 +237,20 @@ jobs:
         if: steps.tamagui-build-cache.outputs.cache-hit != 'true'
         run: yarn web:prod:build
 
-      - uses: actions/cache/save@v6
-        id: web-app-cache
+      - name: Upload tamagui-web-build
+        uses: actions/upload-artifact@v7
         with:
+          name: tamagui-web-build
           path: |
             frontends/tamagui/apps/next/out
             frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   build_elm_ui:
     name: Test & Build Elm SPA Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -280,15 +286,18 @@ jobs:
       - working-directory: frontends/elm-spa
         run: make build
 
-      - uses: actions/cache/save@v6
-        id: elm-app-cache
+      - name: Upload elm-web-build
+        uses: actions/upload-artifact@v7
         with:
+          name: elm-web-build
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   build_rust_binaries:
     name: Build Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -381,7 +390,7 @@ jobs:
 
   build_rust_binaries_linux_amd64_static:
     name: Build Rust Binaries (Linux amd64, static libpq)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -429,7 +438,7 @@ jobs:
 
   build_rust_binaries_linux_arm64_static:
     name: Build Rust Binaries (Linux arm64, static libpq)
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -472,14 +481,14 @@ jobs:
 
   test_rust_binaries:
     name: Test Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Backs the DB-backed specs under backend/src/tests/ (see src/tests/factories.rs), which run
     # against TEST_DATABASE_URL - a dedicated `rellm_test` DB, analogous to a Rails dev/test
     # split, kept separate from the `rellm_dev` DB used by a real running server. Migrations are
     # applied automatically on first test run, so no separate migration step is needed here.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17.6
         env:
           POSTGRES_DB: rellm_test
           POSTGRES_HOST_AUTH_METHOD: trust
@@ -551,7 +560,7 @@ jobs:
 
   test_tamagui_ui:
     name: Test Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -606,7 +615,7 @@ jobs:
 
   test_flutter_ui:
     name: Test Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -630,7 +639,7 @@ jobs:
   push_server:
     name: "DockerHub: Server"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - build_flutter_ui
       - build_tamagui_ui
@@ -649,26 +658,22 @@ jobs:
       - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v7
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: web-app-cache
+      - name: Download tamagui-web-build
+        uses: actions/download-artifact@v7
         with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: elm-app-cache
+          name: tamagui-web-build
+          # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
+          path: frontends/tamagui/apps/next
+      - name: Download elm-web-build
+        uses: actions/download-artifact@v7
         with:
+          name: elm-web-build
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
       - uses: actions/cache/restore@v6
         id: rust-app-cache
         with:
@@ -717,7 +722,7 @@ jobs:
   push_preview_generator:
     name: "DockerHub: Preview Generator"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - build_rust_binaries
       - test_consistency
@@ -775,7 +780,7 @@ jobs:
       - test_flutter_ui
       - test_tamagui_ui
       - push_server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -830,7 +835,7 @@ jobs:
     needs:
       - test_rust_binaries
       - push_preview_generator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -856,7 +861,7 @@ jobs:
     permissions:
       contents: write # pushes the version tag and creates the release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - test_deploys
       - deploy_jonlineio_server
@@ -975,7 +980,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - create_github_release
       - build_rust_binaries_macos
@@ -998,26 +1003,22 @@ jobs:
       - name: Store Versioning Data for release ${{ steps.vars.outputs.full_version }}
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
-      - uses: actions/cache/restore@v6
-        id: web-app-cache
+      - name: Download tamagui-web-build
+        uses: actions/download-artifact@v7
         with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: elm-app-cache
+          name: tamagui-web-build
+          # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
+          path: frontends/tamagui/apps/next
+      - name: Download elm-web-build
+        uses: actions/download-artifact@v7
         with:
+          name: elm-web-build
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v7
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
       - uses: actions/cache/restore@v6
         id: rust-macos-app-cache
         with:
@@ -1169,7 +1170,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - create_github_release
       - build_rust_binaries_linux_amd64_static
@@ -1193,26 +1194,22 @@ jobs:
       - name: Store Versioning Data for release ${{ steps.vars.outputs.full_version }}
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
-      - uses: actions/cache/restore@v6
-        id: web-app-cache
+      - name: Download tamagui-web-build
+        uses: actions/download-artifact@v7
         with:
-          path: |
-            frontends/tamagui/apps/next/out
-            frontends/tamagui/apps/next/out-tamagui
-          key: web-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: elm-app-cache
+          name: tamagui-web-build
+          # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
+          path: frontends/tamagui/apps/next
+      - name: Download elm-web-build
+        uses: actions/download-artifact@v7
         with:
+          name: elm-web-build
           path: frontends/elm-spa/public
-          key: elm-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
-      - uses: actions/cache/restore@v6
-        id: flutter-app-cache
+      - name: Download Flutter web build
+        uses: actions/download-artifact@v7
         with:
+          name: flutter-web-build
           path: frontends/flutter/build/web
-          key: flutter-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
 
       # Both cached builds were saved from the same "backend/target/release"
       # path, so they're restored one at a time and moved aside immediately --
@@ -1317,7 +1314,7 @@ jobs:
     name: Deploy Bull City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1357,7 +1354,7 @@ jobs:
     name: Deploy Oak City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1397,7 +1394,7 @@ jobs:
     name: Deploy ATO Band
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1437,7 +1434,7 @@ jobs:
     name: Deploy to rellm.org
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1477,7 +1474,7 @@ jobs:
     name: Deploy to neurospicysteve.bullcity.social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1521,7 +1518,7 @@ jobs:
     if: |
       always() && github.ref == 'refs/heads/main' &&
       (needs.deploy_bullcitysocial.result == 'success' || needs.deploy_oakcitysocial.result == 'success' || needs.deploy_ato_band.result == 'success' || needs.deploy_rellm_org.result == 'success' || needs.deploy_neurospicysteve_bullcity_social.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: digitalocean/action-doctl@v2
@@ -1542,7 +1539,7 @@ jobs:
   manifest_change_notice:
     name: Notice if deploy manifests changed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7

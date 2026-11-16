@@ -1737,9 +1737,8 @@ pub fn serve_threads_api(
     format!("http://127.0.0.1:{port}")
 }
 
-/// Starts a background thread that captures the raw text (request line + headers + body -- since
-/// the mock only does one `read()` call, this can miss the tail of a request larger than the
-/// buffer, which is fine for the small form/JSON bodies these specs send) of every request it
+/// Starts a background thread that captures the raw text (request line + headers + body, read in
+/// full per `Content-Length`/chunked framing so a slow multipart upload isn't cut off) of every request it
 /// receives into the returned `Arc<Mutex<Vec<String>>>`, in receipt order, replying to each with
 /// whatever `respond` returns given the *other* requests already captured before it (so a response
 /// can vary by call index, e.g. a photo-upload endpoint hit multiple times). Generalizes the
@@ -1765,9 +1764,39 @@ pub fn serve_capturing(
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
-            let mut buf = [0u8; 16384];
-            let read = stream.read(&mut buf).unwrap_or(0);
-            let request = String::from_utf8_lossy(&buf[..read]).to_string();
+            // Read the whole request (headers + `Content-Length` body, or a chunked body up to its
+            // terminating chunk) before replying. Replying and closing after a single `read()` races
+            // with a client that is still writing a larger (e.g. multipart) body, which then fails
+            // with a `SendError: Disconnected` -- a flake.
+            let mut data: Vec<u8> = Vec::new();
+            let mut chunk = [0u8; 16384];
+            loop {
+                let read = stream.read(&mut chunk).unwrap_or(0);
+                if read == 0 {
+                    break;
+                }
+                data.extend_from_slice(&chunk[..read]);
+                let Some(header_end) = data.windows(4).position(|w| w == b"\r\n\r\n") else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&data[..header_end]).to_lowercase();
+                let body = &data[header_end + 4..];
+                let content_length = headers
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok());
+                let complete = match content_length {
+                    Some(len) => body.len() >= len,
+                    None if headers.contains("transfer-encoding: chunked") => {
+                        body.ends_with(b"0\r\n\r\n")
+                    }
+                    None => true,
+                };
+                if complete {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&data).to_string();
 
             let (status_line, body) = {
                 let mut captured = captured_thread.lock().unwrap();

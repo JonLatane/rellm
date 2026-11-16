@@ -18,6 +18,7 @@ import 'google/protobuf/timestamp.pb.dart' as $14;
 import 'market.pbenum.dart';
 import 'media.pb.dart' as $5;
 import 'permissions.pbenum.dart' as $16;
+import 'server_configuration.pb.dart' as $2;
 
 export 'market.pbenum.dart';
 
@@ -26,6 +27,7 @@ enum MarketProduct_Details {
   aiGrantSubscriptionDetails, 
   rellmHostingSubscriptionDetails, 
   permissionsAccessSubscriptionDetails, 
+  subdomainSubscriptionDetails, 
   notSet
 }
 
@@ -48,6 +50,7 @@ class MarketProduct extends $pb.GeneratedMessage {
     AIGrantSubscriptionDetails? aiGrantSubscriptionDetails,
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
     PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
+    SubdomainSubscriptionDetails? subdomainSubscriptionDetails,
     $14.Timestamp? createdAt,
     $14.Timestamp? delistedAt,
   }) {
@@ -85,6 +88,9 @@ class MarketProduct extends $pb.GeneratedMessage {
     if (permissionsAccessSubscriptionDetails != null) {
       $result.permissionsAccessSubscriptionDetails = permissionsAccessSubscriptionDetails;
     }
+    if (subdomainSubscriptionDetails != null) {
+      $result.subdomainSubscriptionDetails = subdomainSubscriptionDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -102,10 +108,11 @@ class MarketProduct extends $pb.GeneratedMessage {
     11 : MarketProduct_Details.aiGrantSubscriptionDetails,
     12 : MarketProduct_Details.rellmHostingSubscriptionDetails,
     13 : MarketProduct_Details.permissionsAccessSubscriptionDetails,
+    14 : MarketProduct_Details.subdomainSubscriptionDetails,
     0 : MarketProduct_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketProduct', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12, 13])
+    ..oo(0, [10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..e<PurchaseType>(2, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
     ..e<PurchasePeriod>(3, _omitFieldNames ? '' : 'period', $pb.PbFieldType.OE, defaultOrMaker: PurchasePeriod.PURCHASE_PERIOD_INDEFINITE, valueOf: PurchasePeriod.valueOf, enumValues: PurchasePeriod.values)
@@ -117,6 +124,7 @@ class MarketProduct extends $pb.GeneratedMessage {
     ..aOM<AIGrantSubscriptionDetails>(11, _omitFieldNames ? '' : 'aiGrantSubscriptionDetails', subBuilder: AIGrantSubscriptionDetails.create)
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
     ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
+    ..aOM<SubdomainSubscriptionDetails>(14, _omitFieldNames ? '' : 'subdomainSubscriptionDetails', subBuilder: SubdomainSubscriptionDetails.create)
     ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..aOM<$14.Timestamp>(21, _omitFieldNames ? '' : 'delistedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
@@ -274,33 +282,44 @@ class MarketProduct extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(10);
 
+  @$pb.TagNumber(14)
+  SubdomainSubscriptionDetails get subdomainSubscriptionDetails => $_getN(11);
+  @$pb.TagNumber(14)
+  set subdomainSubscriptionDetails(SubdomainSubscriptionDetails v) { setField(14, v); }
+  @$pb.TagNumber(14)
+  $core.bool hasSubdomainSubscriptionDetails() => $_has(11);
+  @$pb.TagNumber(14)
+  void clearSubdomainSubscriptionDetails() => clearField(14);
+  @$pb.TagNumber(14)
+  SubdomainSubscriptionDetails ensureSubdomainSubscriptionDetails() => $_ensure(11);
+
   /// When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
   /// value.
   @$pb.TagNumber(20)
-  $14.Timestamp get createdAt => $_getN(11);
+  $14.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
   set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(11);
+  $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $14.Timestamp ensureCreatedAt() => $_ensure(11);
+  $14.Timestamp ensureCreatedAt() => $_ensure(12);
 
   /// If set, the MarketProduct is not purchasable -- still shown to admins (see
   /// `GetMarketProductsResponse.market_products`' own doc), but hidden from every other caller and
   /// rejected by `MakeMarketPurchase`. Note: clients toggle listings by setting this, but the server
   /// will always set it to the time of the request, not the time sent *by* the request.
   @$pb.TagNumber(21)
-  $14.Timestamp get delistedAt => $_getN(12);
+  $14.Timestamp get delistedAt => $_getN(13);
   @$pb.TagNumber(21)
   set delistedAt($14.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasDelistedAt() => $_has(12);
+  $core.bool hasDelistedAt() => $_has(13);
   @$pb.TagNumber(21)
   void clearDelistedAt() => clearField(21);
   @$pb.TagNumber(21)
-  $14.Timestamp ensureDelistedAt() => $_ensure(12);
+  $14.Timestamp ensureDelistedAt() => $_ensure(13);
 }
 
 /// Request to get products available for purchase on a Rellm server. *Unauthenticated* --
@@ -653,6 +672,7 @@ enum MarketPurchase_Details {
   aiGrantPurchaseDetails, 
   rellmHostingPurchaseDetails, 
   permissionsAccessPurchaseDetails, 
+  subdomainPurchaseDetails, 
   notSet
 }
 
@@ -676,6 +696,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     AIGrantPurchaseDetails? aiGrantPurchaseDetails,
     RellmHostingPurchaseDetails? rellmHostingPurchaseDetails,
     PermissionsAccessPurchaseDetails? permissionsAccessPurchaseDetails,
+    SubdomainPurchaseDetails? subdomainPurchaseDetails,
     $14.Timestamp? createdAt,
   }) {
     final $result = create();
@@ -712,6 +733,9 @@ class MarketPurchase extends $pb.GeneratedMessage {
     if (permissionsAccessPurchaseDetails != null) {
       $result.permissionsAccessPurchaseDetails = permissionsAccessPurchaseDetails;
     }
+    if (subdomainPurchaseDetails != null) {
+      $result.subdomainPurchaseDetails = subdomainPurchaseDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -726,10 +750,11 @@ class MarketPurchase extends $pb.GeneratedMessage {
     11 : MarketPurchase_Details.aiGrantPurchaseDetails,
     12 : MarketPurchase_Details.rellmHostingPurchaseDetails,
     13 : MarketPurchase_Details.permissionsAccessPurchaseDetails,
+    14 : MarketPurchase_Details.subdomainPurchaseDetails,
     0 : MarketPurchase_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketPurchase', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12, 13])
+    ..oo(0, [10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'buyer', subBuilder: $5.Author.create)
     ..e<PurchaseType>(3, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
@@ -741,6 +766,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     ..aOM<AIGrantPurchaseDetails>(11, _omitFieldNames ? '' : 'aiGrantPurchaseDetails', subBuilder: AIGrantPurchaseDetails.create)
     ..aOM<RellmHostingPurchaseDetails>(12, _omitFieldNames ? '' : 'rellmHostingPurchaseDetails', subBuilder: RellmHostingPurchaseDetails.create)
     ..aOM<PermissionsAccessPurchaseDetails>(13, _omitFieldNames ? '' : 'permissionsAccessPurchaseDetails', subBuilder: PermissionsAccessPurchaseDetails.create)
+    ..aOM<SubdomainPurchaseDetails>(14, _omitFieldNames ? '' : 'subdomainPurchaseDetails', subBuilder: SubdomainPurchaseDetails.create)
     ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
@@ -887,18 +913,29 @@ class MarketPurchase extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessPurchaseDetails ensurePermissionsAccessPurchaseDetails() => $_ensure(10);
 
+  @$pb.TagNumber(14)
+  SubdomainPurchaseDetails get subdomainPurchaseDetails => $_getN(11);
+  @$pb.TagNumber(14)
+  set subdomainPurchaseDetails(SubdomainPurchaseDetails v) { setField(14, v); }
+  @$pb.TagNumber(14)
+  $core.bool hasSubdomainPurchaseDetails() => $_has(11);
+  @$pb.TagNumber(14)
+  void clearSubdomainPurchaseDetails() => clearField(14);
+  @$pb.TagNumber(14)
+  SubdomainPurchaseDetails ensureSubdomainPurchaseDetails() => $_ensure(11);
+
   /// When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
   /// it, not when the buyer started checkout.
   @$pb.TagNumber(20)
-  $14.Timestamp get createdAt => $_getN(11);
+  $14.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
   set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(11);
+  $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $14.Timestamp ensureCreatedAt() => $_ensure(11);
+  $14.Timestamp ensureCreatedAt() => $_ensure(12);
 }
 
 /// A single successful charge against a `MarketPurchase` -- one row per completed Stripe
@@ -1718,6 +1755,7 @@ enum MarketSubscription_Details {
   aiGrantSubscriptionDetails, 
   rellmHostingSubscriptionDetails, 
   permissionsAccessSubscriptionDetails, 
+  subdomainSubscriptionDetails, 
   notSet
 }
 
@@ -1743,6 +1781,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
     AIGrantSubscriptionDetails? aiGrantSubscriptionDetails,
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
     PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
+    SubdomainSubscriptionDetails? subdomainSubscriptionDetails,
     $14.Timestamp? createdAt,
     $14.Timestamp? renewsAt,
     $14.Timestamp? canceledAt,
@@ -1788,6 +1827,9 @@ class MarketSubscription extends $pb.GeneratedMessage {
     if (permissionsAccessSubscriptionDetails != null) {
       $result.permissionsAccessSubscriptionDetails = permissionsAccessSubscriptionDetails;
     }
+    if (subdomainSubscriptionDetails != null) {
+      $result.subdomainSubscriptionDetails = subdomainSubscriptionDetails;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -1811,10 +1853,11 @@ class MarketSubscription extends $pb.GeneratedMessage {
     11 : MarketSubscription_Details.aiGrantSubscriptionDetails,
     12 : MarketSubscription_Details.rellmHostingSubscriptionDetails,
     13 : MarketSubscription_Details.permissionsAccessSubscriptionDetails,
+    14 : MarketSubscription_Details.subdomainSubscriptionDetails,
     0 : MarketSubscription_Details.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MarketSubscription', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..oo(0, [10, 11, 12, 13])
+    ..oo(0, [10, 11, 12, 13, 14])
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<$5.Author>(2, _omitFieldNames ? '' : 'buyer', subBuilder: $5.Author.create)
     ..e<PurchaseType>(3, _omitFieldNames ? '' : 'type', $pb.PbFieldType.OE, defaultOrMaker: PurchaseType.PURCHASE_TYPE_MEDIA_STORAGE, valueOf: PurchaseType.valueOf, enumValues: PurchaseType.values)
@@ -1828,6 +1871,7 @@ class MarketSubscription extends $pb.GeneratedMessage {
     ..aOM<AIGrantSubscriptionDetails>(11, _omitFieldNames ? '' : 'aiGrantSubscriptionDetails', subBuilder: AIGrantSubscriptionDetails.create)
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
     ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
+    ..aOM<SubdomainSubscriptionDetails>(14, _omitFieldNames ? '' : 'subdomainSubscriptionDetails', subBuilder: SubdomainSubscriptionDetails.create)
     ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..aOM<$14.Timestamp>(21, _omitFieldNames ? '' : 'renewsAt', subBuilder: $14.Timestamp.create)
     ..aOM<$14.Timestamp>(22, _omitFieldNames ? '' : 'canceledAt', subBuilder: $14.Timestamp.create)
@@ -2006,18 +2050,29 @@ class MarketSubscription extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   PermissionsAccessSubscriptionDetails ensurePermissionsAccessSubscriptionDetails() => $_ensure(12);
 
+  @$pb.TagNumber(14)
+  SubdomainSubscriptionDetails get subdomainSubscriptionDetails => $_getN(13);
+  @$pb.TagNumber(14)
+  set subdomainSubscriptionDetails(SubdomainSubscriptionDetails v) { setField(14, v); }
+  @$pb.TagNumber(14)
+  $core.bool hasSubdomainSubscriptionDetails() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearSubdomainSubscriptionDetails() => clearField(14);
+  @$pb.TagNumber(14)
+  SubdomainSubscriptionDetails ensureSubdomainSubscriptionDetails() => $_ensure(13);
+
   /// When this subscription was first created (i.e. when the initial `MarketPurchase` was
   /// fulfilled).
   @$pb.TagNumber(20)
-  $14.Timestamp get createdAt => $_getN(13);
+  $14.Timestamp get createdAt => $_getN(14);
   @$pb.TagNumber(20)
   set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
-  $core.bool hasCreatedAt() => $_has(13);
+  $core.bool hasCreatedAt() => $_has(14);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $14.Timestamp ensureCreatedAt() => $_ensure(13);
+  $14.Timestamp ensureCreatedAt() => $_ensure(14);
 
   /// When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE`
   /// subscription (see this message's own doc) -- there is no next charge. Otherwise, advanced by
@@ -2025,15 +2080,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// once `canceled_at` is set, since a canceled subscription never renews again regardless of what
   /// this still says.
   @$pb.TagNumber(21)
-  $14.Timestamp get renewsAt => $_getN(14);
+  $14.Timestamp get renewsAt => $_getN(15);
   @$pb.TagNumber(21)
   set renewsAt($14.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
-  $core.bool hasRenewsAt() => $_has(14);
+  $core.bool hasRenewsAt() => $_has(15);
   @$pb.TagNumber(21)
   void clearRenewsAt() => clearField(21);
   @$pb.TagNumber(21)
-  $14.Timestamp ensureRenewsAt() => $_ensure(14);
+  $14.Timestamp ensureRenewsAt() => $_ensure(15);
 
   /// Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
   /// (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
@@ -2045,15 +2100,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what
   /// clients should branch on rather than inspecting this field.
   @$pb.TagNumber(22)
-  $14.Timestamp get canceledAt => $_getN(15);
+  $14.Timestamp get canceledAt => $_getN(16);
   @$pb.TagNumber(22)
   set canceledAt($14.Timestamp v) { setField(22, v); }
   @$pb.TagNumber(22)
-  $core.bool hasCanceledAt() => $_has(15);
+  $core.bool hasCanceledAt() => $_has(16);
   @$pb.TagNumber(22)
   void clearCanceledAt() => clearField(22);
   @$pb.TagNumber(22)
-  $14.Timestamp ensureCanceledAt() => $_ensure(15);
+  $14.Timestamp ensureCanceledAt() => $_ensure(16);
 
   /// The time permissions were removed, media storage quotas reset, etc. -- i.e. when
   /// `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
@@ -2062,15 +2117,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
   /// for through the end of that period.
   @$pb.TagNumber(23)
-  $14.Timestamp get serviceTerminatedAt => $_getN(16);
+  $14.Timestamp get serviceTerminatedAt => $_getN(17);
   @$pb.TagNumber(23)
   set serviceTerminatedAt($14.Timestamp v) { setField(23, v); }
   @$pb.TagNumber(23)
-  $core.bool hasServiceTerminatedAt() => $_has(16);
+  $core.bool hasServiceTerminatedAt() => $_has(17);
   @$pb.TagNumber(23)
   void clearServiceTerminatedAt() => clearField(23);
   @$pb.TagNumber(23)
-  $14.Timestamp ensureServiceTerminatedAt() => $_ensure(16);
+  $14.Timestamp ensureServiceTerminatedAt() => $_ensure(17);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant --
@@ -2818,6 +2873,243 @@ class MarkFulfillmentNotesReadRequest extends $pb.GeneratedMessage {
   $core.bool hasMarketSubscriptionId() => $_has(0);
   @$pb.TagNumber(1)
   void clearMarketSubscriptionId() => clearField(1);
+}
+
+/// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. On a
+/// `MarketProduct` it carries nothing (a subdomain product has no parameters -- the label comes from the buyer's
+/// username); on a `MarketSubscription` it holds the live, buyer-editable [`SubdomainSettings`](#rellm-SubdomainSettings)
+/// (unlike every other details type, these are *not* frozen at purchase -- `SaveMarketSubscription` changes them).
+class SubdomainSubscriptionDetails extends $pb.GeneratedMessage {
+  factory SubdomainSubscriptionDetails({
+    $2.SubdomainSettings? settings,
+    FulfillmentStatus? fulfillmentStatus,
+    $core.Iterable<FulfillmentNote>? fulfillmentNotes,
+    $14.Timestamp? notesLastRead,
+  }) {
+    final $result = create();
+    if (settings != null) {
+      $result.settings = settings;
+    }
+    if (fulfillmentStatus != null) {
+      $result.fulfillmentStatus = fulfillmentStatus;
+    }
+    if (fulfillmentNotes != null) {
+      $result.fulfillmentNotes.addAll(fulfillmentNotes);
+    }
+    if (notesLastRead != null) {
+      $result.notesLastRead = notesLastRead;
+    }
+    return $result;
+  }
+  SubdomainSubscriptionDetails._() : super();
+  factory SubdomainSubscriptionDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SubdomainSubscriptionDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SubdomainSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOM<$2.SubdomainSettings>(1, _omitFieldNames ? '' : 'settings', subBuilder: $2.SubdomainSettings.create)
+    ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
+    ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SubdomainSubscriptionDetails clone() => SubdomainSubscriptionDetails()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SubdomainSubscriptionDetails copyWith(void Function(SubdomainSubscriptionDetails) updates) => super.copyWith((message) => updates(message as SubdomainSubscriptionDetails)) as SubdomainSubscriptionDetails;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SubdomainSubscriptionDetails create() => SubdomainSubscriptionDetails._();
+  SubdomainSubscriptionDetails createEmptyInstance() => create();
+  static $pb.PbList<SubdomainSubscriptionDetails> createRepeated() => $pb.PbList<SubdomainSubscriptionDetails>();
+  @$core.pragma('dart2js:noInline')
+  static SubdomainSubscriptionDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SubdomainSubscriptionDetails>(create);
+  static SubdomainSubscriptionDetails? _defaultInstance;
+
+  /// The subdomain's settings; `settings.subdomain_of`/`settings.subdomain` are filled in by the server at
+  /// fulfillment. Unset on a product.
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings get settings => $_getN(0);
+  @$pb.TagNumber(1)
+  set settings($2.SubdomainSettings v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSettings() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSettings() => clearField(1);
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings ensureSettings() => $_ensure(0);
+
+  /// The fulfillment chat -- see `MediaStorageSubscriptionDetails.fulfillment_status`. Always
+  /// `FULFILLMENT_STATUS_FULFILLED` (the system fulfills this type automatically).
+  @$pb.TagNumber(7)
+  FulfillmentStatus get fulfillmentStatus => $_getN(1);
+  @$pb.TagNumber(7)
+  set fulfillmentStatus(FulfillmentStatus v) { setField(7, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasFulfillmentStatus() => $_has(1);
+  @$pb.TagNumber(7)
+  void clearFulfillmentStatus() => clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(2);
+
+  @$pb.TagNumber(9)
+  $14.Timestamp get notesLastRead => $_getN(3);
+  @$pb.TagNumber(9)
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasNotesLastRead() => $_has(3);
+  @$pb.TagNumber(9)
+  void clearNotesLastRead() => clearField(9);
+  @$pb.TagNumber(9)
+  $14.Timestamp ensureNotesLastRead() => $_ensure(3);
+}
+
+/// `MarketPurchase.details`' `PURCHASE_TYPE_SUBDOMAIN` variant: which subdomain this purchase paid for.
+class SubdomainPurchaseDetails extends $pb.GeneratedMessage {
+  factory SubdomainPurchaseDetails({
+    $core.String? subdomain,
+  }) {
+    final $result = create();
+    if (subdomain != null) {
+      $result.subdomain = subdomain;
+    }
+    return $result;
+  }
+  SubdomainPurchaseDetails._() : super();
+  factory SubdomainPurchaseDetails.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SubdomainPurchaseDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SubdomainPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'subdomain')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SubdomainPurchaseDetails clone() => SubdomainPurchaseDetails()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SubdomainPurchaseDetails copyWith(void Function(SubdomainPurchaseDetails) updates) => super.copyWith((message) => updates(message as SubdomainPurchaseDetails)) as SubdomainPurchaseDetails;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SubdomainPurchaseDetails create() => SubdomainPurchaseDetails._();
+  SubdomainPurchaseDetails createEmptyInstance() => create();
+  static $pb.PbList<SubdomainPurchaseDetails> createRepeated() => $pb.PbList<SubdomainPurchaseDetails>();
+  @$core.pragma('dart2js:noInline')
+  static SubdomainPurchaseDetails getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SubdomainPurchaseDetails>(create);
+  static SubdomainPurchaseDetails? _defaultInstance;
+
+  /// The DNS label that was (or, on renewal, is being kept) reserved, e.g. `jon`.
+  @$pb.TagNumber(1)
+  $core.String get subdomain => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set subdomain($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSubdomain() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSubdomain() => clearField(1);
+}
+
+/// Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+class SaveMarketSubscriptionRequest extends $pb.GeneratedMessage {
+  factory SaveMarketSubscriptionRequest({
+    $core.String? marketSubscriptionId,
+    $2.SubdomainSettings? subdomainSettings,
+    $core.bool? keepSharingSettings,
+  }) {
+    final $result = create();
+    if (marketSubscriptionId != null) {
+      $result.marketSubscriptionId = marketSubscriptionId;
+    }
+    if (subdomainSettings != null) {
+      $result.subdomainSettings = subdomainSettings;
+    }
+    if (keepSharingSettings != null) {
+      $result.keepSharingSettings = keepSharingSettings;
+    }
+    return $result;
+  }
+  SaveMarketSubscriptionRequest._() : super();
+  factory SaveMarketSubscriptionRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SaveMarketSubscriptionRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SaveMarketSubscriptionRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'marketSubscriptionId')
+    ..aOM<$2.SubdomainSettings>(2, _omitFieldNames ? '' : 'subdomainSettings', subBuilder: $2.SubdomainSettings.create)
+    ..aOB(3, _omitFieldNames ? '' : 'keepSharingSettings')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SaveMarketSubscriptionRequest clone() => SaveMarketSubscriptionRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SaveMarketSubscriptionRequest copyWith(void Function(SaveMarketSubscriptionRequest) updates) => super.copyWith((message) => updates(message as SaveMarketSubscriptionRequest)) as SaveMarketSubscriptionRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SaveMarketSubscriptionRequest create() => SaveMarketSubscriptionRequest._();
+  SaveMarketSubscriptionRequest createEmptyInstance() => create();
+  static $pb.PbList<SaveMarketSubscriptionRequest> createRepeated() => $pb.PbList<SaveMarketSubscriptionRequest>();
+  @$core.pragma('dart2js:noInline')
+  static SaveMarketSubscriptionRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SaveMarketSubscriptionRequest>(create);
+  static SaveMarketSubscriptionRequest? _defaultInstance;
+
+  /// The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning "my active subdomain
+  /// subscription" (a subdomain's own pages don't know the ID -- see `ServerConfiguration.subdomain_settings`).
+  @$pb.TagNumber(1)
+  $core.String get marketSubscriptionId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set marketSubscriptionId($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasMarketSubscriptionId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearMarketSubscriptionId() => clearField(1);
+
+  /// The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
+  /// are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  @$pb.TagNumber(2)
+  $2.SubdomainSettings get subdomainSettings => $_getN(1);
+  @$pb.TagNumber(2)
+  set subdomainSettings($2.SubdomainSettings v) { setField(2, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasSubdomainSettings() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSubdomainSettings() => clearField(2);
+  @$pb.TagNumber(2)
+  $2.SubdomainSettings ensureSubdomainSettings() => $_ensure(1);
+
+  /// When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+  /// only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+  @$pb.TagNumber(3)
+  $core.bool get keepSharingSettings => $_getBF(2);
+  @$pb.TagNumber(3)
+  set keepSharingSettings($core.bool v) { $_setBool(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasKeepSharingSettings() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearKeepSharingSettings() => clearField(3);
 }
 
 

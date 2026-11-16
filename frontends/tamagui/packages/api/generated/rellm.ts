@@ -48,6 +48,7 @@ import {
   MarketProduct,
   MarketSubscription,
   MarkFulfillmentNotesReadRequest,
+  SaveMarketSubscriptionRequest,
 } from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
 import {
@@ -2010,6 +2011,24 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
+     * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
+     * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
+     * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+     * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
+     * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
+     * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
+     * call this.
+     */
+    saveMarketSubscription: {
+      name: "SaveMarketSubscription",
+      requestType: SaveMarketSubscriptionRequest,
+      requestStream: false,
+      responseType: MarketSubscription,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
      * by stamping its details' `notes_last_read` with now. *Authenticated*, and only
      * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
@@ -2660,6 +2679,20 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketSubscription>>;
   /**
+   * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
+   * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
+   * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
+   * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+   * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
+   * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
+   * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
+   * call this.
+   */
+  saveMarketSubscription(
+    request: SaveMarketSubscriptionRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<MarketSubscription>>;
+  /**
    * Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
    * by stamping its details' `notes_last_read` with now. *Authenticated*, and only
    * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
@@ -3208,6 +3241,20 @@ export interface RellmClient<CallOptionsExt = {}> {
    */
   updateMarketSubscription(
     request: DeepPartial<MarketSubscription>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<MarketSubscription>;
+  /**
+   * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
+   * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
+   * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
+   * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+   * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
+   * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
+   * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
+   * call this.
+   */
+  saveMarketSubscription(
+    request: DeepPartial<SaveMarketSubscriptionRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketSubscription>;
   /**

@@ -69,6 +69,12 @@ pub fn make_market_purchase(
         return Err(Status::new(Code::InvalidArgument, "rellm_hosting_details_required"));
     }
 
+    // A subdomain is the buyer's own username: it must be a valid DNS label and not already held by someone else's
+    // active subscription -- checked *before* checkout so nobody pays for a subdomain they can't have.
+    if purchase_type == PurchaseType::Subdomain {
+        crate::logic::subdomains::validate_label_available(current_user, conn)?;
+    }
+
     // Re-validates against `PURCHASABLE_PERMISSIONS` at purchase time too, not just at
     // Create/UpdateMarketProduct time -- see `validate_permissions_are_purchasable`'s own doc.
     if purchase_type == PurchaseType::PermissionsAccess {

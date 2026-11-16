@@ -1,3 +1,6 @@
+mod subdomain_rpcs;
+pub use subdomain_rpcs::*;
+
 pub mod validations;
 pub use validations::*;
 

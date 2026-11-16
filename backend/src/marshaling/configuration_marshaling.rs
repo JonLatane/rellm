@@ -445,6 +445,8 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             postmark_config: postmark_config,
             sendgrid_config: sendgrid_config,
             mailgun_config: mailgun_config,
+            // Never stored -- only `SubdomainContext::virtual_server_configuration` sets it.
+            subdomain_settings: None,
         }
     }
 }

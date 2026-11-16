@@ -209,8 +209,37 @@ fn handle_checkout_session_completed(
             contact_email: get_meta("rellm_hosting_contact_email"),
             additional_information: get_meta("rellm_hosting_additional_information"),
         })
+    } else if purchase_type == PurchaseType::Subdomain {
+        // The purchase records which label it paid for; the subscription (below) carries the live,
+        // buyer-editable settings. `MakeMarketPurchase` checked the label was free when checkout started, but two
+        // checkouts can race: free a label whose holder has lapsed, then check again. If it is *still* taken (someone
+        // else's paid checkout got there first) nothing is created -- the unique index would refuse it anyway -- and
+        // the error is logged with this session's id so the charge can be refunded by hand.
+        let buyer = models::get_user(buyer_id, conn)?;
+        crate::logic::subdomains::release_lapsed_subdomain_labels(
+            &crate::logic::subdomains::label_for_username(&buyer.username),
+            conn,
+        )?;
+        let label = crate::logic::subdomains::validate_label_available(&buyer, conn).map_err(|e| {
+            // The checkout session id is a Stripe identifier and the label comes from the username, so neither is
+            // logged; the user and product ids are enough to find the order (the session's metadata carries both).
+            log::error!(
+                "Paid subdomain checkout for user {} on product {} conflicts ({}); no subscription created -- refund needed",
+                buyer_id,
+                product.id,
+                e.message()
+            );
+            e
+        })?;
+        crate::logic::subdomains::subdomain_purchase_details_json_for_label(&label)
     } else {
         product.details.clone()
+    };
+    let subscription_details = if purchase_type == PurchaseType::Subdomain {
+        let buyer = models::get_user(buyer_id, conn)?;
+        crate::logic::subdomains::new_subscription_details_json(&buyer)
+    } else {
+        details.clone()
     };
 
     let customer_id = session.get("customer").and_then(|v| v.as_str()).map(str::to_string);
@@ -242,50 +271,74 @@ fn handle_checkout_session_completed(
     } else {
         Some(advance_by_period(SystemTime::now(), &product.period))
     };
-    let subscription = models::insert_market_subscription(
-        &models::NewMarketSubscription {
-            buyer_id,
-            product_id: product.id,
-            product_type: product.product_type.clone(),
-            period: product.period.clone(),
-            amount: product.amount,
-            currency: product.currency,
-            details: details.clone(),
-            renews_at,
-            stripe_customer_id: customer_id.clone(),
-            stripe_payment_method_id: payment_method_id.clone(),
-        },
-        conn,
-    )?;
-    let subscription_id = Some(subscription.id);
+    // One transaction for everything this checkout records -- subscription, purchase, payment, the sold slot and
+    // the entitlement -- so a failure part-way leaves nothing behind and Stripe's retry starts clean (a half-written
+    // subscription would otherwise hold its subdomain label against its own retry).
+    conn.transaction::<(), WebhookTxError, _>(|conn| {
+        let subscription = models::insert_market_subscription(
+            &models::NewMarketSubscription {
+                buyer_id,
+                product_id: product.id,
+                product_type: product.product_type.clone(),
+                period: product.period.clone(),
+                amount: product.amount,
+                currency: product.currency,
+                details: subscription_details,
+                renews_at,
+                stripe_customer_id: customer_id.clone(),
+                stripe_payment_method_id: payment_method_id.clone(),
+            },
+            conn,
+        )?;
+        let subscription_id = Some(subscription.id);
 
-    let purchase = models::insert_market_purchase(
-        &models::NewMarketPurchase {
-            buyer_id,
-            product_id: product.id,
-            subscription_id,
-            product_type: product.product_type.clone(),
-            details,
-            stripe_checkout_session_id: Some(session_id.to_string()),
-            stripe_payment_intent_id: payment_intent_id.clone(),
-        },
-        conn,
-    )?;
-    models::insert_market_payment(
-        &models::NewMarketPayment {
-            purchase_id: purchase.id,
-            amount: product.amount,
-            currency: product.currency,
-            stripe_payment_intent_id: payment_intent_id,
-            stripe_refund_id: None,
-            method: method_json,
-        },
-        conn,
-    )?;
+        let purchase = models::insert_market_purchase(
+            &models::NewMarketPurchase {
+                buyer_id,
+                product_id: product.id,
+                subscription_id,
+                product_type: product.product_type.clone(),
+                details,
+                stripe_checkout_session_id: Some(session_id.to_string()),
+                stripe_payment_intent_id: payment_intent_id.clone(),
+            },
+            conn,
+        )?;
+        models::insert_market_payment(
+            &models::NewMarketPayment {
+                purchase_id: purchase.id,
+                amount: product.amount,
+                currency: product.currency,
+                stripe_payment_intent_id: payment_intent_id,
+                stripe_refund_id: None,
+                method: method_json,
+            },
+            conn,
+        )?;
 
-    // A newly-fulfilled purchase/subscription consumes one of `product.available_count`'s slots --
-    // see `MarketProduct.sold_count`'s own doc.
-    models::increment_market_product_sold_count(product.id, conn);
+        // A newly-fulfilled purchase/subscription consumes one of `product.available_count`'s slots --
+        // see `MarketProduct.sold_count`'s own doc.
+        models::increment_market_product_sold_count(product.id, conn);
 
-    fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)
+        fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)?;
+        Ok(())
+    })
+    .map_err(|e| e.0)
+}
+
+/// `conn.transaction`'s error type must absorb Diesel's own errors (it rolls back through them) while carrying the
+/// `Status` the fulfillment steps return.
+struct WebhookTxError(tonic::Status);
+
+impl From<diesel::result::Error> for WebhookTxError {
+    fn from(error: diesel::result::Error) -> Self {
+        log::error!("Stripe checkout transaction failed: {:?}", error);
+        WebhookTxError(tonic::Status::new(tonic::Code::Internal, "db_error"))
+    }
+}
+
+impl From<tonic::Status> for WebhookTxError {
+    fn from(status: tonic::Status) -> Self {
+        WebhookTxError(status)
+    }
 }

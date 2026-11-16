@@ -504,6 +504,31 @@ setColorEditFor field edit model =
 
 view : Shared.Model -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
 view shared server maybeAdminAccount model =
+    if Common.subdomainSettingsFor shared server.frontendHost /= Nothing then
+        subdomainView shared server model
+
+    else
+        serverView shared server maybeAdminAccount model
+
+
+{-| A Rellm Subdomain's theme *is* its custom CSS -- the logo, colors, tabs and Web UI are the parent server's (and
+the user's own name/bio), so none of those editors apply. Only the subdomain's owner can edit the CSS (saved via
+`SaveMarketSubscription`, see `CustomCssConfiguration`'s `SaveClicked`); everyone else gets the usual demo.
+-}
+subdomainView : Shared.Model -> RellmServer -> Model -> Html Msg
+subdomainView shared server model =
+    div [ class "server-details-tab-content server-details-theme" ]
+        [ Html.map CustomCssConfigurationMsg
+            (CustomCssConfiguration.view (server.frontendHost == shared.accounts.mainFrontendHost)
+                server
+                (Common.subdomainOwnerAccountFor shared server.frontendHost)
+                model.customCssConfig
+            )
+        ]
+
+
+serverView : Shared.Model -> RellmServer -> Maybe RellmAccount -> Model -> Html Msg
+serverView shared server maybeAdminAccount model =
     let
         info : Proto.Rellm.ServerInfo
         info =

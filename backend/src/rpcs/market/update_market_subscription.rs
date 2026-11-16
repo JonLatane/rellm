@@ -113,6 +113,7 @@ fn details_fulfillment_notes(details: &Option<market_subscription::Details>) -> 
         Some(market_subscription::Details::AiGrantSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
         Some(market_subscription::Details::RellmHostingSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
         Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
+        Some(market_subscription::Details::SubdomainSubscriptionDetails(d)) => d.fulfillment_notes.clone(),
         None => vec![],
     }
 }
@@ -126,6 +127,7 @@ fn details_purchase_type(details: &Option<market_subscription::Details>) -> Opti
         Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(_)) => {
             Some(PurchaseType::PermissionsAccess)
         }
+        Some(market_subscription::Details::SubdomainSubscriptionDetails(_)) => Some(PurchaseType::Subdomain),
         None => None,
     }
 }

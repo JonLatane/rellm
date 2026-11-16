@@ -3777,6 +3777,7 @@ dependencies = [
  "tonic-prost-build",
  "tonic-reflection",
  "tonic-web",
+ "tower",
  "tower-http 0.7.0",
  "tzf-rs",
  "uuid",

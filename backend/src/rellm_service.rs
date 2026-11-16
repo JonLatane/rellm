@@ -60,6 +60,36 @@ macro_rules! auth_rpc {
     }};
 }
 
+/// Like `unauthenticated_rpc!`, but also resolves whether the request addressed a Rellm Subdomain
+/// (`jon.bullcity.social`, via the `RequestHost` extension `servers::tonic::RequestHostLayer` adds) and hands
+/// `$rpc` that `Option<SubdomainContext>` -- see `rpcs::subdomain_rpcs`.
+macro_rules! subdomain_rpc {
+    ($self: expr, $rpc:expr, $request:expr) => {{
+        let mut conn = get_connection(&$self.pool)?;
+        let user: Option<models::User> = auth::get_auth_user(&$request, &mut conn)?;
+        let host = $request
+            .extensions()
+            .get::<crate::logic::subdomains::RequestHost>()
+            .map(|h| h.0.clone());
+        let scope = crate::logic::subdomains::resolve_subdomain(host.as_deref(), &mut conn)?;
+        let inner = $request.into_inner();
+        let request_log = format!("{:?}", &inner);
+        let result = $rpc(inner, &user.as_ref(), &scope, &mut conn);
+        let truncated_result = format!("{:?}", &result)
+            .chars()
+            .take(1000)
+            .collect::<String>();
+        log::info!(
+            "Unauthenticated RPC: {}\tSubdomain: {:?}\tRequest: {:?}\tResult: {:?}",
+            stringify!($rpc),
+            scope.as_ref().map(|s| s.settings.subdomain.clone()),
+            request_log,
+            truncated_result
+        );
+        result.map(Response::new)
+    }};
+}
+
 macro_rules! authenticated_rpc {
     ($self: expr, $rpc:expr, $request:expr) => {{
         let mut conn = get_connection(&$self.pool)?;
@@ -192,7 +222,7 @@ impl Rellm for RellmService {
         &self,
         request: Request<()>,
     ) -> Result<Response<ServerConfiguration>, Status> {
-        unauthenticated_rpc!(self, rpcs::get_server_configuration, request)
+        subdomain_rpc!(self, rpcs::get_server_configuration_for, request)
     }
 
     async fn configure_server(
@@ -213,7 +243,7 @@ impl Rellm for RellmService {
         &self,
         request: Request<()>,
     ) -> Result<Response<CustomCssConfiguration>, Status> {
-        unauthenticated_rpc!(self, rpcs::get_custom_css, request)
+        subdomain_rpc!(self, rpcs::get_custom_css_for, request)
     }
 
     async fn configure_custom_css(
@@ -485,7 +515,7 @@ impl Rellm for RellmService {
         &self,
         request: Request<GetPostsRequest>,
     ) -> Result<Response<GetPostsResponse>, Status> {
-        unauthenticated_rpc!(self, rpcs::get_posts, request)
+        subdomain_rpc!(self, rpcs::get_posts_for, request)
     }
 
     async fn create_event(&self, request: Request<Event>) -> Result<Response<Event>, Status> {
@@ -525,7 +555,7 @@ impl Rellm for RellmService {
         &self,
         request: Request<GetEventsRequest>,
     ) -> Result<Response<GetEventsResponse>, Status> {
-        unauthenticated_rpc!(self, rpcs::get_events, request)
+        subdomain_rpc!(self, rpcs::get_events_for, request)
     }
 
     async fn get_sync_sources(
@@ -676,6 +706,12 @@ impl Rellm for RellmService {
         ))?;
         rpcs::update_market_subscription_and_notify(request.into_inner(), &user, &mut conn, self.pool.clone())
             .map(Response::new)
+    }
+    async fn save_market_subscription(
+        &self,
+        request: Request<SaveMarketSubscriptionRequest>,
+    ) -> Result<Response<MarketSubscription>, Status> {
+        authenticated_rpc!(self, rpcs::save_market_subscription, request)
     }
     async fn mark_fulfillment_notes_read(
         &self,

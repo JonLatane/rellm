@@ -1341,6 +1341,15 @@ service Rellm {
   // to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field's
   // own doc on why this may loosen to "buyer, or Admin" later).
   rpc UpdateMarketSubscription(MarketSubscription) returns (MarketSubscription) {}
+  // Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
+  // `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
+  // `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
+  // `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+  // *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
+  // and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
+  // On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
+  // call this.
+  rpc SaveMarketSubscription(SaveMarketSubscriptionRequest) returns (MarketSubscription) {}
   // Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
   // by stamping its details' `notes_last_read` with now. *Authenticated*, and only
   // the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is

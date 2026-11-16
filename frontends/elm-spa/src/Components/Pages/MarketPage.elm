@@ -47,6 +47,7 @@ import Proto.Rellm
         , defaultMarketProduct
         , defaultMediaStorageSubscriptionDetails
         , defaultPermissionsAccessSubscriptionDetails
+        , defaultSubdomainSubscriptionDetails
         , defaultRellmHostingSubscriptionDetails
         )
 import Proto.Rellm.MarketProduct exposing (Details)
@@ -239,6 +240,9 @@ productFormFromProduct product =
                 , permissionsName = details.name
                 , permissionsDescription = details.description
             }
+
+        Just (ProductDetails.SubdomainSubscriptionDetails _) ->
+            base
 
         Nothing ->
             base
@@ -773,6 +777,9 @@ detailsFromForm form =
                     }
                 )
 
+        PURCHASETYPESUBDOMAIN ->
+            Just (ProductDetails.SubdomainSubscriptionDetails defaultSubdomainSubscriptionDetails)
+
         PurchaseTypeUnrecognized_ _ ->
             Nothing
 
@@ -788,6 +795,9 @@ purchaseTypeFromString text =
 
         "PERMISSIONS_ACCESS" ->
             PURCHASETYPEPERMISSIONSACCESS
+
+        "SUBDOMAIN" ->
+            PURCHASETYPESUBDOMAIN
 
         _ ->
             PURCHASETYPEMEDIASTORAGE
@@ -807,6 +817,9 @@ purchaseTypeToString type_ =
 
         PURCHASETYPEPERMISSIONSACCESS ->
             "PERMISSIONS_ACCESS"
+
+        PURCHASETYPESUBDOMAIN ->
+            "SUBDOMAIN"
 
         PurchaseTypeUnrecognized_ _ ->
             "MEDIA_STORAGE"
@@ -1336,6 +1349,9 @@ productFormView aiProviders change form =
 
                 PURCHASETYPEPERMISSIONSACCESS ->
                     permissionsFormView change form
+
+                PURCHASETYPESUBDOMAIN ->
+                    [ p [ class "market-form-hint" ] [ text "A subdomain has no settings of its own -- the buyer's username becomes the subdomain." ] ]
 
                 PurchaseTypeUnrecognized_ _ ->
                     []

@@ -236,9 +236,10 @@ const ServerConfiguration$json = {
     {'1': 'custom_css_configuration', '3': 127, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 11, '10': 'customCssConfiguration', '17': true},
     {'1': 'preferred_email_apis', '3': 128, '4': 3, '5': 14, '6': '.rellm.EmailVerificationAPI', '10': 'preferredEmailApis'},
     {'1': 'available_email_apis', '3': 129, '4': 3, '5': 14, '6': '.rellm.EmailVerificationAPI', '10': 'availableEmailApis'},
-    {'1': 'postmark_config', '3': 130, '4': 1, '5': 11, '6': '.rellm.PostmarkConfig', '9': 12, '10': 'postmarkConfig', '17': true},
-    {'1': 'sendgrid_config', '3': 131, '4': 1, '5': 11, '6': '.rellm.SendgridConfig', '9': 13, '10': 'sendgridConfig', '17': true},
-    {'1': 'mailgun_config', '3': 132, '4': 1, '5': 11, '6': '.rellm.MailgunConfig', '9': 14, '10': 'mailgunConfig', '17': true},
+    {'1': 'postmark_config', '3': 131, '4': 1, '5': 11, '6': '.rellm.PostmarkConfig', '9': 12, '10': 'postmarkConfig', '17': true},
+    {'1': 'sendgrid_config', '3': 132, '4': 1, '5': 11, '6': '.rellm.SendgridConfig', '9': 13, '10': 'sendgridConfig', '17': true},
+    {'1': 'mailgun_config', '3': 133, '4': 1, '5': 11, '6': '.rellm.MailgunConfig', '9': 14, '10': 'mailgunConfig', '17': true},
+    {'1': 'subdomain_settings', '3': 130, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '9': 15, '10': 'subdomainSettings', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -256,6 +257,7 @@ const ServerConfiguration$json = {
     {'1': '_postmark_config'},
     {'1': '_sendgrid_config'},
     {'1': '_mailgun_config'},
+    {'1': '_subdomain_settings'},
   ],
 };
 
@@ -298,16 +300,44 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'dGlvbogBARJOChRwcmVmZXJyZWRfZW1haWxfYXBpcxiAASADKA4yGy5yZWxsbS5FbWFpbFZlcm'
     'lmaWNhdGlvbkFQSVIScHJlZmVycmVkRW1haWxBcGlzEk4KFGF2YWlsYWJsZV9lbWFpbF9hcGlz'
     'GIEBIAMoDjIbLnJlbGxtLkVtYWlsVmVyaWZpY2F0aW9uQVBJUhJhdmFpbGFibGVFbWFpbEFwaX'
-    'MSRAoPcG9zdG1hcmtfY29uZmlnGIIBIAEoCzIVLnJlbGxtLlBvc3RtYXJrQ29uZmlnSAxSDnBv'
-    'c3RtYXJrQ29uZmlniAEBEkQKD3NlbmRncmlkX2NvbmZpZxiDASABKAsyFS5yZWxsbS5TZW5kZ3'
-    'JpZENvbmZpZ0gNUg5zZW5kZ3JpZENvbmZpZ4gBARJBCg5tYWlsZ3VuX2NvbmZpZxiEASABKAsy'
-    'FC5yZWxsbS5NYWlsZ3VuQ29uZmlnSA5SDW1haWxndW5Db25maWeIAQFCDgoMX3NlcnZlcl9pbm'
-    'ZvQhIKEF9mZWRlcmF0aW9uX2luZm9CDgoMX2N1c3RvbV90YWJzQhYKFF9leHRlcm5hbF9jZG5f'
-    'Y29uZmlnQhQKEl9jbHVzdGVyX3Jlc291cmNlc0ISChBfd2ViX3B1c2hfY29uZmlnQhAKDl90d2'
-    'lsaW9fY29uZmlnQg4KDF9iaXJkX2NvbmZpZ0IQCg5fc3RyaXBlX2NvbmZpZ0IQCg5fdGVsbnl4'
-    'X2NvbmZpZ0ISChBfc3RhbHdhcnRfY29uZmlnQhsKGV9jdXN0b21fY3NzX2NvbmZpZ3VyYXRpb2'
-    '5CEgoQX3Bvc3RtYXJrX2NvbmZpZ0ISChBfc2VuZGdyaWRfY29uZmlnQhEKD19tYWlsZ3VuX2Nv'
-    'bmZpZw==');
+    'MSRAoPcG9zdG1hcmtfY29uZmlnGIMBIAEoCzIVLnJlbGxtLlBvc3RtYXJrQ29uZmlnSAxSDnBv'
+    'c3RtYXJrQ29uZmlniAEBEkQKD3NlbmRncmlkX2NvbmZpZxiEASABKAsyFS5yZWxsbS5TZW5kZ3'
+    'JpZENvbmZpZ0gNUg5zZW5kZ3JpZENvbmZpZ4gBARJBCg5tYWlsZ3VuX2NvbmZpZxiFASABKAsy'
+    'FC5yZWxsbS5NYWlsZ3VuQ29uZmlnSA5SDW1haWxndW5Db25maWeIAQESTQoSc3ViZG9tYWluX3'
+    'NldHRpbmdzGIIBIAEoCzIYLnJlbGxtLlN1YmRvbWFpblNldHRpbmdzSA9SEXN1YmRvbWFpblNl'
+    'dHRpbmdziAEBQg4KDF9zZXJ2ZXJfaW5mb0ISChBfZmVkZXJhdGlvbl9pbmZvQg4KDF9jdXN0b2'
+    '1fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2NvbmZpZ0IUChJfY2x1c3Rlcl9yZXNvdXJjZXNCEgoQ'
+    'X3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbGlvX2NvbmZpZ0IOCgxfYmlyZF9jb25maWdCEAoOX3'
+    'N0cmlwZV9jb25maWdCEAoOX3RlbG55eF9jb25maWdCEgoQX3N0YWx3YXJ0X2NvbmZpZ0IbChlf'
+    'Y3VzdG9tX2Nzc19jb25maWd1cmF0aW9uQhIKEF9wb3N0bWFya19jb25maWdCEgoQX3NlbmRncm'
+    'lkX2NvbmZpZ0IRCg9fbWFpbGd1bl9jb25maWdCFQoTX3N1YmRvbWFpbl9zZXR0aW5ncw==');
+
+@$core.Deprecated('Use subdomainSettingsDescriptor instead')
+const SubdomainSettings$json = {
+  '1': 'SubdomainSettings',
+  '2': [
+    {'1': 'subdomain_of', '3': 1, '4': 1, '5': 9, '10': 'subdomainOf'},
+    {'1': 'subdomain', '3': 2, '4': 1, '5': 9, '10': 'subdomain'},
+    {'1': 'share_content_from_followers', '3': 3, '4': 1, '5': 8, '10': 'shareContentFromFollowers'},
+    {'1': 'share_content_from_following', '3': 4, '4': 1, '5': 8, '10': 'shareContentFromFollowing'},
+    {'1': 'share_content_from_friends', '3': 5, '4': 1, '5': 8, '10': 'shareContentFromFriends'},
+    {'1': 'custom_css_configuration', '3': 6, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 0, '10': 'customCssConfiguration', '17': true},
+  ],
+  '8': [
+    {'1': '_custom_css_configuration'},
+  ],
+};
+
+/// Descriptor for `SubdomainSettings`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List subdomainSettingsDescriptor = $convert.base64Decode(
+    'ChFTdWJkb21haW5TZXR0aW5ncxIhCgxzdWJkb21haW5fb2YYASABKAlSC3N1YmRvbWFpbk9mEh'
+    'wKCXN1YmRvbWFpbhgCIAEoCVIJc3ViZG9tYWluEj8KHHNoYXJlX2NvbnRlbnRfZnJvbV9mb2xs'
+    'b3dlcnMYAyABKAhSGXNoYXJlQ29udGVudEZyb21Gb2xsb3dlcnMSPwocc2hhcmVfY29udGVudF'
+    '9mcm9tX2ZvbGxvd2luZxgEIAEoCFIZc2hhcmVDb250ZW50RnJvbUZvbGxvd2luZxI7ChpzaGFy'
+    'ZV9jb250ZW50X2Zyb21fZnJpZW5kcxgFIAEoCFIXc2hhcmVDb250ZW50RnJvbUZyaWVuZHMSXA'
+    'oYY3VzdG9tX2Nzc19jb25maWd1cmF0aW9uGAYgASgLMh0ucmVsbG0uQ3VzdG9tQ1NTQ29uZmln'
+    'dXJhdGlvbkgAUhZjdXN0b21Dc3NDb25maWd1cmF0aW9uiAEBQhsKGV9jdXN0b21fY3NzX2Nvbm'
+    'ZpZ3VyYXRpb24=');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {

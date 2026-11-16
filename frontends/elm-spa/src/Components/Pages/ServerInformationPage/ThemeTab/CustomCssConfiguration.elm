@@ -45,6 +45,7 @@ server's page.
 -}
 
 import Components.Markdown as Markdown
+import Components.Market as Market
 import Components.Pages.ServerInformationPage.Common as Common
 import Effect exposing (Effect)
 import Grpc
@@ -204,25 +205,63 @@ updateInner shared targetHost msg model =
 
         SaveClicked ->
             -- A demo can never be saved (it has no Save button; this just makes sure).
-            case ( model.edit |> Maybe.andThen (\e -> if e.demo then Nothing else Just e), Common.adminAccountFor shared targetHost ) of
-                ( Just edit, Just account ) ->
-                    let
-                        request : CustomCSSConfiguration
-                        request =
-                            draftConfig edit
-                    in
-                    ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
-                    , AccountsPanel.performWithAccountServer shared.accounts
-                        ( Just account.userId, targetHost )
-                        (\server token ->
-                            Grpc.new Rellm.configureCustomCSS request
-                                |> Grpc.setHost (RellmServers.rellmServerUrl server)
-                                |> RellmServers.withAccessToken (Just token)
-                                |> Grpc.toTask
-                        )
-                        |> Task.attempt GotSaveResult
-                        |> Effect.fromCmd
-                    )
+            -- On a Rellm Subdomain the page is the owner's, whatever else they are: the save is always
+            -- `SaveMarketSubscription` -- never `ConfigureCustomCSS`, which would overwrite the *parent* server's theme
+            -- when the owner also happens to be an admin. Decided by the page, before looking at anyone's permissions.
+            case ( model.edit |> Maybe.andThen (\e -> if e.demo then Nothing else Just e), Common.subdomainSettingsFor shared targetHost ) of
+                ( Just edit, Just settings ) ->
+                    case Common.subdomainOwnerAccountFor shared targetHost of
+                        Just account ->
+                            let
+                                request : CustomCSSConfiguration
+                                request =
+                                    draftConfig edit
+                            in
+                            ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
+                            , -- `True`: only the stylesheet changes here; the sharing toggles (edited on the About tab) stay as stored.
+                              Market.saveMarketSubscription shared.accounts
+                                ( Just account.userId, targetHost )
+                                ""
+                                True
+                                { settings | customCssConfiguration = Just request }
+                                |> Task.map
+                                    (Tuple.mapSecond
+                                        (\subscription ->
+                                            Market.subdomainSettingsOf subscription
+                                                |> Maybe.andThen .customCssConfiguration
+                                                |> Maybe.withDefault request
+                                        )
+                                    )
+                                |> Task.attempt GotSaveResult
+                                |> Effect.fromCmd
+                            )
+
+                        Nothing ->
+                            ( model, Effect.none )
+
+                ( Just edit, Nothing ) ->
+                    case Common.adminAccountFor shared targetHost of
+                        Just account ->
+                            let
+                                request : CustomCSSConfiguration
+                                request =
+                                    draftConfig edit
+                            in
+                            ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
+                            , AccountsPanel.performWithAccountServer shared.accounts
+                                ( Just account.userId, targetHost )
+                                (\server token ->
+                                    Grpc.new Rellm.configureCustomCSS request
+                                        |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                                        |> RellmServers.withAccessToken (Just token)
+                                        |> Grpc.toTask
+                                )
+                                |> Task.attempt GotSaveResult
+                                |> Effect.fromCmd
+                            )
+
+                        Nothing ->
+                            ( model, Effect.none )
 
                 _ ->
                     ( model, Effect.none )

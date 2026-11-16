@@ -44,6 +44,8 @@ pub use ai::*;
 mod market;
 pub use market::*;
 
+pub mod subdomains;
+
 pub(crate) use contact_methods::{bird_sms, telnyx_sms, twilio_sms};
 // Reached directly only by specs (`tests/email_providers_tests.rs`).
 #[cfg(test)]
