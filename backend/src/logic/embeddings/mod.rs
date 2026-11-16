@@ -32,10 +32,14 @@ use crate::db_connection::PgPooledConnection;
 
 mod embedder;
 mod index;
+mod vector_client;
 pub mod model_service;
+#[cfg(feature = "vector-service")]
+pub mod vector_service;
 pub use embedder::{load_embedder, load_embedder_local, BoxedEmbedder, LocalEmbedder, TextEmbedder};
 pub use model_service::{cluster_model, embedding_service_config, embedding_service_configured, RemoteEmbedder};
-pub use index::{semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
+pub use index::{install_semantic_index, reset_semantic_index, semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
+pub use vector_client::{vector_service_config, RemoteIndex};
 
 // Longer input is truncated by the tokenizer; documents list their most important text first.
 pub(self) const MAX_TOKENS: usize = 256;
@@ -457,6 +461,40 @@ pub fn semantic_ranking(
             scope: Some(scope_ids),
             limit: SEMANTIC_RESULT_LIMIT,
         },
+    )
+}
+
+/// How many nearest ids a global search asks the index for. Visibility is applied to them afterwards (in Postgres),
+/// so this is deliberately well above the 500 a scoped search keeps: most of them can be invisible to a viewer.
+pub const GLOBAL_RESULT_LIMIT: usize = 2_000;
+
+/// Whether `semantic_ranking_global` can be used: the configured index holds every vector. When true, callers
+/// pass no candidate scope and filter the returned ids for visibility themselves.
+pub fn semantic_global_available() -> bool {
+    semantic_index().supports_global()
+}
+
+/// The ids (best first, with cosine similarity) of `kind` nearest to `query_text` *anywhere in the index* -- NOT
+/// filtered for visibility: the caller MUST restrict them to what the viewer may see (an `id = ANY(...)` filter
+/// on its visibility-checked query) before using them. `None` when semantic search can't be used right now.
+pub fn semantic_ranking_global(conn: &mut PgPooledConnection, kind: EmbeddingKind, query_text: &str) -> Option<Vec<(i64, f32)>> {
+    if query_text.trim().is_empty() {
+        return None;
+    }
+    let (enabled, spec) = search_configuration(conn);
+    if !enabled {
+        return None;
+    }
+    let embedder = server_embedder(spec)?;
+    let query = embedder
+        .lock()
+        .ok()?
+        .embed_query(query_text.trim())
+        .map_err(|e| log::error!("Couldn't embed search query: {:?}", e))
+        .ok()?;
+    semantic_index().search(
+        conn,
+        &IndexQuery { kind, spec, vector: &query, scope: None, limit: GLOBAL_RESULT_LIMIT },
     )
 }
 

@@ -447,35 +447,65 @@ fn get_search_posts(
         .load(conn)
         .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?;
 
-    // Semantic reranking (see `logic::embeddings`): also consider the newest visible posts that
-    // are semantically close to the query even though they share no words with it, and fuse the
-    // two rankings. Only ever ids the visibility-filtered queries above/below returned.
+    // Semantic reranking (see `logic::embeddings`): also consider posts that are semantically close to the
+    // query even though they share no words with it, and fuse the two rankings. Only ever ids the
+    // visibility-filtered queries return.
     if embeddings::semantic_search_ready(conn) {
-        let mut recent = query_visible_posts_unlimited!(user)
-            .filter(posts::context.eq(request.context().as_str_name()))
-            .filter(exclude_authors!(excluded))
-            .order(posts::sort_published_at.desc())
-            .select((posts::id, posts::sort_published_at))
-            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-            .into_boxed();
-        if let Some(author_user_id) = author_user_id {
-            recent = recent.filter(posts::user_id.eq(author_user_id));
-        }
-        if let Some(cutoff) = published_or_created_before(request) {
-            recent = recent.filter(posts::sort_published_at.lt(cutoff));
-        }
-        let mut scope: Vec<i64> = recent
-            .load::<(i64, std::time::SystemTime)>(conn)
-            .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
-        scope.extend(ranked_ids.iter().copied());
-        scope.sort_unstable();
-        scope.dedup();
-        if let Some(semantic) =
+        let semantic = if embeddings::semantic_global_available() {
+            // The index holds every vector: take the nearest ids anywhere, then keep only the ones this
+            // viewer may see (the very same visibility-checked query, restricted to those ids).
+            match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Post, search_text) {
+                Some(mut nearest) if !nearest.is_empty() => {
+                    let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                    let mut visible = query_visible_posts_unlimited!(user)
+                        .filter(posts::context.eq(request.context().as_str_name()))
+                        .filter(exclude_authors!(excluded))
+                        .filter(posts::id.eq_any(&nearest_ids))
+                        .select(posts::id)
+                        .into_boxed();
+                    if let Some(author_user_id) = author_user_id {
+                        visible = visible.filter(posts::user_id.eq(author_user_id));
+                    }
+                    if let Some(cutoff) = published_or_created_before(request) {
+                        visible = visible.filter(posts::sort_published_at.lt(cutoff));
+                    }
+                    let visible: std::collections::HashSet<i64> = visible
+                        .load::<i64>(conn)
+                        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+                        .into_iter()
+                        .collect();
+                    nearest.retain(|(id, _)| visible.contains(id));
+                    Some(nearest)
+                }
+                other => other,
+            }
+        } else {
+            // Scan the newest visible posts (plus the full-text matches) out of Postgres.
+            let mut recent = query_visible_posts_unlimited!(user)
+                .filter(posts::context.eq(request.context().as_str_name()))
+                .filter(exclude_authors!(excluded))
+                .order(posts::sort_published_at.desc())
+                .select((posts::id, posts::sort_published_at))
+                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                .into_boxed();
+            if let Some(author_user_id) = author_user_id {
+                recent = recent.filter(posts::user_id.eq(author_user_id));
+            }
+            if let Some(cutoff) = published_or_created_before(request) {
+                recent = recent.filter(posts::sort_published_at.lt(cutoff));
+            }
+            let mut scope: Vec<i64> = recent
+                .load::<(i64, std::time::SystemTime)>(conn)
+                .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            scope.extend(ranked_ids.iter().copied());
+            scope.sort_unstable();
+            scope.dedup();
             embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::Post, search_text, &scope)
-        {
+        };
+        if let Some(semantic) = semantic {
             ranked_ids = embeddings::fuse_rankings(&ranked_ids, &semantic);
         }
     }

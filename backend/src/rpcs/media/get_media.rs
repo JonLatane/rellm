@@ -193,31 +193,63 @@ pub fn get_media(
         // its words, and fuse the two rankings. The final `query` below still applies visibility.
         let mut matching_ids = matching_ids;
         if embeddings::semantic_search_ready(conn) {
-            let mut recent = apply_content_type_filter(
-                query_visible_media!(user, licensed_globally),
-                &content_type_filter,
-            );
-            if let Some(user_id) = requested_user_id {
-                recent = recent.filter(media::user_id.eq(user_id));
-            }
-            if server_wide {
-                recent = apply_server_wide_exclusions(recent);
-            }
-            let mut scope: Vec<i64> = recent
-                .order(media::created_at.desc())
-                .select(media::id)
-                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-                .load(conn)
-                .map_err(|_| Status::internal("error_loading_media"))?;
-            scope.extend(matching_ids.iter().copied());
-            scope.sort_unstable();
-            scope.dedup();
-            if let Some(semantic) = embeddings::semantic_ranking(
-                conn,
-                embeddings::EmbeddingKind::Media,
-                search_text.unwrap_or_default(),
-                &scope,
-            ) {
+            let semantic = if embeddings::semantic_global_available() {
+                // The index holds every vector: take the nearest ids anywhere, then keep only the media this
+                // viewer may see with the request's owner/type filters (the same visibility-checked query).
+                match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Media, search_text.unwrap_or_default()) {
+                    Some(mut nearest) if !nearest.is_empty() => {
+                        let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                        let mut visible = apply_content_type_filter(
+                            query_visible_media!(user, licensed_globally),
+                            &content_type_filter,
+                        )
+                        .filter(media::id.eq_any(&nearest_ids));
+                        if let Some(user_id) = requested_user_id {
+                            visible = visible.filter(media::user_id.eq(user_id));
+                        }
+                        if server_wide {
+                            visible = apply_server_wide_exclusions(visible);
+                        }
+                        let visible: std::collections::HashSet<i64> = visible
+                            .select(media::id)
+                            .load::<i64>(conn)
+                            .map_err(|_| Status::internal("error_loading_media"))?
+                            .into_iter()
+                            .collect();
+                        nearest.retain(|(id, _)| visible.contains(id));
+                        Some(nearest)
+                    }
+                    other => other,
+                }
+            } else {
+                // Scan the newest visible media (of the requested owner/type) out of Postgres.
+                let mut recent = apply_content_type_filter(
+                    query_visible_media!(user, licensed_globally),
+                    &content_type_filter,
+                );
+                if let Some(user_id) = requested_user_id {
+                    recent = recent.filter(media::user_id.eq(user_id));
+                }
+                if server_wide {
+                    recent = apply_server_wide_exclusions(recent);
+                }
+                let mut scope: Vec<i64> = recent
+                    .order(media::created_at.desc())
+                    .select(media::id)
+                    .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                    .load(conn)
+                    .map_err(|_| Status::internal("error_loading_media"))?;
+                scope.extend(matching_ids.iter().copied());
+                scope.sort_unstable();
+                scope.dedup();
+                embeddings::semantic_ranking(
+                    conn,
+                    embeddings::EmbeddingKind::Media,
+                    search_text.unwrap_or_default(),
+                    &scope,
+                )
+            };
+            if let Some(semantic) = semantic {
                 matching_ids = embeddings::fuse_rankings(&matching_ids, &semantic);
                 matching_ids.truncate(1000);
             }

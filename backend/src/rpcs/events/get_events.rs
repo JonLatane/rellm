@@ -552,36 +552,59 @@ fn get_search_events(
     // Occasions' times/places), results are per *Occasion*: rank the Events of the candidate
     // Occasions, and give each Occasion its Event's semantic standing.
     if embeddings::semantic_search_ready(conn) {
-        let mut recent = query_visible_events!(user, request.time_filter)
-            .select((occasions::post_id, occasions::event_id))
-            .order(occasions::post_id.desc())
-            .filter(exclude_authors!(occasions::user_id, excluded))
-            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-            .into_boxed();
-        if let Some(author_user_id) = author_user_id {
-            recent = recent.filter(occasions::user_id.eq(author_user_id));
-        }
-        let mut occasion_event: Vec<(i64, i64)> = recent
-            .load(conn)
-            .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
-        occasion_event.extend(
-            occasions::table
-                .filter(occasions::post_id.eq_any(&ranked_ids))
+        // (occasion id, its event id) pairs of the occasions semantic matches may map to, and the Events'
+        // semantic ranking. Both only ever involve occasions the visibility-checked queries return.
+        let (occasion_event, semantic): (Vec<(i64, i64)>, Option<Vec<(i64, f32)>>) = if embeddings::semantic_global_available() {
+            // The index holds every Event: take the nearest anywhere, then keep the occasions of those
+            // Events this viewer may see (the same visibility-checked query, restricted to those Events).
+            match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Event, search_text) {
+                Some(nearest) if !nearest.is_empty() => {
+                    let nearest_event_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                    let mut visible = query_visible_events!(user, request.time_filter)
+                        .select((occasions::post_id, occasions::event_id))
+                        .order(occasions::post_id.desc())
+                        .filter(exclude_authors!(occasions::user_id, excluded))
+                        .filter(occasions::event_id.eq_any(&nearest_event_ids))
+                        .into_boxed();
+                    if let Some(author_user_id) = author_user_id {
+                        visible = visible.filter(occasions::user_id.eq(author_user_id));
+                    }
+                    let visible: Vec<(i64, i64)> = visible
+                        .load(conn)
+                        .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
+                    (visible, Some(nearest))
+                }
+                other => (vec![], other),
+            }
+        } else {
+            let mut recent = query_visible_events!(user, request.time_filter)
                 .select((occasions::post_id, occasions::event_id))
-                .load::<(i64, i64)>(conn)
-                .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?,
-        );
-        occasion_event.sort_unstable();
-        occasion_event.dedup();
-        let mut event_ids: Vec<i64> = occasion_event.iter().map(|(_, event_id)| *event_id).collect();
-        event_ids.sort_unstable();
-        event_ids.dedup();
-        if let Some(semantic) = embeddings::semantic_ranking(
-            conn,
-            embeddings::EmbeddingKind::Event,
-            search_text,
-            &event_ids,
-        ) {
+                .order(occasions::post_id.desc())
+                .filter(exclude_authors!(occasions::user_id, excluded))
+                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                .into_boxed();
+            if let Some(author_user_id) = author_user_id {
+                recent = recent.filter(occasions::user_id.eq(author_user_id));
+            }
+            let mut occasion_event: Vec<(i64, i64)> = recent
+                .load(conn)
+                .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
+            occasion_event.extend(
+                occasions::table
+                    .filter(occasions::post_id.eq_any(&ranked_ids))
+                    .select((occasions::post_id, occasions::event_id))
+                    .load::<(i64, i64)>(conn)
+                    .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?,
+            );
+            occasion_event.sort_unstable();
+            occasion_event.dedup();
+            let mut event_ids: Vec<i64> = occasion_event.iter().map(|(_, event_id)| *event_id).collect();
+            event_ids.sort_unstable();
+            event_ids.dedup();
+            let semantic = embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::Event, search_text, &event_ids);
+            (occasion_event, semantic)
+        };
+        if let Some(semantic) = semantic {
             let semantic_occasions: Vec<(i64, f32)> = semantic
                 .iter()
                 .flat_map(|(event_id, similarity)| {

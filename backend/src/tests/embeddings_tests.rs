@@ -520,6 +520,164 @@ fn hybrid_search_finds_posts_by_meaning_and_never_returns_one_the_viewer_cannot_
     embeddings::unload_server_embedder();
 }
 
+/// An index that "knows" every vector: for each kind it answers with a fixed list of ids, *whatever* the viewer
+/// may see -- standing in for the vector search service, which knows nothing about visibility. The RPCs must
+/// therefore filter its answers themselves.
+struct EverythingIndex(std::collections::HashMap<&'static str, Vec<i64>>);
+
+impl embeddings::SemanticIndex for EverythingIndex {
+    fn supports_global(&self) -> bool {
+        true
+    }
+    fn search(&self, _conn: &mut PgPooledConnection, query: &embeddings::IndexQuery) -> Option<Vec<(i64, f32)>> {
+        assert!(query.scope.is_none(), "global mode asks for 'anywhere', not a candidate scope");
+        Some(self.0.get(query.kind.name())?.iter().map(|id| (*id, 0.95)).collect())
+    }
+}
+
+/// Global-mode search installs process-wide state (the query embedder and the index); this takes the lock, installs
+/// both, runs `body`, and puts everything back.
+fn with_everything_index(kinds: Vec<(&'static str, Vec<i64>)>, body: impl FnOnce()) {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    embeddings::install_server_embedder(Box::new(FakeEmbedder));
+    embeddings::install_semantic_index(Box::new(EverythingIndex(kinds.into_iter().collect())));
+    body();
+    embeddings::reset_semantic_index();
+    embeddings::unload_server_embedder();
+}
+
+#[test]
+fn global_mode_posts_finds_semantic_only_matches_and_never_shows_what_the_viewer_cannot_see() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "global_posts_author");
+        let viewer = create_user(conn, "global_posts_viewer");
+        let dog = title_post(conn, &author, "Adopting a puppy");
+        let private_dog = create_post(
+            conn,
+            Some(&author),
+            PostOpts { title: Some("Private puppy diary".to_string()), visibility: Visibility::Private, ..Default::default() },
+        );
+        let id_of = |p: &crate::models::Post| crate::marshaling::ToProtoId::to_proto_id(&p.id).to_string();
+        // The index returns both (it can't tell them apart); neither shares a word with the search.
+        with_everything_index(vec![("post", vec![private_dog.id, dog.id])], || {
+            let search = |conn: &mut PgPooledConnection, who: &crate::models::User| -> Vec<String> {
+                crate::rpcs::get_posts(
+                    GetPostsRequest {
+                        listing_type: PostListingType::TextSearch as i32,
+                        search_text: Some("zzzunmatchable".to_string()),
+                        ..Default::default()
+                    },
+                    &Some(who),
+                    conn,
+                )
+                .unwrap()
+                .posts
+                .iter()
+                .map(|p| p.id.clone())
+                .collect()
+            };
+            assert_eq!(search(conn, &viewer), vec![id_of(&dog)], "found by meaning; the private one filtered out");
+            let as_author = search(conn, &author);
+            assert!(as_author.contains(&id_of(&dog)) && as_author.contains(&id_of(&private_dog)), "{:?}", as_author);
+        });
+        Ok(())
+    });
+}
+
+#[test]
+fn global_mode_users_returns_only_profiles_the_viewer_may_see() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let viewer = create_user(conn, "global_users_viewer");
+        let open = create_user_with_profile(conn, "open_profile", "Olive Open", "trains puppies");
+        let hidden = create_user_with(conn, "hidden_profile", Visibility::Private, Moderation::Unmoderated);
+        with_everything_index(vec![("user_profile", vec![hidden.id, open.id])], || {
+            let response = crate::rpcs::get_users(
+                GetUsersRequest {
+                    listing_type: UserListingType::UsersTextSearch as i32,
+                    search_text: Some("zzzunmatchable".to_string()),
+                    ..Default::default()
+                },
+                &Some(&viewer),
+                conn,
+            )
+            .unwrap();
+            let names: Vec<String> = response.users.iter().map(|u| u.username.clone()).collect();
+            assert_eq!(names, vec!["open_profile".to_string()]);
+        });
+        Ok(())
+    });
+}
+
+#[test]
+fn global_mode_events_returns_only_occasions_of_events_the_viewer_may_see() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let organizer = create_user(conn, "global_events_organizer");
+        let viewer = create_user(conn, "global_events_viewer");
+        let make = |conn: &mut PgPooledConnection, title: &str, visibility: Visibility| {
+            let (event, _post) = create_event(
+                conn,
+                &organizer,
+                EventOpts { title: Some(title.to_string()), visibility, default_occasion: None, ..Default::default() },
+            );
+            let (_occasion, occasion_post) =
+                create_occasion(conn, &event, Some(&organizer), OccasionOpts { visibility, ..Default::default() });
+            (event, occasion_post)
+        };
+        let (open_event, open_occasion_post) = make(conn, "Puppy meetup", Visibility::ServerPublic);
+        let (private_event, _) = make(conn, "Private dog club", Visibility::Private);
+        with_everything_index(vec![("event", vec![private_event.post_id, open_event.post_id])], || {
+            let response = crate::rpcs::get_events(
+                GetEventsRequest {
+                    listing_type: EventListingType::EventTextSearch as i32,
+                    search_text: Some("zzzunmatchable".to_string()),
+                    ..Default::default()
+                },
+                &Some(&viewer),
+                conn,
+            )
+            .unwrap();
+            let found: Vec<String> = response
+                .events
+                .iter()
+                .flat_map(|e| e.occasions.iter().map(|o| o.post.as_ref().map(|p| p.id.clone()).unwrap_or_default()))
+                .collect();
+            let open_id = crate::marshaling::ToProtoId::to_proto_id(&open_occasion_post.id).to_string();
+            assert_eq!(found, vec![open_id], "only the visible event's occasion: {:?}", found);
+        });
+        Ok(())
+    });
+}
+
+#[test]
+fn global_mode_media_returns_only_media_the_viewer_may_see() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let owner = create_user(conn, "global_media_owner");
+        let viewer = create_user(conn, "global_media_viewer");
+        let open = create_media_with_opts(conn, Some(&owner), MediaOpts { name: Some("Puppy video"), ..Default::default() });
+        let private = create_media_with_opts(
+            conn,
+            Some(&owner),
+            MediaOpts { name: Some("Private diary"), visibility: Visibility::Private, ..Default::default() },
+        );
+        with_everything_index(vec![("media", vec![private.id, open.id])], || {
+            let response = crate::rpcs::get_media(
+                GetMediaRequest { search_text: Some("zzzunmatchable".to_string()), ..Default::default() },
+                &Some(&viewer),
+                conn,
+            )
+            .unwrap();
+            let found: Vec<String> = response.media.iter().map(|m| m.id.clone()).collect();
+            let open_id = crate::marshaling::ToProtoId::to_proto_id(&open.id).to_string();
+            assert_eq!(found, vec![open_id], "{:?}", found);
+        });
+        Ok(())
+    });
+}
+
 /// Starts the real model service (gRPC, auth and all) in-process on a free port, backed by the fake model, and
 /// returns its URL. Runs on its own thread/runtime for the life of the test process.
 fn start_model_service(secret: Option<&str>) -> String {
@@ -930,5 +1088,134 @@ mod with_model {
                 spec.min_similarity,
             );
         }
+    }
+}
+
+/// Tests of the real per-namespace vector service (USearch index + gRPC). They need the C++ USearch build, so they
+/// only exist with `--features vector-service`: `cargo test --lib --features vector-service vector_service_tests`.
+#[cfg(feature = "vector-service")]
+mod vector_service_tests {
+    use super::*;
+    use crate::logic::embeddings::vector_service::{serve, VectorIndexes};
+
+    fn spec() -> &'static embeddings::ModelSpec {
+        embeddings::default_model()
+    }
+
+    fn start_vector_service(indexes: std::sync::Arc<VectorIndexes>, secret: Option<&str>) -> String {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let secret = secret.map(str::to_string);
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(serve(format!("127.0.0.1:{}", port).parse().unwrap(), indexes, secret))
+                .unwrap();
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return format!("http://127.0.0.1:{}", port);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        panic!("the vector service didn't start");
+    }
+
+    #[test]
+    fn the_index_is_built_from_embeddings_searched_and_kept_current() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+            let author = create_user(conn, "vector_index_author");
+            let dog = title_post(conn, &author, "Adopting a puppy");
+            let bread = title_post(conn, &author, "Sourdough loaf troubleshooting");
+            let mut ctx = SyncContext::unrestricted();
+            ctx.embedder = Some(Box::new(FakeEmbedder));
+            embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+
+            let indexes = VectorIndexes::new(spec());
+            let query = FakeEmbedder::vector("canine puppy dog");
+            assert_eq!(indexes.search(EmbeddingKind::Post, spec().id, &query, 10, 0.5), None, "not ready before the first build");
+
+            indexes.sync_all(conn);
+            let found = indexes.search(EmbeddingKind::Post, spec().id, &query, 10, 0.5).expect("ready after a build");
+            assert_eq!(found.first().map(|m| m.0), Some(dog.id), "{:?}", found);
+            assert!(!found.iter().any(|m| m.0 == bread.id), "the unrelated post is under the threshold: {:?}", found);
+            assert!(found[0].1 > 0.9, "int8 quantization keeps the similarity close to exact: {:?}", found);
+            // A query from another model's vectors (or the wrong size) is refused rather than compared.
+            assert_eq!(indexes.search(EmbeddingKind::Post, "some-other-model", &query, 10, 0.5), None);
+            assert_eq!(indexes.search(EmbeddingKind::Post, spec().id, &query[..10], 10, 0.5), None);
+
+            // New and edited posts are picked up incrementally.
+            let puppy2 = title_post(conn, &author, "Canine puppy training");
+            update(posts::table.filter(posts::id.eq(bread.id))).set(posts::title.eq("Dog bread: a puppy treat recipe")).execute(conn)?;
+            embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+            indexes.sync_all(conn);
+            let found = indexes.search(EmbeddingKind::Post, spec().id, &query, 10, 0.5).unwrap();
+            let ids: Vec<i64> = found.iter().map(|m| m.0).collect();
+            assert!(ids.contains(&puppy2.id), "a new post appears: {:?}", ids);
+            assert!(ids.contains(&bread.id), "an edited post moves to its new meaning: {:?}", ids);
+            assert_eq!(ids.iter().filter(|id| **id == bread.id).count(), 1, "re-embedding replaces, never duplicates");
+
+            let status = indexes.status();
+            let post_status = status.kinds.iter().find(|k| k.kind == "post").unwrap();
+            assert!(post_status.ready && post_status.vectors >= 3 && post_status.memory_bytes > 0, "{:?}", post_status);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn the_vector_service_answers_a_remote_index_over_grpc_and_refuses_bad_secrets() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+            let author = create_user(conn, "vector_grpc_author");
+            let dog = title_post(conn, &author, "Adopting a puppy");
+            let mut ctx = SyncContext::unrestricted();
+            ctx.embedder = Some(Box::new(FakeEmbedder));
+            embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+            let indexes = VectorIndexes::new(spec());
+            indexes.sync_all(conn);
+            let url = start_vector_service(indexes, Some("vector-secret"));
+
+            let vector = FakeEmbedder::vector("canine puppy dog");
+            let ask = |conn: &mut PgPooledConnection, remote: &embeddings::RemoteIndex, scope: Option<&[i64]>| {
+                embeddings::SemanticIndex::search(
+                    remote,
+                    conn,
+                    &embeddings::IndexQuery { kind: EmbeddingKind::Post, spec: spec(), vector: &vector, scope, limit: 10 },
+                )
+            };
+            let good = embeddings::RemoteIndex::new(&url, Some("vector-secret".to_string()))?;
+            assert!(embeddings::SemanticIndex::supports_global(&good));
+            let found = ask(conn, &good, None).expect("answers 'anywhere'");
+            assert_eq!(found.first().map(|m| m.0), Some(dog.id));
+            // A scoped query keeps only the caller's ids.
+            assert_eq!(ask(conn, &good, Some(&[dog.id + 999_999])).unwrap(), vec![]);
+
+            // Wrong secret: the service refuses, so the client reports "can't answer" (full-text fallback).
+            let wrong = embeddings::RemoteIndex::new(&url, Some("nope".to_string()))?;
+            assert_eq!(ask(conn, &wrong, None), None);
+            let unreachable = embeddings::RemoteIndex::new("http://127.0.0.1:9", None)?;
+            assert_eq!(ask(conn, &unreachable, None), None, "an unreachable service means full-text only, not an error");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_kind_still_being_built_says_not_ready_and_the_client_falls_back() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+            let indexes = VectorIndexes::new(spec()); // never synced: nothing built yet
+            let url = start_vector_service(indexes, None);
+            let remote = embeddings::RemoteIndex::new(&url, None)?;
+            let vector = FakeEmbedder::vector("dog");
+            let answer = embeddings::SemanticIndex::search(
+                &remote,
+                conn,
+                &embeddings::IndexQuery { kind: EmbeddingKind::Post, spec: spec(), vector: &vector, scope: None, limit: 10 },
+            );
+            assert_eq!(answer, None);
+            Ok(())
+        });
     }
 }

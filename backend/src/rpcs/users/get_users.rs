@@ -154,17 +154,33 @@ fn semantic_user_page_ids(
         .limit(embeddings::SEMANTIC_SCAN_LIMIT)
         .load(conn)
         .ok()?;
-    let mut scope: Vec<i64> = users::table
-        .filter(visible())
-        .order(users::created_at.desc())
-        .select(users::id)
-        .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-        .load(conn)
-        .ok()?;
-    scope.extend(ranked.iter().copied());
-    scope.sort_unstable();
-    scope.dedup();
-    let semantic = embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::UserProfile, search_text, &scope)?;
+    let semantic = if embeddings::semantic_global_available() {
+        // The index holds every profile: take the nearest anywhere, then keep the visible ones.
+        let mut nearest = embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::UserProfile, search_text)?;
+        let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+        let visible_ids: std::collections::HashSet<i64> = users::table
+            .filter(visible())
+            .filter(users::id.eq_any(&nearest_ids))
+            .select(users::id)
+            .load::<i64>(conn)
+            .ok()?
+            .into_iter()
+            .collect();
+        nearest.retain(|(id, _)| visible_ids.contains(id));
+        nearest
+    } else {
+        let mut scope: Vec<i64> = users::table
+            .filter(visible())
+            .order(users::created_at.desc())
+            .select(users::id)
+            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+            .load(conn)
+            .ok()?;
+        scope.extend(ranked.iter().copied());
+        scope.sort_unstable();
+        scope.dedup();
+        embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::UserProfile, search_text, &scope)?
+    };
     ranked = embeddings::fuse_rankings(&ranked, &semantic);
     Some(
         ranked

@@ -127,8 +127,19 @@ feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
 atom_syndication = { version = "0.12.10", default-features = false, features = ["builders"] }
 
+# In-memory approximate nearest-neighbor index (USearch, C++ via cxx) for the per-namespace
+# `vector_search_service`. Off by default: nothing else needs it, and it adds a C++ build.
+usearch = { version = "2.26", optional = true }
+
 [features]
 static_pq = ["dep:pq-sys"]
+# Builds `vector_search_service` and its tests.
+vector-service = ["dep:usearch"]
+
+[[bin]]
+name = "vector_search_service"
+path = "src/bin/vector_search_service.rs"
+required-features = ["vector-service"]
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"

@@ -21,15 +21,52 @@ pub struct IndexQuery<'a> {
 /// `PostgresScanIndex` reads the vectors from Postgres per query; an in-memory or out-of-process
 /// vector index implements the same trait.
 pub trait SemanticIndex: Send + Sync {
+    /// Whether this index holds every vector and so can answer a query with no `scope` ("anywhere"). Callers
+    /// that get `true` skip gathering a candidate scope and instead apply visibility to the ids returned.
+    fn supports_global(&self) -> bool {
+        false
+    }
+
     /// `(id, cosine similarity)` best first, only at least `spec.min_similarity` similar, at most
     /// `limit`. `None` when this index can't answer the query right now (not built yet, unreachable,
     /// or it needs a `scope` and got none) -- callers then keep their full-text results.
     fn search(&self, conn: &mut PgPooledConnection, query: &IndexQuery) -> Option<Vec<(i64, f32)>>;
 }
 
-/// The index everything searches through: the Postgres scan unless another one is configured.
-pub fn semantic_index() -> &'static dyn SemanticIndex {
-    &PostgresScanIndex
+static CONFIGURED_INDEX: std::sync::RwLock<Option<std::sync::Arc<dyn SemanticIndex>>> = std::sync::RwLock::new(None);
+
+/// The index everything searches through: the namespace's vector search service when `RELLM_VECTOR_SERVICE_URL`
+/// is set, otherwise the Postgres scan. Created on first use.
+pub fn semantic_index() -> std::sync::Arc<dyn SemanticIndex> {
+    if let Some(index) = CONFIGURED_INDEX.read().unwrap().as_ref() {
+        return index.clone();
+    }
+    let mut slot = CONFIGURED_INDEX.write().unwrap();
+    if let Some(index) = slot.as_ref() {
+        return index.clone();
+    }
+    let index: std::sync::Arc<dyn SemanticIndex> = match super::vector_client::vector_service_config() {
+        Some((url, secret)) => match super::vector_client::RemoteIndex::new(&url, secret) {
+            Ok(remote) => std::sync::Arc::new(remote),
+            Err(e) => {
+                log::error!("Couldn't set up the vector search client; scanning Postgres instead: {:?}", e);
+                std::sync::Arc::new(PostgresScanIndex)
+            }
+        },
+        None => std::sync::Arc::new(PostgresScanIndex),
+    };
+    *slot = Some(index.clone());
+    index
+}
+
+/// Replaces the index everything searches through (a test double, or one built at startup).
+pub fn install_semantic_index(index: Box<dyn SemanticIndex>) {
+    *CONFIGURED_INDEX.write().unwrap() = Some(std::sync::Arc::from(index));
+}
+
+/// Forgets the installed index, so the next `semantic_index()` picks one from the environment again.
+pub fn reset_semantic_index() {
+    *CONFIGURED_INDEX.write().unwrap() = None;
 }
 
 #[derive(QueryableByName)]
