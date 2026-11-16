@@ -1544,3 +1544,33 @@ mod vector_service_tests {
         });
     }
 }
+
+#[cfg(feature = "vector-service")]
+#[test]
+fn indexes_that_cannot_stay_current_stop_answering_until_they_are_rebuilt() {
+    use crate::logic::embeddings::vector_service::VectorIndexes;
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let spec = embeddings::default_model();
+        let author = create_user(conn, "stale_index_author");
+        let dog = title_post(conn, &author, "Adopting a puppy");
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+
+        let indexes = VectorIndexes::new(spec);
+        assert_eq!(indexes.sync_all(conn), 0);
+        let query = FakeEmbedder::vector("canine puppy dog");
+        assert!(indexes.search(EmbeddingKind::Post, spec.id, &query, 10, 0.5).is_some());
+
+        indexes.mark_unavailable();
+        assert_eq!(indexes.search(EmbeddingKind::Post, spec.id, &query, 10, 0.5), None, "servers fall back to the scan");
+
+        // The next successful sync rebuilds and answers again.
+        assert_eq!(indexes.sync_all(conn), 0);
+        let found = indexes.search(EmbeddingKind::Post, spec.id, &query, 10, 0.5).expect("rebuilt");
+        assert_eq!(found.first().map(|m| m.0), Some(dog.id));
+        Ok(())
+    });
+}

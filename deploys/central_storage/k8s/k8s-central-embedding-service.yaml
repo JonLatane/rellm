@@ -99,14 +99,19 @@ spec:
               cpu: 500m
             limits:
               memory: 900Mi
+          # The port opens only after the model has downloaded (first start) and loaded, so liveness checks must wait
+          # for that: up to 10 minutes here (120 x 5s), after which the container is restarted.
+          startupProbe:
+            tcpSocket:
+              port: 8090
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             tcpSocket:
               port: 8090
-            initialDelaySeconds: 10
             periodSeconds: 5
-            failureThreshold: 120
+            failureThreshold: 3
           livenessProbe:
             tcpSocket:
               port: 8090
-            initialDelaySeconds: 60
             periodSeconds: 20

@@ -57,7 +57,7 @@ manifests. Roll a new image with `kubectl set image` or by editing the tag in th
 ```bash
 make run_embedding_service     # the model service on :8090 (downloads the model on first run)
 make run_vector_service        # optional: the vector service on :8091
-make run_tmux_with_embeddings  # backend + Elm + both services side by side (see the root Makefile)
+make run_tmux_with_semantic_search  # backend + jobs + Elm + both services side by side (see the root Makefile)
 ```
 
 with `RELLM_EMBEDDING_SERVICE_URL=http://localhost:8090` (and `RELLM_EMBEDDING_SERVICE_SECRET`) in `backend/.env`

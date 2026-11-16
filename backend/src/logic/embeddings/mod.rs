@@ -667,6 +667,18 @@ pub fn sync_embeddings(
     Ok(stats)
 }
 
+/// `text` cut to at most `max_bytes`, at a character boundary.
+fn truncate_to_bytes(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut end = max_bytes;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 /// Embeds `rows` (a blank document gets a row with a NULL embedding -- "nothing to embed", so it
 /// isn't picked up as missing again) and upserts them.
 fn store_embeddings(
@@ -691,7 +703,9 @@ fn store_embeddings(
             }
             ctx.embedder = Some(embedder);
         }
-        let texts: Vec<String> = to_embed.iter().map(|r| r.document.clone()).collect();
+        // The service refuses texts over `MAX_TEXT_BYTES` (failing the whole batch), and a post can be far longer;
+        // documents list their most important text first, so embedding the start is what the model would see anyway.
+        let texts: Vec<String> = to_embed.iter().map(|r| truncate_to_bytes(&r.document, model_service::MAX_TEXT_BYTES).to_string()).collect();
         let embedded = ctx.embedder.as_mut().unwrap().embed_documents(&texts)?;
         vectors = to_embed.iter().map(|r| r.id).zip(embedded).collect();
     }
@@ -744,5 +758,22 @@ mod unit_tests {
         assert_eq!(fuse_rankings(&[5, 4, 3], &[]), vec![5, 4, 3]);
         // Without full-text matches, semantic order stands alone.
         assert_eq!(fuse_rankings(&[], &[(9, 0.7), (8, 0.6)]), vec![9, 8]);
+    }
+}
+
+#[cfg(test)]
+mod truncation_tests {
+    use super::truncate_to_bytes;
+
+    #[test]
+    fn long_text_is_cut_at_a_character_boundary_and_short_text_is_untouched() {
+        assert_eq!(truncate_to_bytes("short", 10), "short");
+        assert_eq!(truncate_to_bytes("abcdef", 3), "abc");
+        // "é" is two bytes: cutting at 3 would split the second one, so it backs up to 2.
+        assert_eq!(truncate_to_bytes("aéé", 3), "aé");
+        let long = "é".repeat(50_000);
+        let cut = truncate_to_bytes(&long, 32 * 1024);
+        assert!(cut.len() <= 32 * 1024 && cut.len() > 32 * 1024 - 2);
+        assert!(std::str::from_utf8(cut.as_bytes()).is_ok());
     }
 }

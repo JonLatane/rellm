@@ -211,11 +211,23 @@ impl VectorIndexes {
     }
 
     /// One `sync_kind` for every kind; errors are logged and the other kinds still run.
-    pub fn sync_all(&self, conn: &mut PgPooledConnection) {
+    /// Returns how many kinds failed to sync.
+    pub fn sync_all(&self, conn: &mut PgPooledConnection) -> usize {
+        let mut failed = 0;
         for (kind, _) in &self.kinds {
             if let Err(e) = self.sync_kind(conn, *kind) {
+                failed += 1;
                 log::error!("Couldn't sync the {} index: {:?}", kind.name(), e);
             }
+        }
+        failed
+    }
+
+    /// Stops answering searches (servers fall back to the Postgres scan) because the indexes can no longer be kept
+    /// current. The next successful sync of a kind rebuilds it from Postgres and it answers again.
+    pub fn mark_unavailable(&self) {
+        for (_, lock) in &self.kinds {
+            lock.write().unwrap().ready = false;
         }
     }
 
@@ -267,17 +279,37 @@ impl VectorIndexes {
 /// With `follow_cluster_model` it also asks the cluster's model service which model it runs each cycle and switches the
 /// index to it when that changes (see `VectorIndexes::switch_model`); a service that can't be reached just means "keep
 /// the model we have".
-pub fn run_indexer(indexes: Arc<VectorIndexes>, mut conn: PgPooledConnection, follow_cluster_model: bool) {
+pub fn run_indexer(indexes: Arc<VectorIndexes>, pool: crate::db_connection::PgPool, follow_cluster_model: bool) {
+    let mut failed_cycles = 0;
     loop {
         if follow_cluster_model {
             if let Some(model) = super::refresh_cluster_model_blocking() {
                 indexes.switch_model(model);
             }
         }
-        indexes.sync_all(&mut conn);
+        // A connection per cycle: after a Postgres restart or dropped connection the next cycle simply gets a fresh one.
+        let failed = match pool.get() {
+            Ok(mut conn) => indexes.sync_all(&mut conn),
+            Err(e) => {
+                log::error!("Couldn't get a database connection to sync the indexes: {:?}", e);
+                usize::MAX
+            }
+        };
+        if failed == 0 {
+            failed_cycles = 0;
+        } else {
+            failed_cycles += 1;
+            if failed_cycles == MAX_FAILED_CYCLES {
+                log::error!("The indexes couldn't be synced for {} cycles; answering 'not ready' until they can be rebuilt.", failed_cycles);
+                indexes.mark_unavailable();
+            }
+        }
         std::thread::sleep(POLL_EVERY);
     }
 }
+
+/// Consecutive failing sync cycles after which the indexes stop answering (they would be getting staler).
+const MAX_FAILED_CYCLES: u32 = 3;
 
 pub struct VectorSearchServiceImpl {
     indexes: Arc<VectorIndexes>,

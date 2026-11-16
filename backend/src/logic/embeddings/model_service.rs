@@ -303,6 +303,10 @@ pub fn invalidate_cluster_model() {
 
 pub struct EmbeddingServiceImpl {
     embedder: Arc<Mutex<BoxedEmbedder>>,
+    /// The last model read from the embedder. Reading it must never wait for the embedder's mutex (held for the whole of
+    /// an inference, which would tie up async workers), so while an inference runs this answers from the cache; a real
+    /// service never changes model, so the cache is never stale.
+    spec: Mutex<&'static ModelSpec>,
     secret: Option<String>,
     waiting: Arc<tokio::sync::Semaphore>,
 }
@@ -311,6 +315,7 @@ impl EmbeddingServiceImpl {
     /// `secret: None` disables authentication (only for a service reachable by nothing but trusted callers).
     pub fn new(embedder: BoxedEmbedder, secret: Option<String>) -> Self {
         EmbeddingServiceImpl {
+            spec: Mutex::new(embedder.spec()),
             embedder: Arc::new(Mutex::new(embedder)),
             secret,
             waiting: Arc::new(tokio::sync::Semaphore::new(MAX_WAITING)),
@@ -328,7 +333,14 @@ impl EmbeddingServiceImpl {
     }
 
     fn spec(&self) -> &'static ModelSpec {
-        self.embedder.lock().unwrap().spec()
+        match self.embedder.try_lock() {
+            Ok(embedder) => {
+                let live = embedder.spec();
+                *self.spec.lock().unwrap() = live;
+                live
+            }
+            Err(_) => *self.spec.lock().unwrap(),
+        }
     }
 }
 

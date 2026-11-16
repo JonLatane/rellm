@@ -49,14 +49,14 @@ async fn main() {
 
     let follow_cluster_model = !pinned && embedding_service_configured();
     let pool = db_connection::establish_job_pool();
-    let conn = pool.get().expect("Failed to get DB connection");
+    pool.get().expect("Failed to get DB connection");
     let indexes = VectorIndexes::new(spec);
     log::info!("Indexing {} vectors (building in the background; searches say 'not ready' until each kind is built).", spec.id);
     {
         let indexes = indexes.clone();
         std::thread::Builder::new()
             .name("vector-indexer".to_string())
-            .spawn(move || run_indexer(indexes, conn, follow_cluster_model))
+            .spawn(move || run_indexer(indexes, pool, follow_cluster_model))
             .expect("failed to start the indexer thread");
     }
     serve(addr, indexes, secret).await.expect("vector search service failed");
