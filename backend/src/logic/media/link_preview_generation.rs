@@ -413,7 +413,7 @@ fn capture_page(
         // Pages with long-polling/ad requests may never fire a clean load event; a partially
         // loaded page is still worth a screenshot, so don't fail the whole preview over it.
         if let Err(e) = tab.wait_until_navigated() {
-            log::warn!("Navigation to {} didn't finish cleanly ({}); capturing anyway.", url, crate::logic::log_redaction::safe_error(&e));
+            log::warn!("Navigation to {} didn't finish cleanly ({}); capturing anyway.", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
         }
         // Allow time for client-side page rendering and extensions to work.
         thread::sleep(RENDER_WAIT);
@@ -421,7 +421,7 @@ fn capture_page(
         // Banners often render late, so try now and again after a pause.
         for attempt in 0..2 {
             let outcome = eval_string(&tab, DISMISS_COOKIE_BANNER_JS);
-            log::info!("Cookie banner dismissal for {} (attempt {}): {:?}", url, attempt + 1, outcome);
+            log::info!("Cookie banner dismissal for {} (attempt {}): {:?}", crate::logic::log_redaction::redact_url(&url), attempt + 1, outcome);
             thread::sleep(Duration::from_secs(if attempt == 0 { 2 } else { 1 }));
         }
         let _ = tab.evaluate(HIDE_REMAINING_BANNERS_JS, false);
@@ -747,9 +747,9 @@ async fn find_metadata_image(
                 return Ok(Some((bytes, content_type, extension)));
             }
             Ok((bytes, ..)) => {
-                log::info!("Metadata image {} is only {} bytes; skipping.", image_url, bytes.len())
+                log::info!("Metadata image {} is only {} bytes; skipping.", crate::logic::log_redaction::redact_url(&image_url), bytes.len())
             }
-            Err(e) => log::info!("Metadata image {} unusable: {}", image_url, crate::logic::log_redaction::safe_error(&e)),
+            Err(e) => log::info!("Metadata image {} unusable: {}", crate::logic::log_redaction::redact_url(&image_url), crate::logic::log_redaction::safe_error(&e)),
         }
     }
     Ok(None)
@@ -979,7 +979,7 @@ pub async fn generate_previews_for_post(
         .ok_or_else(|| anyhow::anyhow!("Post {} has no valid link: {:?}", post.id, post.link))?;
     let user = get_user(user_id, conn).map_err(|e| anyhow::anyhow!("Failed to load user: {:?}", e))?;
 
-    log::info!("Generating preview image for post {} ({})", post.id, url);
+    log::info!("Generating preview image for post {} ({})", post.id, crate::logic::log_redaction::redact_url(&url));
 
     // (label, extension, content type, bytes)
     let mut preview: Option<(&str, &str, &str, Vec<u8>)> = None;
@@ -988,11 +988,11 @@ pub async fn generate_previews_for_post(
     if prefer_metadata {
         match find_metadata_image(&url).await {
             Ok(Some((bytes, content_type, extension))) => {
-                log::info!("Using metadata image for {} ({} bytes)", url, bytes.len());
+                log::info!("Using metadata image for {} ({} bytes)", crate::logic::log_redaction::redact_url(&url), bytes.len());
                 preview = Some(("main_image", extension, content_type, bytes));
             }
-            Ok(None) => log::info!("No usable metadata image for {}; using the browser.", url),
-            Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", url, crate::logic::log_redaction::safe_error(&e)),
+            Ok(None) => log::info!("No usable metadata image for {}; using the browser.", crate::logic::log_redaction::redact_url(&url)),
+            Err(e) => log::info!("Couldn't fetch {} for metadata ({}); using the browser.", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e)),
         }
     }
 
@@ -1000,7 +1000,7 @@ pub async fn generate_previews_for_post(
     if preview.is_none() {
         let browser = browser.get().await?;
         let capture = capture_page_with_timeout(url.clone(), Arc::clone(&browser), false).await?;
-        log::info!("Captured {} (main image: {:?})", url, capture.main_image_url);
+        log::info!("Captured {} (main image: {:?})", crate::logic::log_redaction::redact_url(&url), capture.main_image_url.as_deref().map(crate::logic::log_redaction::redact_url));
 
         if let Some(image_url) = &capture.main_image_url {
             match download_main_image(image_url, &url).await {
@@ -1009,7 +1009,7 @@ pub async fn generate_previews_for_post(
                 }
                 Err(e) => log::warn!(
                     "Failed to fetch main image {} for post {}: {}; falling back to a screenshot.",
-                    image_url,
+                    crate::logic::log_redaction::redact_url(image_url),
                     post.id,
                     crate::logic::log_redaction::safe_error(&e)
                 ),
