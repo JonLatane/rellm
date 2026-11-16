@@ -96,7 +96,6 @@ type Msg
     | FeatureSettingsGenerateLinkPreviewImagesToggled FeatureSettingsSet
     | FeatureSettingsPreferMetadataForLinkPreviewImagesToggled FeatureSettingsSet
     | SemanticSearchToggled
-    | EmbeddingModelChanged String
     | GotSemanticSearchSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | DeleteLinkPreviewImagesClicked
     | DeleteUnownedMediaClicked
@@ -498,9 +497,6 @@ update shared targetHost maybeServer msg model =
                 maybeServer
                 (\settings -> { settings | semanticSearchEnabled = not settings.semanticSearchEnabled })
                 model
-
-        EmbeddingModelChanged modelId ->
-            saveSearchSettings shared targetHost maybeServer (\settings -> { settings | embeddingModel = modelId }) model
 
         GotSemanticSearchSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
             ( { model | searchSettingsStatus = AccountsPanel.Idle }
@@ -1231,7 +1227,8 @@ saveSearchSettings shared targetHost maybeServer change model =
 
 
 {-| "N MB download, ~N MB RAM, English only/multilingual" -- the numbers an admin on small hardware
-needs to pick a model (the RAM is per process: the server and the embedding job each load one).
+needs to know about the model the cluster's embedding service runs (the RAM is that service's, once per
+cluster).
 -}
 embeddingModelFacts : EmbeddingModel -> String
 embeddingModelFacts m =
@@ -1247,8 +1244,9 @@ embeddingModelFacts m =
            )
 
 
-{-| The "Search" section: the "Semantic Search" switch and the "Embedding Model" picker. An admin's
-changes save right away (see `saveSearchSettings`); everyone else sees them read-only.
+{-| The "Search" section: the "Semantic Search" switch and the (read-only) "Embedding Model" -- always the
+one the cluster's embedding service runs. An admin's switch saves right away (see `saveSearchSettings`);
+everyone else sees it read-only.
 -}
 searchSection : Maybe RellmAccount -> AccountsPanel.FormStatus -> SearchSettings -> Html Msg
 searchSection maybeAdminAccount status settings =
@@ -1256,12 +1254,6 @@ searchSection maybeAdminAccount status settings =
         selectedModel : Maybe EmbeddingModel
         selectedModel =
             settings.availableModels |> List.filter (\m -> m.id == settings.embeddingModel) |> List.head
-
-        modelOption : EmbeddingModel -> Html Msg
-        modelOption m =
-            option
-                [ value m.id, selected (m.id == settings.embeddingModel) ]
-                [ text (m.name ++ " -- " ++ embeddingModelFacts m) ]
     in
     div [ Html.Attributes.class "server-details-permissions" ]
         [ h3 [ classes [ "section-title" ] ] [ text "Search" ]
@@ -1276,23 +1268,22 @@ searchSection maybeAdminAccount status settings =
                 ( Nothing, _ ) ->
                     Common.switchDisplay settings.semanticSearchEnabled
             )
-        , Common.settingsNote "Also finds posts, events, media and profiles by meaning (not just matching words) and reranks results with text embeddings, generated in the background by a small local model that's downloaded the first time. Turn off to use plain full-text search only."
+        , Common.settingsNote "Also finds posts, events, media and profiles by meaning (not just matching words) and reranks results with text embeddings, made in the background by the cluster's embedding service. Turn off to use plain full-text search only."
         , Common.settingsRow "Embedding Model"
-            (case ( maybeAdminAccount, selectedModel ) of
-                ( Just _, _ ) ->
-                    if settings.modelChosenByCluster then
-                        span [ Html.Attributes.class "server-details-feature-settings-value" ]
-                            [ text (selectedModel |> Maybe.map .name |> Maybe.withDefault settings.embeddingModel) ]
+            (span [ Html.Attributes.class "server-details-feature-settings-value" ]
+                [ text
+                    (case selectedModel of
+                        Just m ->
+                            m.name
 
-                    else
-                        select [ onInput EmbeddingModelChanged, disabled (status == AccountsPanel.Submitting) ]
-                            (List.map modelOption settings.availableModels)
+                        Nothing ->
+                            if String.isEmpty settings.embeddingModel then
+                                "\u{2014}"
 
-                ( Nothing, Just m ) ->
-                    span [ Html.Attributes.class "server-details-feature-settings-value" ] [ text m.name ]
-
-                ( Nothing, Nothing ) ->
-                    span [ Html.Attributes.class "server-details-feature-settings-value" ] [ text "\u{2014}" ]
+                            else
+                                settings.embeddingModel
+                    )
+                ]
             )
         , case selectedModel of
             Just m ->
@@ -1300,12 +1291,11 @@ searchSection maybeAdminAccount status settings =
 
             Nothing ->
                 text ""
-        , if settings.modelChosenByCluster then
-            Common.settingsNote "This server embeds through its cluster's shared model service, which runs one model for every server in the cluster, so the model can't be chosen here."
+        , if settings.embeddingServiceAvailable then
+            Common.settingsNote "The model is run by this cluster's embedding service, one model for every server in the cluster, so it can't be chosen here. Changing it means redeploying the service; every server then re-embeds in the background."
 
           else
-            text ""
-        , Common.settingsNote "Changing the model downloads it (once) and re-embeds all content in the background; until that finishes, search leans on full-text. Each model's RAM is used by the server and again by the embedding job while it runs -- check it against your hardware."
+            Common.settingsNote "No embedding service is configured for this server (RELLM_EMBEDDING_SERVICE_URL), so search is plain full-text until the rellm_embeddings service is deployed."
         , Common.editErrorView status
         ]
 

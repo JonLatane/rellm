@@ -7983,12 +7983,13 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
-    <p>When enabled: - the <code>generate_embeddings</code> background job downloads a small local embedding model (once; see <code>RELLM_EMBEDDING_CACHE_DIR</code>) and keeps embeddings up to date for Posts (<code>post_embeddings</code>), Events (<code>event_embeddings</code> -- the Event's Post plus its Occasions' times/places), Media (<code>media_embeddings</code>) and User profiles (<code>user_profile_embeddings</code>). Every embedding is made from the very same text Postgres full-text search indexes (title, content, names, ...). - <code>TEXT_SEARCH</code>-style listings in <code>GetPosts</code>, <code>GetEvents</code>, <code>GetMedia</code> and <code>GetUsers</code> also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.</p>
+    <p>When enabled (and the cluster's embedding service is deployed -- see <code>embedding_service_available</code>): - the <code>generate_embeddings</code> background job asks the cluster's embedding service to embed Posts (<code>post_embeddings</code>), Events (<code>event_embeddings</code> -- the Event's Post plus its Occasions' times/places), Media (<code>media_embeddings</code>) and User profiles (<code>user_profile_embeddings</code>). Every embedding is made from the very same text Postgres full-text search indexes. - <code>TEXT_SEARCH</code>-style listings in <code>GetPosts</code>, <code>GetEvents</code>, <code>GetMedia</code> and <code>GetUsers</code> also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.</p>
     <p>
-      When disabled, the job does nothing, the server never loads the model, and search is plain Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes where it left off). If the model can't be downloaded/loaded, search silently falls back to full-text only. |
-      | embedding_model | <a href="#string">string</a> | | The <code>EmbeddingModel.id</code> this server uses, chosen from <code>available_models</code>. Empty (or, on read, never empty -- the server fills in the effective one) means the default, <code>multilingual-e5-small</code>. <code>ConfigureServer</code> rejects an unknown id with <code>INVALID_ARGUMENT</code> (<code>unknown_embedding_model</code>). Changing it makes the server download the new model (once) and re-embed everything in the background; until a row has been redone it simply isn't a semantic candidate (full-text search still finds it), so search quality dips and then recovers. Different models trade size, speed, languages and quality -- see each model's description. |
-      | available_models | <a href="#rellm-EmbeddingModel">EmbeddingModel</a> | repeated | The models an admin can choose from. Read-only: always filled in by the server on <code>GetServerConfiguration</code> and ignored by <code>ConfigureServer</code>. |
-      | model_chosen_by_cluster | <a href="#bool">bool</a> | | True when this server embeds through a cluster-shared model service, which hosts ONE model for every namespace: <code>embedding_model</code> then reports that model and the admin's own choice is ignored (the picker is read-only). Read-only: derived from the server's deployment, ignored by <code>ConfigureServer</code>. |
+      Servers and jobs never load an embedding model themselves. When disabled, or when no embedding service is reachable, the job does nothing and search is plain Postgres full-text search. Existing embeddings are kept (re-enabling resumes where it left off). |
+      | embedding_model | <a href="#string">string</a> | | The <code>EmbeddingModel.id</code> the cluster's embedding service runs (empty if it can't be reached or is not deployed). Read-only: never a setting, ignored by <code>ConfigureServer</code>. Switching models means redeploying the service; every server then re-embeds in the background, and until a row has been redone it simply isn't a semantic candidate (full-text search still finds it). |
+      | available_models | <a href="#rellm-EmbeddingModel">EmbeddingModel</a> | repeated | The model in use, described (empty when none). Read-only; ignored by <code>ConfigureServer</code>. |
+      | model_chosen_by_cluster | <a href="#bool">bool</a> | | Always true now (kept for older clients): the model is chosen by the cluster's embedding service. |
+      | embedding_service_available | <a href="#bool">bool</a> | | Whether an embedding service is configured for this server (<code>RELLM_EMBEDDING_SERVICE_URL</code>). When false, semantic search can't work no matter what <code>semantic_search_enabled</code> says. Read-only. |
     </p>
     <p><a name="rellm-ServerColors"></a></p>
     <h3 id="servercolors"><a class="anchor" aria-hidden="true" tabindex="-1" href="#servercolors"><span class="octicon octicon-link"></span></a>ServerColors</h3>
@@ -8685,11 +8686,6 @@ directory</a> is (<code>{name}</code> denotes a
           <td>CLUSTER_RESOURCE_IMAGEMAGICK</td>
           <td>2</td>
           <td></td>
-        </tr>
-        <tr>
-          <td>CLUSTER_RESOURCE_EMBEDDINGS</td>
-          <td>3</td>
-          <td>Running the text-embedding model (ONNX Runtime) for semantic search -- the <code>generate_embeddings</code> job (see <code>SearchSettings</code>). Loading the model takes a few hundred MB of RAM and embedding keeps CPU cores busy, which small shared nodes can't afford for several instances at once. Each run holds this only while it's actually embedding text (never for a run with nothing to do), and is capped to a few minutes of work, so a backlog is worked down over many runs that take turns.</td>
         </tr>
       </tbody>
     </table>

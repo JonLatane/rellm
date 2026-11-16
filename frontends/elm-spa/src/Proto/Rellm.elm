@@ -7329,7 +7329,12 @@ type alias EmbeddingModel =
 
 -}
 fieldNumbersSearchSettings :
-    { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int, modelChosenByCluster : Int }
+    { semanticSearchEnabled : Int
+    , embeddingModel : Int
+    , availableModels : Int
+    , modelChosenByCluster : Int
+    , embeddingServiceAvailable : Int
+    }
 fieldNumbersSearchSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SearchSettings
 
@@ -7367,45 +7372,42 @@ encodeSearchSettings =
 
  Whether this server builds and uses text embeddings for search. Defaults to `true`.
 
- When enabled:
- - the `generate_embeddings` background job downloads a small local embedding model (once; see
-   `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`),
-   Events (`event_embeddings` -- the Event's Post plus its Occasions' times/places), Media
-   (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made
-   from the very same text Postgres full-text search indexes (title, content, names, ...).
+ When enabled (and the cluster's embedding service is deployed -- see `embedding_service_available`):
+ - the `generate_embeddings` background job asks the cluster's embedding service to embed Posts
+   (`post_embeddings`), Events (`event_embeddings` -- the Event's Post plus its Occasions'
+   times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every
+   embedding is made from the very same text Postgres full-text search indexes.
  - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
    consider semantically similar results (not just prefix matches) and rerank by fusing the
    full-text rank with embedding similarity.
 
- When disabled, the job does nothing, the server never loads the model, and search is plain
- Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
- where it left off). If the model can't be downloaded/loaded, search silently falls back to
- full-text only.
+ Servers and jobs never load an embedding model themselves. When disabled, or when no embedding
+ service is reachable, the job does nothing and search is plain Postgres full-text search. Existing
+ embeddings are kept (re-enabling resumes where it left off).
 
 
 ### embeddingModel
 
- The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
- never empty -- the server fills in the effective one) means the default,
- `multilingual-e5-small`. `ConfigureServer` rejects an unknown id with
- `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
- model (once) and re-embed everything in the background; until a row has been redone it simply
- isn't a semantic candidate (full-text search still finds it), so search quality dips and then
- recovers. Different models trade size, speed, languages and quality -- see each model's
- description.
+ The `EmbeddingModel.id` the cluster's embedding service runs (empty if it can't be reached or is
+ not deployed). Read-only: never a setting, ignored by `ConfigureServer`. Switching models means
+ redeploying the service; every server then re-embeds in the background, and until a row has been
+ redone it simply isn't a semantic candidate (full-text search still finds it).
 
 
 ### availableModels
 
- The models an admin can choose from. Read-only: always filled in by the server on
- `GetServerConfiguration` and ignored by `ConfigureServer`.
+ The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`.
 
 
 ### modelChosenByCluster
 
- True when this server embeds through a cluster-shared model service, which hosts ONE model for every
- namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
- read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
+ Always true now (kept for older clients): the model is chosen by the cluster's embedding service.
+
+
+### embeddingServiceAvailable
+
+ Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When
+ false, semantic search can't work no matter what `semantic_search_enabled` says. Read-only.
 
 
 -}

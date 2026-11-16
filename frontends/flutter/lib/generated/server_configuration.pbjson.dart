@@ -20,15 +20,17 @@ const ClusterResource$json = {
     {'1': 'CLUSTER_RESOURCE_BROWSER', '2': 0},
     {'1': 'CLUSTER_RESOURCE_FFMPEG', '2': 1},
     {'1': 'CLUSTER_RESOURCE_IMAGEMAGICK', '2': 2},
-    {'1': 'CLUSTER_RESOURCE_EMBEDDINGS', '2': 3},
+  ],
+  '4': [
+    {'1': 3, '2': 3},
   ],
 };
 
 /// Descriptor for `ClusterResource`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List clusterResourceDescriptor = $convert.base64Decode(
     'Cg9DbHVzdGVyUmVzb3VyY2USHAoYQ0xVU1RFUl9SRVNPVVJDRV9CUk9XU0VSEAASGwoXQ0xVU1'
-    'RFUl9SRVNPVVJDRV9GRk1QRUcQARIgChxDTFVTVEVSX1JFU09VUkNFX0lNQUdFTUFHSUNLEAIS'
-    'HwobQ0xVU1RFUl9SRVNPVVJDRV9FTUJFRERJTkdTEAM=');
+    'RFUl9SRVNPVVJDRV9GRk1QRUcQARIgChxDTFVTVEVSX1JFU09VUkNFX0lNQUdFTUFHSUNLEAIi'
+    'BAgDEAM=');
 
 @$core.Deprecated('Use authenticationFeatureDescriptor instead')
 const AuthenticationFeature$json = {
@@ -510,6 +512,7 @@ const SearchSettings$json = {
     {'1': 'embedding_model', '3': 2, '4': 1, '5': 9, '10': 'embeddingModel'},
     {'1': 'available_models', '3': 3, '4': 3, '5': 11, '6': '.rellm.EmbeddingModel', '10': 'availableModels'},
     {'1': 'model_chosen_by_cluster', '3': 4, '4': 1, '5': 8, '10': 'modelChosenByCluster'},
+    {'1': 'embedding_service_available', '3': 5, '4': 1, '5': 8, '10': 'embeddingServiceAvailable'},
   ],
 };
 
@@ -519,7 +522,8 @@ final $typed_data.Uint8List searchSettingsDescriptor = $convert.base64Decode(
     '50aWNTZWFyY2hFbmFibGVkEicKD2VtYmVkZGluZ19tb2RlbBgCIAEoCVIOZW1iZWRkaW5nTW9k'
     'ZWwSQAoQYXZhaWxhYmxlX21vZGVscxgDIAMoCzIVLnJlbGxtLkVtYmVkZGluZ01vZGVsUg9hdm'
     'FpbGFibGVNb2RlbHMSNQoXbW9kZWxfY2hvc2VuX2J5X2NsdXN0ZXIYBCABKAhSFG1vZGVsQ2hv'
-    'c2VuQnlDbHVzdGVy');
+    'c2VuQnlDbHVzdGVyEj4KG2VtYmVkZGluZ19zZXJ2aWNlX2F2YWlsYWJsZRgFIAEoCFIZZW1iZW'
+    'RkaW5nU2VydmljZUF2YWlsYWJsZQ==');
 
 @$core.Deprecated('Use embeddingModelDescriptor instead')
 const EmbeddingModel$json = {

@@ -63,8 +63,10 @@ impl ToDbServerConfiguration for ServerConfiguration {
             // `available_models` is derived (see `to_proto`), never stored.
             search_settings: self.search_settings.as_ref().map(|c| {
                 serde_json::to_value(SearchSettings {
+                    embedding_model: String::new(),
                     available_models: vec![],
                     model_chosen_by_cluster: false,
+                    embedding_service_available: false,
                     ..c.clone()
                 })
                 .unwrap()
@@ -283,16 +285,13 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // is missing (every server before this column existed), same read-time-fallback convention
         // as `market_settings`/`media_settings` above. Public, like `market_settings`.
         let search_settings: SearchSettings = models::search_settings_from_json(self.search_settings.as_ref());
-        // The effective model (the default when unset/unrecognized) and what can be chosen are facts
-        // about the running software, not stored: always the live values.
+        // The model is a fact about the cluster's embedding service, never stored or chosen here.
+        let cluster_model = crate::logic::embeddings::cluster_model();
         let search_settings = SearchSettings {
-            embedding_model: crate::logic::embeddings::cluster_model()
-                .or_else(|| crate::logic::embeddings::model_spec(&search_settings.embedding_model))
-                .unwrap_or_else(crate::logic::embeddings::default_model)
-                .id
-                .to_string(),
-            available_models: crate::logic::embeddings::available_models(),
-            model_chosen_by_cluster: crate::logic::embeddings::embedding_service_configured(),
+            embedding_model: cluster_model.map(|m| m.id.to_string()).unwrap_or_default(),
+            available_models: crate::logic::embeddings::available_models(cluster_model),
+            model_chosen_by_cluster: true,
+            embedding_service_available: crate::logic::embeddings::embedding_service_configured(),
             ..search_settings
         };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and

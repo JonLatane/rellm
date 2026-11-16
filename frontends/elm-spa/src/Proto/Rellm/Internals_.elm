@@ -9346,9 +9346,19 @@ type alias Proto__Rellm__EmbeddingModel =
 
 -}
 fieldNumbersProto__Rellm__SearchSettings :
-    { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int, modelChosenByCluster : Int }
+    { semanticSearchEnabled : Int
+    , embeddingModel : Int
+    , availableModels : Int
+    , modelChosenByCluster : Int
+    , embeddingServiceAvailable : Int
+    }
 fieldNumbersProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = 1, embeddingModel = 2, availableModels = 3, modelChosenByCluster = 4 }
+    { semanticSearchEnabled = 1
+    , embeddingModel = 2
+    , availableModels = 3
+    , modelChosenByCluster = 4
+    , embeddingServiceAvailable = 5
+    }
 
 
 {-| Default for Proto__Rellm__SearchSettings. Should only be used for 'required' decoders as an initial value.
@@ -9356,7 +9366,12 @@ fieldNumbersProto__Rellm__SearchSettings =
 -}
 defaultProto__Rellm__SearchSettings : Proto__Rellm__SearchSettings
 defaultProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = False, embeddingModel = "", availableModels = [], modelChosenByCluster = False }
+    { semanticSearchEnabled = False
+    , embeddingModel = ""
+    , availableModels = []
+    , modelChosenByCluster = False
+    , embeddingServiceAvailable = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__SearchSettings` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -9374,6 +9389,7 @@ decodeProto__Rellm__SearchSettings =
             .availableModels
             (\a r -> { r | availableModels = a })
         , Protobuf.Decode.optional 4 Protobuf.Decode.bool (\a r -> { r | modelChosenByCluster = a })
+        , Protobuf.Decode.optional 5 Protobuf.Decode.bool (\a r -> { r | embeddingServiceAvailable = a })
         ]
 
 
@@ -9387,6 +9403,7 @@ encodeProto__Rellm__SearchSettings value =
         , ( 2, Protobuf.Encode.string value.embeddingModel )
         , ( 3, (Protobuf.Encode.list encodeProto__Rellm__EmbeddingModel) value.availableModels )
         , ( 4, Protobuf.Encode.bool value.modelChosenByCluster )
+        , ( 5, Protobuf.Encode.bool value.embeddingServiceAvailable )
         ]
 
 
@@ -9398,6 +9415,7 @@ type alias Proto__Rellm__SearchSettings =
     , embeddingModel : String
     , availableModels : List Proto__Rellm__EmbeddingModel
     , modelChosenByCluster : Bool
+    , embeddingServiceAvailable : Bool
     }
 
 

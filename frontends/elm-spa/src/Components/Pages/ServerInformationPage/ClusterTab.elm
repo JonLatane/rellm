@@ -113,7 +113,6 @@ type Msg
     | LimitsBrowserChanged String
     | LimitsFfmpegChanged String
     | LimitsImagemagickChanged String
-    | LimitsEmbeddingsChanged String
     | LimitsCancelClicked
     | LimitsSaveClicked
     | GotLimitsSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
@@ -144,7 +143,6 @@ type alias LimitsEdit =
     { browser : Int
     , ffmpeg : Int
     , imagemagick : Int
-    , embeddings : Int
     , status : AccountsPanel.FormStatus
     }
 
@@ -307,7 +305,6 @@ update shared targetHost msg model =
                         { browser = effectiveLimit limits CLUSTERRESOURCEBROWSER
                         , ffmpeg = effectiveLimit limits CLUSTERRESOURCEFFMPEG
                         , imagemagick = effectiveLimit limits CLUSTERRESOURCEIMAGEMAGICK
-                        , embeddings = effectiveLimit limits CLUSTERRESOURCEEMBEDDINGS
                         , status = AccountsPanel.Idle
                         }
               }
@@ -322,9 +319,6 @@ update shared targetHost msg model =
 
         LimitsImagemagickChanged text ->
             ( { model | limitsEdit = model.limitsEdit |> Maybe.map (\edit -> { edit | imagemagick = clampedLimit text edit.imagemagick }) }, Effect.none )
-
-        LimitsEmbeddingsChanged text ->
-            ( { model | limitsEdit = model.limitsEdit |> Maybe.map (\edit -> { edit | embeddings = clampedLimit text edit.embeddings }) }, Effect.none )
 
         LimitsCancelClicked ->
             ( { model | limitsEdit = Nothing }, Effect.none )
@@ -473,7 +467,6 @@ applyLimitsConfig edit config =
             [ { resource = [ CLUSTERRESOURCEBROWSER ], limit = [ edit.browser ] }
             , { resource = [ CLUSTERRESOURCEFFMPEG ], limit = [ edit.ffmpeg ] }
             , { resource = [ CLUSTERRESOURCEIMAGEMAGICK ], limit = [ edit.imagemagick ] }
-            , { resource = [ CLUSTERRESOURCEEMBEDDINGS ], limit = [ edit.embeddings ] }
             ]
     in
     { config | clusterResources = Just { existing | conductorState = Just { conductorState | limits = limits } } }
@@ -584,7 +577,7 @@ locksSection time canEdit freeingLock freeLockError locks =
     ]
 
 
-{-| "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"/"Embedding Process Limit", with "Edit
+{-| "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"", with "Edit
 Limits" below them -- or, while `limitsEdit` is active, `limitsEditView` in their place.
 -}
 limitsSection : Bool -> List ClusterResourceLimit -> Maybe LimitsEdit -> List (Html Msg)
@@ -597,7 +590,6 @@ limitsSection canEdit limits limitsEdit =
             [ Common.settingsRow "Browser Instance Limit" (span [ class "server-details-feature-settings-value" ] [ text (String.fromInt (effectiveLimit limits CLUSTERRESOURCEBROWSER)) ])
             , Common.settingsRow "FFMPEG Process Limit" (span [ class "server-details-feature-settings-value" ] [ text (String.fromInt (effectiveLimit limits CLUSTERRESOURCEFFMPEG)) ])
             , Common.settingsRow "ImageMagick Process Limit" (span [ class "server-details-feature-settings-value" ] [ text (String.fromInt (effectiveLimit limits CLUSTERRESOURCEIMAGEMAGICK)) ])
-            , Common.settingsRow "Embedding Process Limit" (span [ class "server-details-feature-settings-value" ] [ text (String.fromInt (effectiveLimit limits CLUSTERRESOURCEEMBEDDINGS)) ])
             , if canEdit then
                 div [ class "server-details-feature-settings-actions" ]
                     [ button [ class "server-details-rename-button", onClick LimitsEditClicked ] [ text "Edit Limits" ] ]
@@ -720,9 +712,6 @@ clusterResourceName resource =
         CLUSTERRESOURCEIMAGEMAGICK ->
             "ImageMagick"
 
-        CLUSTERRESOURCEEMBEDDINGS ->
-            "Embeddings"
-
         ClusterResourceUnrecognized_ _ ->
             "Unknown Resource"
 
@@ -781,7 +770,6 @@ limitsEditView edit =
     [ Common.settingsRow "Browser Instance Limit" (limitInput edit.browser LimitsBrowserChanged edit.status)
     , Common.settingsRow "FFMPEG Process Limit" (limitInput edit.ffmpeg LimitsFfmpegChanged edit.status)
     , Common.settingsRow "ImageMagick Process Limit" (limitInput edit.imagemagick LimitsImagemagickChanged edit.status)
-    , Common.settingsRow "Embedding Process Limit" (limitInput edit.embeddings LimitsEmbeddingsChanged edit.status)
     , div [ class "server-details-feature-settings-actions" ]
         [ Common.editSaveButton LimitsSaveClicked edit.status
         , Common.editCancelButton LimitsCancelClicked edit.status

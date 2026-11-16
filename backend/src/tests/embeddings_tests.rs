@@ -10,7 +10,7 @@ use diesel::sql_types::{BigInt, Nullable, Text};
 use diesel::*;
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::embeddings::{self, EmbeddingKind, ModelUnavailable, SyncContext, TextEmbedder};
+use crate::logic::embeddings::{self, EmbeddingKind, SyncContext, TextEmbedder};
 use crate::protos::*;
 use crate::tests::factories::*;
 
@@ -211,32 +211,6 @@ fn a_document_with_nothing_to_embed_gets_one_null_embedding_row_and_is_not_retri
 }
 
 #[test]
-fn a_denied_cluster_lock_stops_the_run_before_the_model_loads_and_embeds_nothing() {
-    let mut conn = test_conn();
-    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
-        let author = create_user(conn, "locked_out");
-        let post = title_post(conn, &author, "Needs embedding");
-        let mut asked = 0;
-        let mut ctx = SyncContext::unrestricted();
-        ctx.before_model_load = Box::new(|| {
-            asked += 1;
-            false
-        });
-        let err = embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx).unwrap_err();
-        assert!(err.downcast_ref::<ModelUnavailable>().is_some(), "{:?}", err);
-        assert!(ctx.embedder.is_none());
-        drop(ctx);
-        assert_eq!(asked, 1);
-        let stored: i64 = post_embeddings::table
-            .filter(post_embeddings::post_id.eq(post.id))
-            .count()
-            .get_result(conn)?;
-        assert_eq!(stored, 0, "nothing may be recorded as embedded");
-        Ok(())
-    });
-}
-
-#[test]
 fn an_expired_time_budget_ends_the_run_with_work_left_for_next_time() {
     let mut conn = test_conn();
     conn.test_transaction::<_, anyhow::Error, _>(|conn| {
@@ -265,9 +239,9 @@ fn semantic_search_is_on_by_default_and_the_setting_turns_it_off() {
         // The default configuration reads as enabled, with the default model and the choices offered.
         let settings = crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap();
         assert!(settings.semantic_search_enabled);
-        assert_eq!(settings.embedding_model, embeddings::DEFAULT_MODEL_ID);
-        assert_eq!(settings.available_models.len(), embeddings::MODELS.len());
-        assert!(settings.available_models.iter().any(|m| m.id == "multilingual-e5-small" && m.multilingual && m.memory_megabytes > 0));
+        // The model is the cluster's, never a setting: with no embedding service there is none to report.
+        assert!(settings.model_chosen_by_cluster);
+        assert!(settings.embedding_model.is_empty() || settings.available_models.len() == 1);
 
         update(server_configurations::table.filter(server_configurations::active.eq(true)))
             .set(server_configurations::search_settings.eq(
@@ -283,44 +257,33 @@ fn semantic_search_is_on_by_default_and_the_setting_turns_it_off() {
 }
 
 #[test]
-fn the_chosen_model_is_used_and_unknown_or_missing_choices_fall_back_to_the_default() {
+fn the_stored_model_choice_is_ignored_and_the_cluster_decides() {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
     let mut conn = test_conn();
     conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
         crate::rpcs::get_server_configuration_proto(conn).unwrap(); // creates the default row if there is none
-        let choose = |conn: &mut PgPooledConnection, id: &str| {
-            update(server_configurations::table.filter(server_configurations::active.eq(true)))
-                .set(server_configurations::search_settings.eq(serde_json::json!({
-                    "semantic_search_enabled": true,
-                    "embedding_model": id,
-                })))
-                .execute(conn)
-                .unwrap();
-        };
-        choose(conn, "multilingual-e5-small");
-        assert_eq!(embeddings::active_model(conn).id, "multilingual-e5-small");
-        assert_eq!(
-            crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap().embedding_model,
-            "multilingual-e5-small"
-        );
-        choose(conn, "retired-model-from-an-older-version");
-        assert_eq!(embeddings::active_model(conn).id, embeddings::DEFAULT_MODEL_ID);
-        choose(conn, "");
-        assert_eq!(embeddings::active_model(conn).id, embeddings::DEFAULT_MODEL_ID);
+        // An older version stored a choice; it no longer does anything.
+        update(server_configurations::table.filter(server_configurations::active.eq(true)))
+            .set(server_configurations::search_settings.eq(serde_json::json!({
+                "semantic_search_enabled": true,
+                "embedding_model": "all-minilm-l6-v2",
+            })))
+            .execute(conn)
+            .unwrap();
+        assert_ne!(embeddings::active_model(conn).id, "all-minilm-l6-v2");
+        let settings = crate::rpcs::get_server_configuration_proto(conn).unwrap().search_settings.unwrap();
+        assert_ne!(settings.embedding_model, "all-minilm-l6-v2");
+        assert!(settings.model_chosen_by_cluster);
         Ok(())
     });
 }
 
 #[test]
-fn configure_server_rejects_an_unknown_embedding_model() {
+fn configure_server_ignores_an_embedding_model_sent_by_the_client() {
     let mut conn = test_conn();
     conn.test_transaction::<_, diesel::result::Error, _>(|conn| {
         let mut config = crate::rpcs::get_server_configuration_proto(conn).unwrap();
         config.search_settings = Some(SearchSettings { embedding_model: "no-such-model".to_string(), ..Default::default() });
-        let err = crate::rpcs::validations::validate_configuration(&config).unwrap_err();
-        assert_eq!(err.message(), "unknown_embedding_model");
-        config.search_settings = Some(SearchSettings { embedding_model: "all-minilm-l6-v2".to_string(), ..Default::default() });
-        assert!(crate::rpcs::validations::validate_configuration(&config).is_ok());
-        config.search_settings = Some(SearchSettings::default()); // empty = the default
         assert!(crate::rpcs::validations::validate_configuration(&config).is_ok());
         Ok(())
     });
@@ -350,7 +313,6 @@ fn saving_the_configuration_without_search_settings_keeps_what_was_saved() {
         crate::rpcs::configure_server(older_client_request, &admin, conn)?;
 
         assert!(!embeddings::semantic_search_enabled(conn), "it must stay off");
-        assert_eq!(embeddings::active_model(conn).id, "all-minilm-l6-v2", "and keep its model");
         Ok(())
     });
 }
@@ -1021,17 +983,14 @@ fn a_client_for_the_old_model_is_refused_cleanly_and_a_new_one_works_after_the_s
 }
 
 #[test]
-fn a_required_model_service_means_servers_and_jobs_never_load_a_model_themselves() {
-    // Required but not configured: refused outright, without ever touching the model (so no download, no RAM).
-    let refused = embeddings::load_embedder_with(embeddings::default_model(), 1, None, true);
-    let message = format!("{:?}", refused.err().expect("must refuse"));
-    assert!(message.contains("RELLM_EMBEDDING_SERVICE_REQUIRED"), "{}", message);
-    assert!(message.contains(embeddings::default_model().id), "says which model it refused: {}", message);
-
-    // Required and configured: embeds through the service, whose model it uses.
-    let url = start_model_service(None);
-    let remote = embeddings::load_embedder_with(embeddings::default_model(), 1, Some((url, None)), true).expect("remote");
-    assert_eq!(remote.spec().id, embeddings::default_model().id);
+fn servers_and_jobs_never_load_a_model_themselves() {
+    let _guard = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    // Without a configured service there is no way to embed: refused outright, nothing loaded.
+    if embeddings::embedding_service_config().is_none() {
+        let refused = embeddings::load_embedder();
+        let message = format!("{:?}", refused.err().expect("must refuse"));
+        assert!(message.contains("RELLM_EMBEDDING_SERVICE_URL"), "{}", message);
+    }
 }
 
 #[test]
@@ -1066,6 +1025,7 @@ fn a_server_embeds_search_queries_and_the_job_embeds_documents_through_the_model
 
 #[test]
 fn the_postgres_scan_index_needs_a_scope_and_answers_only_within_it() {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
     let mut conn = test_conn();
     conn.test_transaction::<_, anyhow::Error, _>(|conn| {
         let author = create_user(conn, "scan_scope");
@@ -1098,17 +1058,15 @@ use crate::schema::{post_embeddings, posts, server_configurations};
 /// configuration, which does) take this so they can't interfere with each other.
 static EMBEDDER_STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[cfg(feature = "embedding-service")]
 mod with_model {
     use super::*;
     use crate::rpcs::get_posts;
 
     fn wait_for_server_model() {
-        embeddings::enable_model_loading();
-        let started = std::time::Instant::now();
-        while embeddings::server_embedder(embeddings::default_model()).is_none() {
-            assert!(started.elapsed().as_secs() < 900, "embedding model never became ready");
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
+        let local = embeddings::LocalEmbedder::load(embeddings::default_model(), 2).expect("model loads");
+        embeddings::install_server_embedder(Box::new(local));
+        assert!(embeddings::server_embedder(embeddings::default_model()).is_some());
     }
 
     #[test]

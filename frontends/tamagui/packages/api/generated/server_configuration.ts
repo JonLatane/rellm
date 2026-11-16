@@ -33,14 +33,6 @@ export enum ClusterResource {
   CLUSTER_RESOURCE_BROWSER = 0,
   CLUSTER_RESOURCE_FFMPEG = 1,
   CLUSTER_RESOURCE_IMAGEMAGICK = 2,
-  /**
-   * CLUSTER_RESOURCE_EMBEDDINGS - Running the text-embedding model (ONNX Runtime) for semantic search -- the `generate_embeddings`
-   * job (see `SearchSettings`). Loading the model takes a few hundred MB of RAM and embedding keeps
-   * CPU cores busy, which small shared nodes can't afford for several instances at once. Each run
-   * holds this only while it's actually embedding text (never for a run with nothing to do), and is
-   * capped to a few minutes of work, so a backlog is worked down over many runs that take turns.
-   */
-  CLUSTER_RESOURCE_EMBEDDINGS = 3,
   UNRECOGNIZED = -1,
 }
 
@@ -55,9 +47,6 @@ export function clusterResourceFromJSON(object: any): ClusterResource {
     case 2:
     case "CLUSTER_RESOURCE_IMAGEMAGICK":
       return ClusterResource.CLUSTER_RESOURCE_IMAGEMAGICK;
-    case 3:
-    case "CLUSTER_RESOURCE_EMBEDDINGS":
-      return ClusterResource.CLUSTER_RESOURCE_EMBEDDINGS;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -73,8 +62,6 @@ export function clusterResourceToJSON(object: ClusterResource): string {
       return "CLUSTER_RESOURCE_FFMPEG";
     case ClusterResource.CLUSTER_RESOURCE_IMAGEMAGICK:
       return "CLUSTER_RESOURCE_IMAGEMAGICK";
-    case ClusterResource.CLUSTER_RESOURCE_EMBEDDINGS:
-      return "CLUSTER_RESOURCE_EMBEDDINGS";
     case ClusterResource.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -1161,44 +1148,36 @@ export interface SearchSettings {
   /**
    * Whether this server builds and uses text embeddings for search. Defaults to `true`.
    *
-   * When enabled:
-   * - the `generate_embeddings` background job downloads a small local embedding model (once; see
-   *   `RELLM_EMBEDDING_CACHE_DIR`) and keeps embeddings up to date for Posts (`post_embeddings`),
-   *   Events (`event_embeddings` -- the Event's Post plus its Occasions' times/places), Media
-   *   (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made
-   *   from the very same text Postgres full-text search indexes (title, content, names, ...).
+   * When enabled (and the cluster's embedding service is deployed -- see `embedding_service_available`):
+   * - the `generate_embeddings` background job asks the cluster's embedding service to embed Posts
+   *   (`post_embeddings`), Events (`event_embeddings` -- the Event's Post plus its Occasions'
+   *   times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every
+   *   embedding is made from the very same text Postgres full-text search indexes.
    * - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
    *   consider semantically similar results (not just prefix matches) and rerank by fusing the
    *   full-text rank with embedding similarity.
    *
-   * When disabled, the job does nothing, the server never loads the model, and search is plain
-   * Postgres full-text search, exactly as before. Existing embeddings are kept (re-enabling resumes
-   * where it left off). If the model can't be downloaded/loaded, search silently falls back to
-   * full-text only.
+   * Servers and jobs never load an embedding model themselves. When disabled, or when no embedding
+   * service is reachable, the job does nothing and search is plain Postgres full-text search. Existing
+   * embeddings are kept (re-enabling resumes where it left off).
    */
   semanticSearchEnabled: boolean;
   /**
-   * The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
-   * never empty -- the server fills in the effective one) means the default,
-   * `multilingual-e5-small`. `ConfigureServer` rejects an unknown id with
-   * `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
-   * model (once) and re-embed everything in the background; until a row has been redone it simply
-   * isn't a semantic candidate (full-text search still finds it), so search quality dips and then
-   * recovers. Different models trade size, speed, languages and quality -- see each model's
-   * description.
+   * The `EmbeddingModel.id` the cluster's embedding service runs (empty if it can't be reached or is
+   * not deployed). Read-only: never a setting, ignored by `ConfigureServer`. Switching models means
+   * redeploying the service; every server then re-embeds in the background, and until a row has been
+   * redone it simply isn't a semantic candidate (full-text search still finds it).
    */
   embeddingModel: string;
-  /**
-   * The models an admin can choose from. Read-only: always filled in by the server on
-   * `GetServerConfiguration` and ignored by `ConfigureServer`.
-   */
+  /** The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`. */
   availableModels: EmbeddingModel[];
-  /**
-   * True when this server embeds through a cluster-shared model service, which hosts ONE model for every
-   * namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
-   * read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
-   */
+  /** Always true now (kept for older clients): the model is chosen by the cluster's embedding service. */
   modelChosenByCluster: boolean;
+  /**
+   * Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When
+   * false, semantic search can't work no matter what `semantic_search_enabled` says. Read-only.
+   */
+  embeddingServiceAvailable: boolean;
 }
 
 /** One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`. */
@@ -3781,7 +3760,13 @@ export const MarketSettings: MessageFns<MarketSettings> = {
 };
 
 function createBaseSearchSettings(): SearchSettings {
-  return { semanticSearchEnabled: false, embeddingModel: "", availableModels: [], modelChosenByCluster: false };
+  return {
+    semanticSearchEnabled: false,
+    embeddingModel: "",
+    availableModels: [],
+    modelChosenByCluster: false,
+    embeddingServiceAvailable: false,
+  };
 }
 
 export const SearchSettings: MessageFns<SearchSettings> = {
@@ -3797,6 +3782,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     }
     if (message.modelChosenByCluster !== false) {
       writer.uint32(32).bool(message.modelChosenByCluster);
+    }
+    if (message.embeddingServiceAvailable !== false) {
+      writer.uint32(40).bool(message.embeddingServiceAvailable);
     }
     return writer;
   },
@@ -3840,6 +3828,14 @@ export const SearchSettings: MessageFns<SearchSettings> = {
           message.modelChosenByCluster = reader.bool();
           continue;
         }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.embeddingServiceAvailable = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3861,6 +3857,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
       modelChosenByCluster: isSet(object.modelChosenByCluster)
         ? globalThis.Boolean(object.modelChosenByCluster)
         : false,
+      embeddingServiceAvailable: isSet(object.embeddingServiceAvailable)
+        ? globalThis.Boolean(object.embeddingServiceAvailable)
+        : false,
     };
   },
 
@@ -3878,6 +3877,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     if (message.modelChosenByCluster !== false) {
       obj.modelChosenByCluster = message.modelChosenByCluster;
     }
+    if (message.embeddingServiceAvailable !== false) {
+      obj.embeddingServiceAvailable = message.embeddingServiceAvailable;
+    }
     return obj;
   },
 
@@ -3890,6 +3892,7 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     message.embeddingModel = object.embeddingModel ?? "";
     message.availableModels = object.availableModels?.map((e) => EmbeddingModel.fromPartial(e)) || [];
     message.modelChosenByCluster = object.modelChosenByCluster ?? false;
+    message.embeddingServiceAvailable = object.embeddingServiceAvailable ?? false;
     return message;
   },
 };

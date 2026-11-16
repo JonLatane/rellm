@@ -328,16 +328,62 @@ jobs:
           shared-key: rellm-build-${{ runner.OS }}-github-build
           cache-workspace-crates: true
 
-      # `vector-service` also builds the per-namespace `vector_search_service` (USearch, a C++ build) that the
-      # server Docker image ships; nothing else enables it, so the release tarballs and macOS build don't.
+      # Default features only: no embedding model, ONNX Runtime or USearch code goes into the server or job
+      # binaries (see build_embeddings_binaries for the separate rellm_embeddings image).
       - working-directory: backend
-        run: cargo build --release --features vector-service
+        run: cargo build --release
 
       - uses: actions/cache/save@v6
         id: rust-app-cache
         with:
           path: backend/target/release
           key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+
+  # The rellm_embeddings image's two binaries (the cluster's embedding model service, which is the ONLY code that
+  # loads a model, and the per-namespace vector search service). Built separately, with their cargo features, so
+  # nothing model-related is ever linked into the server or jobs.
+  build_embeddings_binaries:
+    name: Build Embeddings Binaries
+    runs-on: ubuntu-26.04
+    env:
+      CARGO_INCREMENTAL: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=26.1
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+          sudo unzip -o "$PROTOC_ZIP" -d /usr/local bin/protoc 'include/*'
+          rm "$PROTOC_ZIP"
+          protoc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./backend -> target
+          key: rellm-build-${{ runner.OS }}-github-build-embeddings
+          shared-key: rellm-build-${{ runner.OS }}-github-build-embeddings
+          cache-workspace-crates: true
+
+      - working-directory: backend
+        run: cargo build --release --features embedding-service,vector-service --bin embedding_service --bin vector_search_service
+
+      - name: Collect binaries
+        run: |
+          mkdir -p embeddings-binaries
+          cp backend/target/release/embedding_service backend/target/release/vector_search_service embeddings-binaries/
+      - uses: actions/cache/save@v6
+        with:
+          path: embeddings-binaries
+          key: rust-embeddings-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
 
   build_rust_binaries_macos:
     name: Build Rust Binaries (macOS arm64)
@@ -557,9 +603,9 @@ jobs:
           cache-workspace-crates: true
       - working-directory: backend
         run: cargo test
-      # The per-namespace vector search service (USearch index + gRPC) is behind a cargo feature.
+      # The rellm_embeddings services (model service, USearch vector service) are behind cargo features.
       - working-directory: backend
-        run: cargo test --features vector-service vector_service_tests
+        run: cargo test --features embedding-service,vector-service embeddings_tests vector_service_tests
       - working-directory: backend
         run: cargo build
 
@@ -701,8 +747,6 @@ jobs:
           mv backend/target/release/sync_sources backend/target/release/sync_sources__server_release &&
           mv backend/target/release/update_user_counts backend/target/release/update_user_counts__server_release &&
           mv backend/target/release/generate_embeddings backend/target/release/generate_embeddings__server_release &&
-          mv backend/target/release/embedding_service backend/target/release/embedding_service__server_release &&
-          mv backend/target/release/vector_search_service backend/target/release/vector_search_service__server_release &&
           mv backend/target/release/convert_media_sizes backend/target/release/convert_media_sizes__server_release &&
           mv backend/target/release/renew_market_subscriptions backend/target/release/renew_market_subscriptions__server_release &&
           mv backend/target/release/generate_link_preview_images backend/target/release/generate_link_preview_images__server_release &&
@@ -777,6 +821,44 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_preview_generator:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/preview_generator/Dockerfile
+          platforms: linux/amd64
+
+  push_embeddings:
+    name: "DockerHub: Embeddings (model + vector services)"
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
+    runs-on: ubuntu-26.04
+    needs:
+      - build_embeddings_binaries
+      - test_rust_binaries
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: embeddings-binaries
+          key: rust-embeddings-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          fail-on-cache-miss: true
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push rellm_embeddings image
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+          context: .
+          file: ./deploys/docker/embeddings/Dockerfile
           platforms: linux/amd64
 
   deploy_jonlineio_server:

@@ -15,6 +15,13 @@ run_background_jobs:
 # script expects a prebuilt ./generate_link_preview_images next to it and has a random startup delay.
 run_preview_generator:
 	cd backend && while true; do RELLM_LOG_JOB_NAME=generate_link_preview_images cargo run --bin generate_link_preview_images; sleep 120; done
+# Semantic search services (the backend's `rellm_embeddings` image, run from source here with their cargo
+# features). The model service is the only code that loads an embedding model -- servers and jobs just call it
+# (RELLM_EMBEDDING_SERVICE_URL in backend/.env, see .env-example). The vector service is optional.
+run_embedding_service:
+	$(MAKE) -C backend run_embedding_service
+run_vector_service:
+	$(MAKE) -C backend run_vector_service
 run_elm:
 	$(MAKE) -C frontends/elm-spa run
 run_tamagui:
@@ -30,6 +37,10 @@ stop_background_jobs:
 # Matches the loop's shell, cargo and the binary at once. The [g] keeps pkill from matching its own sh -c.
 stop_preview_generator:
 	-pkill -TERM -f '[g]enerate_link_preview_images'
+stop_embedding_service:
+	-pkill -TERM -f '[e]mbedding_service'
+stop_vector_service:
+	-pkill -TERM -f '[v]ector_search_service'
 stop_elm:
 	$(MAKE) -C frontends/elm-spa stop_background_servers
 # Next.js dev server (`yarn web`) listens on port 3000 by default.
@@ -44,9 +55,19 @@ stop_dev_servers:
 	-$(MAKE) stop_backend
 	-$(MAKE) stop_background_jobs
 	-$(MAKE) stop_preview_generator
+	-$(MAKE) stop_embedding_service
+	-$(MAKE) stop_vector_service
 	-$(MAKE) stop_elm
 	-$(MAKE) stop_tamagui
 	-$(MAKE) stop_flutter
+
+# Every run_tmux* target below takes these options, each adding a pane after Elm:
+#   WITH_EMBEDDINGS=1  the embedding model service (make run_embedding_service, port 8090)
+#   WITH_VECTOR=1      the per-namespace vector search service (make run_vector_service, port 8091)
+# e.g. `make run_tmux_with_jobs WITH_EMBEDDINGS=1 WITH_VECTOR=1`, or just `make run_tmux_with_semantic_search`.
+# The backend and jobs panes need RELLM_EMBEDDING_SERVICE_URL (and optionally RELLM_VECTOR_SERVICE_URL) in
+# backend/.env to use them.
+TMUX_EXTRA_PANES = $(if $(WITH_EMBEDDINGS),split-window -h \; select-pane -T 'Embedding Service' \; send-keys 'make run_embedding_service' C-m \; ,)$(if $(WITH_VECTOR),split-window -h \; select-pane -T 'Vector Service' \; send-keys 'make run_vector_service' C-m \; ,)
 
 # Backend on the left, Elm on the right, in one tmux session -- `mouse on` lets you click a pane to
 # focus it (or drag its border to resize, or click the status bar to switch windows) instead of
@@ -71,7 +92,8 @@ run_tmux:
 		select-pane -T 'Elm' \; \
 		send-keys 'cd frontends/elm-spa' C-m \; \
 		send-keys 'make run' C-m \; \
-		select-pane -L \; \
+		$(TMUX_EXTRA_PANES)select-layout even-horizontal \; \
+		select-pane -t '{left}' \; \
 		attach-session
 
 fresh_run_tmux: stop_dev_servers run_tmux
@@ -99,9 +121,8 @@ run_tmux_with_jobs:
 		select-pane -T 'Elm' \; \
 		send-keys 'cd frontends/elm-spa' C-m \; \
 		send-keys 'make run' C-m \; \
-		select-layout even-horizontal \; \
-		select-pane -L \; \
-		select-pane -L \; \
+		$(TMUX_EXTRA_PANES)select-layout even-horizontal \; \
+		select-pane -t '{left}' \; \
 		attach-session
 
 fresh_run_tmux_with_jobs: stop_dev_servers run_tmux_with_jobs
@@ -130,13 +151,17 @@ run_tmux_with_everything:
 		select-pane -T 'Elm' \; \
 		send-keys 'cd frontends/elm-spa' C-m \; \
 		send-keys 'make run' C-m \; \
-		select-layout even-horizontal \; \
-		select-pane -L \; \
-		select-pane -L \; \
-		select-pane -L \; \
+		$(TMUX_EXTRA_PANES)select-layout even-horizontal \; \
+		select-pane -t '{left}' \; \
 		attach-session
 
 fresh_run_tmux_with_everything: stop_dev_servers run_tmux_with_everything
+
+# Convenience: Jobs | Backend | Elm | Embedding Service | Vector Service -- everything semantic search needs.
+run_tmux_with_semantic_search:
+	$(MAKE) run_tmux_with_jobs WITH_EMBEDDINGS=1 WITH_VECTOR=1
+
+fresh_run_tmux_with_semantic_search: stop_dev_servers run_tmux_with_semantic_search
 
 build_backend:
 	$(MAKE) -C backend build

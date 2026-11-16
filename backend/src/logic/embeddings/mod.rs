@@ -6,50 +6,52 @@
 //     migration 2026-11-15-000000_add_embeddings: `post_search_document`, `event_search_document`,
 //     `media_search_document`, `user_search_document`, all derived from the same `*_search_fields`
 //     functions the `search_text` columns come from. Nothing here builds document text itself.
-//   * The *model* is one of a few small ONNX sentence embedders (`MODELS`) run locally through
-//     `fastembed`, chosen by the admin (`SearchSettings.embedding_model`; default `DEFAULT_MODEL_ID`).
-//     Vectors are L2-normalized, so cosine similarity is a dot product. Every stored vector records
-//     which model made it; switching models re-embeds everything in the background and, until a row
-//     has been redone, it simply isn't a semantic candidate (full-text still finds it).
+//   * The *model* is one of a few ONNX sentence embedders (`MODELS`), and it only ever runs in the cluster-shared
+//     embedding service (`model_service`; the `embedding_service` binary, built with the `embedding-service` cargo
+//     feature). The server and its jobs contain no model code at all: they call that service, and the model it runs is
+//     the one everybody uses. Vectors are L2-normalized, so cosine similarity is a dot product. Every stored vector
+//     records which model made it; when the service moves to another model everything is re-embedded in the background
+//     and, until a row has been redone, it simply isn't a semantic candidate (full-text still finds it).
 //   * *Storage* is one table per `EmbeddingKind`, vectors as little-endian f32 `bytea` -- no
 //     pgvector, because self-hosted Postgres installs can't be assumed to have it. Similarity is
 //     computed here, over a bounded candidate set (see `semantic_ranking`), not by Postgres.
-//   * *Who runs the model*: the `generate_embeddings` job (`sync_embeddings`) fills and refreshes
-//     the tables; the server only embeds search queries, on a model it loads in the background
-//     (`server_embedder`) and only while `SearchSettings.semantic_search_enabled` is on. Until
-//     that model is ready (or if it can't be loaded) searches are plain full-text.
+//   * *Who talks to the service*: the `generate_embeddings` job (`sync_embeddings`) sends it documents to fill and
+//     refresh the tables; the server sends it search queries (`server_embedder`), only while
+//     `SearchSettings.semantic_search_enabled` is on. Until the service has answered (or if there isn't one configured)
+//     searches are plain full-text.
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use diesel::sql_types::{BigInt, Binary, Nullable, Text};
 use diesel::*;
-use fastembed::EmbeddingModel;
 
 use crate::db_connection::PgPooledConnection;
 
 mod embedder;
 mod index;
+#[cfg(feature = "embedding-service")]
+mod local_embedder;
 mod vector_client;
 pub mod model_service;
 #[cfg(feature = "vector-service")]
 pub mod vector_service;
-pub use embedder::{load_embedder, load_embedder_local, load_embedder_with, BoxedEmbedder, LocalEmbedder, TextEmbedder};
+pub use embedder::{load_embedder, BoxedEmbedder, TextEmbedder, EMBEDDING_SERVICE_NEEDED};
+#[cfg(feature = "embedding-service")]
+pub use local_embedder::{fastembed_model, load_embedder_local, model_cache_dir, LocalEmbedder};
 pub use model_service::{
     cluster_model, cluster_model_blocking, embedding_service_config, embedding_service_configured,
-    embedding_service_required, invalidate_cluster_model, refresh_cluster_model_blocking, ClusterModelTracker,
+    invalidate_cluster_model, refresh_cluster_model_blocking, ClusterModelTracker,
     RemoteEmbedder,
 };
 pub use index::{install_semantic_index, reset_semantic_index, semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
 pub use vector_client::{vector_service_config, RemoteIndex};
 
-// Longer input is truncated by the tokenizer; documents list their most important text first.
-pub(self) const MAX_TOKENS: usize = 256;
-
-/// One embedding model an admin can choose. `id` is what's stored in `SearchSettings.embedding_model`
-/// and in every embedding row's `model` column. See the PR description for how these compare.
+/// One embedding model the embedding service can run. `id` is what the service reports (`SearchSettings.embedding_model`)
+/// and what every embedding row's `model` column records. Everything here is what a *server* needs to know about a model
+/// (its facts, its similarity threshold, the prefixes the service puts on queries and documents); how to actually run
+/// one lives in `local_embedder` (cargo feature `embedding-service`). See the PR description for how these compare.
 pub struct ModelSpec {
     pub id: &'static str,
     pub name: &'static str,
@@ -60,11 +62,10 @@ pub struct ModelSpec {
     /// Approximate resident memory with the model loaded (measured per process).
     pub memory_megabytes: u32,
     pub multilingual: bool,
-    model: EmbeddingModel,
     /// Some models are trained to see queries and documents differently (E5: "query: "/"passage: ");
     /// the symmetric ones use empty prefixes.
-    query_prefix: &'static str,
-    document_prefix: &'static str,
+    pub query_prefix: &'static str,
+    pub document_prefix: &'static str,
     /// Matches below this cosine similarity aren't "semantically related" and are ignored, so a query
     /// doesn't drag in its nearest-but-unrelated neighbors. Cosine scales differ a lot between models
     /// (E5 scores unrelated text around 0.7), so each model has its own, calibrated by
@@ -87,7 +88,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 465,
         memory_megabytes: 980,
         multilingual: true,
-        model: EmbeddingModel::MultilingualE5Small,
         query_prefix: "query: ",
         document_prefix: "passage: ",
         min_similarity: 0.81,
@@ -100,7 +100,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 240,
         memory_megabytes: 750,
         multilingual: true,
-        model: EmbeddingModel::ParaphraseMLMiniLML12V2Q,
         query_prefix: "",
         document_prefix: "",
         min_similarity: 0.36,
@@ -113,7 +112,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 64,
         memory_megabytes: 110,
         multilingual: false,
-        model: EmbeddingModel::BGESmallENV15Q,
         query_prefix: "Represent this sentence for searching relevant passages: ",
         document_prefix: "",
         min_similarity: 0.60,
@@ -126,7 +124,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 23,
         memory_megabytes: 70,
         multilingual: false,
-        model: EmbeddingModel::AllMiniLML6V2Q,
         query_prefix: "",
         document_prefix: "",
         min_similarity: 0.33,
@@ -143,7 +140,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 1198,
         memory_megabytes: 734,
         multilingual: true,
-        model: EmbeddingModel::EmbeddingGemma300M,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
         min_similarity: 0.22,
@@ -156,7 +152,6 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 295,
         memory_megabytes: 331,
         multilingual: true,
-        model: EmbeddingModel::EmbeddingGemma300MQ,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
         min_similarity: 0.23,
@@ -169,24 +164,11 @@ pub static MODELS: [ModelSpec; 7] = [
         download_megabytes: 188,
         memory_megabytes: 421,
         multilingual: true,
-        model: EmbeddingModel::EmbeddingGemma300MQ4,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
         min_similarity: 0.24,
     },
 ];
-
-impl ModelSpec {
-    fn model(&self) -> &EmbeddingModel {
-        &self.model
-    }
-    fn query_prefix(&self) -> &'static str {
-        self.query_prefix
-    }
-    fn document_prefix(&self) -> &'static str {
-        self.document_prefix
-    }
-}
 
 /// The model with this id; `None` for an unknown id.
 pub fn model_spec(id: &str) -> Option<&'static ModelSpec> {
@@ -198,9 +180,9 @@ pub fn default_model() -> &'static ModelSpec {
 }
 
 /// `SearchSettings.available_models` -- what the Settings tab offers.
-pub fn available_models() -> Vec<crate::protos::EmbeddingModel> {
-    MODELS
-        .iter()
+pub fn available_models(in_use: Option<&'static ModelSpec>) -> Vec<crate::protos::EmbeddingModel> {
+    in_use
+        .into_iter()
         .map(|m| crate::protos::EmbeddingModel {
             id: m.id.to_string(),
             name: m.name.to_string(),
@@ -290,30 +272,6 @@ impl EmbeddingKind {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// The model
-// ---------------------------------------------------------------------------------------------
-
-/// Where models are cached (and so downloaded to, once): `RELLM_EMBEDDING_CACHE_DIR`, else
-/// `~/.cache/rellm/embedding_models`, else `./.embedding_models`. The server and the job each
-/// download into it if the model isn't there yet, so give them the same directory to share one copy.
-pub fn model_cache_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("RELLM_EMBEDDING_CACHE_DIR").filter(|d| !d.is_empty()) {
-        return PathBuf::from(dir);
-    }
-    match std::env::var_os("HOME").filter(|h| !h.is_empty()) {
-        Some(home) => PathBuf::from(home).join(".cache/rellm/embedding_models"),
-        None => PathBuf::from(".embedding_models"),
-    }
-}
-
-pub(self) fn normalize(vector: &mut [f32]) {
-    let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        vector.iter_mut().for_each(|x| *x /= norm);
-    }
-}
-
 pub fn vector_to_bytes(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
@@ -325,32 +283,20 @@ pub fn vector_to_bytes(vector: &[f32]) -> Vec<u8> {
 // `None` until loaded, and again after `unload_server_embedder` (setting turned off) so a small host gets
 // the model's memory back without a restart. Searches hold their own `Arc` while using it.
 static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<BoxedEmbedder>>>> = RwLock::new(None);
-// What the last `search_configuration` check saw, so a load that finishes after the setting was turned
-// off (or the model changed) discards the model instead of keeping the wrong one.
+// What the last `search_configuration` check saw, so a connection that finishes after the setting was turned
+// off (or the model changed) is discarded instead of kept.
 static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
 static LAST_KNOWN_MODEL_ID: Mutex<&'static str> = Mutex::new(DEFAULT_MODEL_ID);
 static LOADING: AtomicBool = AtomicBool::new(false);
-// Whether `server_embedder` may start loading (downloading) a model by itself. Always, except in the
-// crate's own tests: nearly every test that searches or saves the configuration would otherwise kick off
-// a background model download. Tests that really want the model call `enable_model_loading`.
-static AUTO_LOAD: AtomicBool = AtomicBool::new(!cfg!(test));
 // Which model failed to load, and when: a cooldown only applies to *that* model, so an admin who
 // switches to a working one isn't stuck on full-text search until the failed model's timer expires.
 static LAST_LOAD_FAILURE: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
 const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
-// Embedding one short search query needs no more than this.
-const SERVER_THREADS: usize = 1;
 
-/// Lets `server_embedder` load models in the crate's own tests (see `AUTO_LOAD`).
-pub fn enable_model_loading() {
-    AUTO_LOAD.store(true, Ordering::SeqCst);
-}
-
-/// The server's embedder for `spec`, once it's loaded. The first call (when semantic search is on)
-/// starts loading it on a background thread -- downloading the model if need be -- and returns `None`
-/// until that finishes, so a search never waits on a download: it's just full-text until then. A
-/// model loaded for a *different* choice is dropped (the admin switched models). A failed load is
-/// retried at most every ten minutes.
+/// The server's embedder for `spec` (the embedding service's model), once connected. The first call (when semantic
+/// search is on and a service is configured) connects on a background thread and returns `None` until that finishes,
+/// so a search never waits on it: it's just full-text until then. An embedder for a *different* model is dropped (the
+/// service switched models). A failed connection is retried at most every ten minutes.
 pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedder>>> {
     if let Some(embedder) = SERVER_EMBEDDER.read().unwrap().as_ref() {
         if embedder.lock().map(|e| e.spec().id == spec.id).unwrap_or(false) {
@@ -366,24 +312,24 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
             return None;
         }
     }
-    if !AUTO_LOAD.load(Ordering::SeqCst) {
-        return None;
+    if !embedding_service_configured() {
+        return None; // nothing to connect to; `apply_semantic_search_setting` has already said so
     }
     if !LOADING.swap(true, Ordering::SeqCst) {
         std::thread::spawn(move || {
-            log::info!("Loading embedding model {} for semantic search...", spec.id);
-            match load_embedder(spec, SERVER_THREADS) {
+            log::info!("Connecting to the embedding service for semantic search...");
+            match load_embedder() {
                 Ok(embedder)
                     if LAST_KNOWN_ENABLED.load(Ordering::SeqCst)
                         && *LAST_KNOWN_MODEL_ID.lock().unwrap() == spec.id =>
                 {
                     *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
                     *LAST_LOAD_FAILURE.lock().unwrap() = None;
-                    log::info!("Embedding model {} ready; semantic search is active.", spec.id);
+                    log::info!("Connected to the embedding service (model {}); semantic search is active.", spec.id);
                 }
-                Ok(_) => log::info!("Semantic search was turned off or its model changed while {} loaded; dropping it.", spec.id),
+                Ok(_) => log::info!("Semantic search was turned off or the model changed while connecting; dropping the connection."),
                 Err(e) => {
-                    log::error!("Couldn't load embedding model {}; search stays full-text only: {:?}", spec.id, e);
+                    log::error!("Couldn't reach the embedding service; search stays full-text only: {:?}", e);
                     *LAST_LOAD_FAILURE.lock().unwrap() = Some((spec.id, Instant::now()));
                 }
             }
@@ -400,17 +346,19 @@ pub fn install_server_embedder(embedder: BoxedEmbedder) {
     *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
 }
 
-/// Frees the server's query model (the setting was turned off, or the model changed). A search
-/// already using it finishes first; the memory is released when its last `Arc` drops.
+/// Drops the server's embedder (the setting was turned off, or the model changed). A search already using it
+/// finishes first.
 pub fn unload_server_embedder() {
     *SERVER_EMBEDDER.write().unwrap() = None;
 }
 
-/// Brings the server's query model in line with the settings: starts loading the chosen model when
-/// semantic search is on, frees it when off. Called when the configuration is saved (and at startup),
-/// so a change takes effect immediately instead of on the next search.
+/// Brings the server's embedder in line with the settings: connects to the embedding service when semantic search is on,
+/// drops it when off. Called when the configuration is saved (and at startup), so a change takes effect immediately
+/// instead of on the next search. With semantic search on but no embedding service configured it says so, loudly: that
+/// is a deployment mistake, since a server never loads a model of its own.
 pub fn apply_semantic_search_setting(conn: &mut PgPooledConnection) {
     match search_configuration(conn) {
+        (true, _) if !embedding_service_configured() => log::error!("{}", EMBEDDING_SERVICE_NEEDED),
         (true, spec) => {
             let _ = server_embedder(spec);
         }
@@ -424,12 +372,13 @@ pub fn semantic_search_enabled(conn: &mut PgPooledConnection) -> bool {
     search_configuration(conn).0
 }
 
-/// The model `SearchSettings.embedding_model` selects (the default when unset or unrecognized).
+/// The model the embedding service runs (the registry default until the service has answered, or if none is configured).
 pub fn active_model(conn: &mut PgPooledConnection) -> &'static ModelSpec {
     search_configuration(conn).1
 }
 
-/// `(semantic_search_enabled, chosen model)` from the active server configuration.
+/// `(semantic_search_enabled, the embedding service's model)` from the active server configuration. The model is never
+/// a setting: it is whatever the cluster's embedding service runs.
 fn search_configuration(conn: &mut PgPooledConnection) -> (bool, &'static ModelSpec) {
     use crate::schema::server_configurations::dsl::*;
     let stored = server_configurations
@@ -442,14 +391,9 @@ fn search_configuration(conn: &mut PgPooledConnection) -> (bool, &'static ModelS
         .as_ref()
         .and_then(|v| v.get("semantic_search_enabled").and_then(|b| b.as_bool()))
         .unwrap_or(true);
-    let spec = stored
-        .as_ref()
-        .and_then(|v| v.get("embedding_model").and_then(|m| m.as_str()))
-        .and_then(model_spec)
-        .unwrap_or_else(default_model);
-    // A cluster-shared model service hosts one model for everyone: it wins over the admin's own choice. (If it's
-    // configured but not answering we keep the configured model; embedding fails and search stays full-text.)
-    let spec = if embedding_service_configured() { cluster_model().unwrap_or(spec) } else { spec };
+    // The service hosts one model for everyone. Until it has answered (or when none is configured) the registry default
+    // stands in; nothing can be embedded then anyway, so search stays full-text.
+    let spec = cluster_model().unwrap_or_else(default_model);
     LAST_KNOWN_ENABLED.store(enabled, Ordering::SeqCst);
     *LAST_KNOWN_MODEL_ID.lock().unwrap() = spec.id;
     (enabled, spec)
@@ -464,7 +408,7 @@ fn search_configuration(conn: &mut PgPooledConnection) -> (bool, &'static ModelS
 pub fn semantic_search_ready(conn: &mut PgPooledConnection) -> bool {
     let (enabled, spec) = search_configuration(conn);
     if !enabled {
-        // Turned off (maybe by another instance's `ConfigureServer`): give the memory back.
+        // Turned off (maybe by another instance's `ConfigureServer`): drop the connection.
         unload_server_embedder();
         return false;
     }
@@ -598,46 +542,35 @@ pub struct SyncStats {
     pub out_of_time: bool,
 }
 
-/// `before_model_load` said no (see `SyncContext`): the cluster's embedding slot is taken.
+/// The embedding service couldn't be reached (or isn't configured): nothing can be embedded this run, and there is no
+/// point asking again for the other kinds.
 #[derive(Debug)]
-pub struct ModelUnavailable;
+pub struct EmbeddingServiceUnavailable;
 
-impl std::fmt::Display for ModelUnavailable {
+impl std::fmt::Display for EmbeddingServiceUnavailable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "the embedding model isn't available to this run right now")
+        write!(f, "the embedding service isn't available")
     }
 }
-impl std::error::Error for ModelUnavailable {}
+impl std::error::Error for EmbeddingServiceUnavailable {}
 
-/// How a `sync_embeddings` run is allowed to use the machine -- built for small, shared hardware:
-///   * `before_model_load` is asked once, right before the (RAM- and CPU-hungry) model would be
-///     loaded, and only if some text actually needs embedding -- the `generate_embeddings` job
-///     takes the `CLUSTER_RESOURCE_EMBEDDINGS` cluster lock here. Returning `false` ends the run
-///     with `ModelUnavailable`, having embedded nothing.
+/// How a `sync_embeddings` run is allowed to use the machine:
 ///   * `deadline` bounds the run: work stops at the next batch boundary once it passes, so a big
 ///     backlog is worked down over several runs (taking turns) instead of one long hold.
-///   * `threads` is how many CPU threads the model may use.
 ///   * `spec` is the model: rows embedded by another one are redone, so a model change is just a long
 ///     backlog worked down over runs (their old vectors are ignored by search in the meantime).
-pub struct SyncContext<'a> {
+pub struct SyncContext {
     /// The model to embed with (`active_model`): rows made by any other model count as missing.
     pub spec: &'static ModelSpec,
+    /// Connected lazily, on the first text that needs embedding (to the embedding service; tests preset a fake).
     pub embedder: Option<BoxedEmbedder>,
     pub deadline: Instant,
-    pub threads: usize,
-    pub before_model_load: Box<dyn FnMut() -> bool + 'a>,
 }
 
-impl SyncContext<'static> {
-    /// No gate and an hour's budget -- for tests and one-off tools.
+impl SyncContext {
+    /// An hour's budget and the registry's default model -- for tests and one-off tools.
     pub fn unrestricted() -> Self {
-        SyncContext {
-            spec: default_model(),
-            embedder: None,
-            deadline: Instant::now() + Duration::from_secs(3600),
-            threads: 2,
-            before_model_load: Box::new(|| true),
-        }
+        SyncContext { spec: default_model(), embedder: None, deadline: Instant::now() + Duration::from_secs(3600) }
     }
 }
 
@@ -650,8 +583,8 @@ const WRITE_BATCH: i64 = 128;
 ///   1. embeds every row that has no embedding yet (newest first), until none are left;
 ///   2. re-checks the `SWEEP_BATCH` least recently checked embeddings: unchanged ones just get
 ///      `checked_at` bumped, ones whose document changed (or from another model) are re-embedded.
-/// The model is loaded lazily, on the first text that needs embedding (see `SyncContext`), so a pass
-/// with nothing to do never touches it.
+/// The embedder is connected lazily, on the first text that needs embedding (see `SyncContext`), so a pass
+/// with nothing to do never touches the service.
 pub fn sync_embeddings(
     conn: &mut PgPooledConnection,
     kind: EmbeddingKind,
@@ -735,11 +668,16 @@ fn store_embeddings(
     let mut vectors: HashMap<i64, Vec<f32>> = HashMap::new();
     if !to_embed.is_empty() {
         if ctx.embedder.is_none() {
-            if !(ctx.before_model_load)() {
-                return Err(ModelUnavailable.into());
+            let embedder = load_embedder().map_err(|e| {
+                log::error!("{:#}", e);
+                anyhow::Error::new(EmbeddingServiceUnavailable)
+            })?;
+            // The service moved to another model since this run decided which one to embed with: don't store its
+            // vectors under the old model's name. The next run adopts the new model.
+            if embedder.spec().id != ctx.spec.id {
+                anyhow::bail!("the embedding service now runs {}, not {}; the next run will use it", embedder.spec().id, ctx.spec.id);
             }
-            log::info!("Loading embedding model {} (downloads it the first time)...", ctx.spec.id);
-            ctx.embedder = Some(load_embedder(ctx.spec, ctx.threads)?);
+            ctx.embedder = Some(embedder);
         }
         let texts: Vec<String> = to_embed.iter().map(|r| r.document.clone()).collect();
         let embedded = ctx.embedder.as_mut().unwrap().embed_documents(&texts)?;
@@ -776,8 +714,7 @@ mod unit_tests {
 
     #[test]
     fn vectors_round_trip_through_bytes_and_similarity_is_the_dot_product() {
-        let mut a = vec![3.0, 4.0, 0.0];
-        normalize(&mut a);
+        let a = vec![0.6f32, 0.8, 0.0]; // unit length
         assert!((a.iter().map(|x| x * x).sum::<f32>() - 1.0).abs() < 1e-6);
         let stored = vector_to_bytes(&a);
         assert!((similarity(&a, &stored).unwrap() - 1.0).abs() < 1e-6);

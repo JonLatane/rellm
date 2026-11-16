@@ -1,6 +1,8 @@
-// The cluster-shared model service: loads ONE embedding model and serves it over gRPC to every namespace's Rellm
-// servers and `generate_embeddings` jobs, so a cluster pays the model's RAM once -- see
-// `logic::embeddings::model_service` and `internal_protos/rellm_internal.proto`.
+// The cluster-shared model service -- the ONLY place a Rellm deployment loads an embedding model (cargo feature
+// `embedding-service`; the server and job binaries are built without it, so they can't). Loads ONE model and serves it
+// over gRPC to every namespace's Rellm servers and `generate_embeddings` jobs, so a cluster pays the model's RAM once --
+// see `logic::embeddings::model_service` and `internal_protos/rellm_internal.proto`. Required: without it there are no
+// embeddings and search is full-text only.
 //
 //   RELLM_EMBEDDING_SERVICE_MODEL   model id (default: the registry default, multilingual-e5-small)
 //   RELLM_EMBEDDING_SERVICE_ADDR    listen address (default 0.0.0.0:8090)

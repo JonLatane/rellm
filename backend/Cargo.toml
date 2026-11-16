@@ -119,7 +119,7 @@ rrule = "0.14"
 # Local text embeddings (ONNX Runtime) for semantic search/reranking -- see `logic::embeddings`. rustls
 # variants only (no OpenSSL), matching tonic/reqwest above. The model itself is downloaded from
 # Hugging Face on first use (by the `generate_embeddings` job, or the server's own warm-up thread).
-fastembed = { version = "7.7", default-features = false, features = [
+fastembed = { version = "7.7", default-features = false, optional = true, features = [
   "ort-download-binaries-rustls-tls",
   "hf-hub-rustls-tls",
 ] }
@@ -136,11 +136,21 @@ usearch = { version = "2.26", optional = true }
 static_pq = ["dep:pq-sys"]
 # Builds `vector_search_service` and its tests.
 vector-service = ["dep:usearch"]
+# The ONLY place a text-embedding model is ever loaded: `embedding_service` (the cluster-shared model service) and its
+# tests. The Rellm server and its jobs are built WITHOUT it, so no model code (fastembed / ONNX Runtime) is even linked
+# into them -- they embed by calling that service (see `logic::embeddings::model_service`).
+embedding-service = ["dep:fastembed"]
+
 
 [[bin]]
 name = "vector_search_service"
 path = "src/bin/vector_search_service.rs"
 required-features = ["vector-service"]
+
+[[bin]]
+name = "embedding_service"
+path = "src/bin/embedding_service.rs"
+required-features = ["embedding-service"]
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"

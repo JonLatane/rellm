@@ -1,34 +1,21 @@
 // Keeps the embedding tables (post_embeddings, event_embeddings, media_embeddings,
 // user_profile_embeddings) in step with the content they describe -- see `logic::embeddings`.
 //
-// Built for small hardware:
-//   * Does nothing (and never loads the model) unless `SearchSettings.semantic_search_enabled` is on,
-//     or when no text needs embedding.
-//   * With RELLM_EMBEDDING_SERVICE_REQUIRED=1 and no RELLM_EMBEDDING_SERVICE_URL it refuses to run at all rather than
-//     load a model of its own.
-//   * With a cluster-shared model service (`RELLM_EMBEDDING_SERVICE_URL`) the model runs there, not here: this
-//     job only sends it text, loads nothing, and takes no lock.
-//   * In a cluster (`ClusterResources` configured) without one, takes the `CLUSTER_RESOURCE_EMBEDDINGS` lock
-//     from the conductor right before loading the model, so only as many instances as its
-//     `ClusterResourceLimit` allows (default 1) embed at once. A denied lock just skips this run.
-//   * Stops after `RUN_BUDGET` of work (it runs again every few minutes; a backlog is worked down
-//     over several runs) and releases the lock. Each kind (posts, events, media, profiles) gets an
-//     even share of what's left, and the kind that goes first rotates every run, so a big backlog in
-//     one kind (say, an import of posts) can't starve the others.
-//   * The model gets `RELLM_EMBEDDING_THREADS` CPU threads (default 2).
-// The first run with something to embed downloads the model into `RELLM_EMBEDDING_CACHE_DIR`
-// (default ~/.cache/rellm/embedding_models); later runs reuse it.
+// This job never loads a model. It sends documents to the embedding service (RELLM_EMBEDDING_SERVICE_URL) and stores the
+// vectors that come back; without a service there is nothing it can do, so it says so and exits.
+//   * Does nothing unless `SearchSettings.semantic_search_enabled` is on, or when no text needs embedding.
+//   * The model is whatever the service runs (it can change; the job follows on its next run and re-embeds).
+//   * Stops after `RUN_BUDGET` of work (it runs again every few minutes; a backlog is worked down over several runs).
+//     Each kind (posts, events, media, profiles) gets an even share of what's left, and the kind that goes first rotates
+//     every run, so a big backlog in one kind (say, an import of posts) can't starve the others.
 extern crate diesel;
 extern crate rellm;
 use std::time::{Duration, Instant};
 
-use rellm::logic::embeddings::{self, EmbeddingKind, ModelUnavailable, SyncContext};
-use rellm::logic::{acquire_cluster_lock, release_cluster_lock};
-use rellm::protos::{ClusterResource, ClusterResources};
-use rellm::{db_connection, init_bin_logging, init_crypto, rpcs};
+use rellm::logic::embeddings::{self, EmbeddingKind, EmbeddingServiceUnavailable, SyncContext};
+use rellm::{db_connection, init_bin_logging, init_crypto};
 
 const RUN_BUDGET: Duration = Duration::from_secs(240);
-const DEFAULT_THREADS: usize = 2;
 
 /// `EmbeddingKind::ALL`, starting from a different kind each run (the run's 5-minute slot, mod 4), so
 /// no kind is always first in line.
@@ -53,64 +40,18 @@ pub fn main() {
         log::info!("Semantic search is disabled in the server settings; nothing to do.");
         return;
     }
-
-    if embeddings::embedding_service_required() && !embeddings::embedding_service_configured() {
-        log::error!(
-            "RELLM_EMBEDDING_SERVICE_REQUIRED is set but RELLM_EMBEDDING_SERVICE_URL is not: this job must not load a model of \
-             its own, so it embeds nothing. Point it at the cluster's embedding service."
-        );
+    if !embeddings::embedding_service_configured() {
+        log::error!("{}", embeddings::EMBEDDING_SERVICE_NEEDED);
         return;
     }
 
-    let cluster_resources: Option<ClusterResources> = rpcs::get_server_configuration_model(&mut conn)
-        .expect("Failed to load server configuration")
-        .cluster_resources
-        .and_then(|v| serde_json::from_value(v).ok());
-    let wanted = [ClusterResource::Embeddings];
+    // The model the service runs right now (the registry default if it hasn't answered): rows made by any other model
+    // are re-embedded. Waits a few seconds for the service on a fresh start rather than guessing.
+    let spec = embeddings::cluster_model_blocking().unwrap_or_else(|| embeddings::active_model(&mut conn));
+    log::info!("Embedding with {} ({} dimensions), through the embedding service.", spec.id, spec.dimensions);
+    let run_deadline = Instant::now() + RUN_BUDGET;
+    let mut ctx = SyncContext { spec, embedder: None, deadline: run_deadline };
 
-    // The lock calls are async; this job isn't (the model and Postgres are blocking), so drive just
-    // those from a small runtime. `acquire`/`release` are only ever called from this thread.
-    // Multi-threaded (with a single worker): `acquire_cluster_lock` reaches `discover_backend_host`, whose
-    // `block_in_place` panics on a current-thread runtime.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("Failed to start async runtime");
-    let mut lock_held = false;
-
-    let threads = std::env::var("RELLM_EMBEDDING_THREADS")
-        .ok()
-        .and_then(|t| t.parse::<usize>().ok())
-        .filter(|t| *t > 0)
-        .unwrap_or(DEFAULT_THREADS);
-    let spec = embeddings::active_model(&mut conn);
-    log::info!("Embedding model: {} ({} dimensions).", spec.id, spec.dimensions);
-    let mut ctx = SyncContext {
-        spec,
-        embedder: None,
-        deadline: Instant::now() + RUN_BUDGET,
-        threads,
-        before_model_load: Box::new(|| match cluster_resources.as_ref() {
-            // Single-instance servers skip the cluster lock entirely.
-            None => true,
-            // With a cluster-shared model service the model isn't loaded here at all, and the service
-            // serializes and bounds the work itself: nothing for the lock to protect.
-            Some(_) if embeddings::embedding_service_configured() => true,
-            Some(resources) => {
-                log::info!("Cluster resources configured; acquiring embeddings lock from conductor...");
-                if runtime.block_on(acquire_cluster_lock(resources, &wanted)) {
-                    lock_held = true;
-                    true
-                } else {
-                    log::warn!("Could not acquire the embeddings cluster lock in time; skipping this run.");
-                    false
-                }
-            }
-        }),
-    };
-
-    let run_deadline = ctx.deadline;
     let kinds = rotated_kinds();
     for (turn, kind) in kinds.iter().copied().enumerate() {
         let now = Instant::now();
@@ -132,22 +73,13 @@ pub fn main() {
                     log::info!("{} embeddings used up their share of this run; the rest happens next run.", kind.name());
                 }
             }
-            // Someone else holds the cluster's embedding slot: no point asking again for the other kinds.
-            Err(e) if e.downcast_ref::<ModelUnavailable>().is_some() => break,
+            // No service to talk to: asking again for the other kinds would just fail the same way.
+            Err(e) if e.downcast_ref::<EmbeddingServiceUnavailable>().is_some() => break,
             Err(e) => log::error!(
                 "Failed to sync {} embeddings: {:?}. Proceeding through remaining kinds.",
                 kind.name(),
                 e
             ),
-        }
-    }
-
-    // Free the model's memory, then the cluster slot.
-    ctx.embedder = None;
-    drop(ctx);
-    if lock_held {
-        if let Some(resources) = cluster_resources.as_ref() {
-            runtime.block_on(release_cluster_lock(resources, &wanted));
         }
     }
 }

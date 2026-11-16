@@ -9,14 +9,6 @@ use tonic::{Code, Status};
 use crate::protos::*;
 
 pub fn validate_configuration(config: &ServerConfiguration) -> Result<(), Status> {
-    // `search_settings.embedding_model` must be empty (the default) or one of `embeddings::MODELS`.
-    if let Some(search_settings) = config.search_settings.as_ref() {
-        if !search_settings.embedding_model.is_empty()
-            && crate::logic::embeddings::model_spec(&search_settings.embedding_model).is_none()
-        {
-            return Err(Status::new(Code::InvalidArgument, "unknown_embedding_model"));
-        }
-    }
     if let Some(custom_tabs) = config.custom_tabs.as_ref() {
         // `CustomHomePage`'s own proto doc restricts `target` to only `HOME_TAB` (i.e.
         // unset/default), `EVENTS_TAB`, `POSTS_TAB`, or a `post_id` -- its `oneof` doesn't even

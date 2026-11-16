@@ -1,30 +1,30 @@
 # Semantic search deployment
 
-Semantic search (embeddings + hybrid reranking; see the PR that added it) works with **no extra infrastructure**: each
-Rellm server loads the embedding model itself, the `generate_embeddings` job fills the embedding tables, and searches
-scan candidate vectors out of Postgres. That is the default and what self-hosted installs use.
+Semantic search (embeddings + hybrid reranking) needs the **`rellm_embeddings` image**
+(`docker.io/jonlatane/rellm_embeddings`, built from `deploys/docker/embeddings/Dockerfile`). It is the **only** place an
+embedding model is ever loaded: the `rellm` server and `rellm-jobs` images contain no model, ONNX Runtime or USearch code at
+all, and have no option or default that would load one. With no embedding service deployed (or reachable), Rellm simply
+runs plain Postgres full-text search, and Settings → Search says so.
 
-On a cluster with several namespaces (and, say, two servers per namespace) that duplicates the model's RAM in every
-server and job. Two **opt-in** services remove that duplication:
+The image holds two binaries, run as two services:
 
-| service | scope | what it holds | RAM |
-|---|---|---|---|
-| `rellm-central-embedding` (`embedding_service`) | one per **cluster** | ONE embedding model, shared by every namespace | the model (~1GB for the default `multilingual-e5-small`) |
-| `rellm-vector` (`vector_search_service`) | one per **namespace** | a USearch index of that namespace's embeddings, shared by its servers | ~400 bytes per row |
+| service | binary | scope | what it holds | RAM |
+|---|---|---|---|---|
+| `rellm-central-embedding` | `/opt/embedding_service` | one per **cluster** — **required** for semantic search | ONE embedding model, shared by every namespace | the model (~1GB for the default `multilingual-e5-small`) |
+| `rellm-vector` | `/opt/vector_search_service` | one per **namespace** — **optional** | a USearch index of that namespace's embeddings, shared by its servers | ~400 bytes per row |
 
-Both are single-pod, cluster-internal (ClusterIP), authenticated with a shared secret, and **optional at runtime**: if a
-service is down or still starting, searches keep working: if the vector service can't answer they use the Postgres scan
-(no extra service, no pgvector), and if the model service is also unavailable they use plain full-text search.
+Both are single-pod, cluster-internal (ClusterIP) and authenticated with a shared secret. The model service is needed for
+every embedding (indexing in `generate_embeddings` and each search query). The vector service only speeds up searches over
+more candidates than the default Postgres scan covers (full-text matches plus the 10k newest visible rows); if it is down or
+still building, searches silently use that scan (no pgvector), and if the model service is unavailable too they use plain
+full-text search.
 
 ## Enabling
 
 1. **Once per cluster** — the model service (`../central_storage/k8s/k8s-central-embedding-service.yaml`). Create its
    secret (command in that file), then `kubectl -n rellm-storage apply -f` it.
-2. **Per namespace** — add two keys to the namespace's `rellm-data-credentials` Secret: `embedding-service-secret` (the
-   same value as the model service's) and `vector-service-secret` (any new random value). Then
-   `kubectl apply -f vector_search_service.yaml`.
-3. **Point the namespace's servers and jobs at them.** Add these environment variables to the `rellm` server
-   Deployment(s) and to `rellm-jobs`:
+2. **Per namespace** — add the key `embedding-service-secret` (the same value as the model service's) to the namespace's
+   `rellm-data-credentials` Secret, and point the `rellm` server Deployment(s) and `rellm-jobs` at the service:
 
    ```yaml
    - name: RELLM_EMBEDDING_SERVICE_URL
@@ -32,16 +32,10 @@ service is down or still starting, searches keep working: if the vector service 
    - name: RELLM_EMBEDDING_SERVICE_SECRET
      valueFrom:
        secretKeyRef: { name: rellm-data-credentials, key: embedding-service-secret }
-   - name: RELLM_EMBEDDING_SERVICE_REQUIRED
-     value: "1"
    ```
 
-   `RELLM_EMBEDDING_SERVICE_REQUIRED=1` is the safety net for a cluster: servers and jobs then **never** load a model of
-   their own. If `RELLM_EMBEDDING_SERVICE_URL` is ever missing or wrong, semantic search is simply unavailable (full-text
-   only, with a clear error in the log) and `generate_embeddings` exits without embedding, instead of every pod quietly
-   loading its own ~1GB copy of the model. Leave it unset on a self-hosted install with no model service.
-
-   and, on the **servers only** (the jobs don't search):
+3. **Optional, per namespace** — the vector service: add `vector-service-secret` (any new random value) to the same Secret,
+   `kubectl apply -f vector_search_service.yaml`, and on the **servers only** (the jobs don't search) set:
 
    ```yaml
    - name: RELLM_VECTOR_SERVICE_URL
@@ -51,9 +45,23 @@ service is down or still starting, searches keep working: if the vector service 
        secretKeyRef: { name: rellm-data-credentials, key: vector-service-secret }
    ```
 
-With the model service configured the model is **chosen by the cluster** (Settings → Search shows it read-only), the
-`generate_embeddings` job loads no model and takes no per-namespace lock, and servers don't load one either. Changing the
-cluster's model (`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's content in the background.
+The model is **chosen by the cluster** (Settings → Search shows it read-only); servers and jobs never choose or load one. The
+`generate_embeddings` job takes no lock: it only calls the service. Changing the cluster's model
+(`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's content in the background.
+
+Image tags: CI builds and pushes `rellm_embeddings:<version>` (and `<version>-<sha>`) but, like all deploys, never applies
+manifests. Roll a new image with `kubectl set image` or by editing the tag in the two manifests and applying them.
+
+## Running locally
+
+```bash
+make run_embedding_service     # the model service on :8090 (downloads the model on first run)
+make run_vector_service        # optional: the vector service on :8091
+make run_tmux_with_embeddings  # backend + Elm + both services side by side (see the root Makefile)
+```
+
+with `RELLM_EMBEDDING_SERVICE_URL=http://localhost:8090` (and `RELLM_EMBEDDING_SERVICE_SECRET`) in `backend/.env`
+(see `backend/.env-example`).
 
 ## Changing the cluster's model
 
@@ -81,4 +89,5 @@ dimensions) needs no migration: vectors are stored per row with the model that m
 - One pod per service: if the vector service restarts, searches use the Postgres scan until it is back (its client skips
   it for ~15 seconds after a failure so the fallback is immediate; the vector service also
   rebuilds its index from Postgres, a few seconds per 100k rows).
-- The vector service must be built with `--features vector-service` (the server Docker image is).
+- Self-hosters on the Homebrew/Linux packages don't get these services (they are not in those packages): run the
+  `rellm_embeddings` image alongside, or search stays full-text.
