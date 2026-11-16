@@ -91,10 +91,9 @@ macro_rules! exclude_authors {
             .or(posts::user_id.ne_all($excluded.excluded.to_vec()))
             // A subdomain's feed only ever shows its `only` authors (see `AuthorScope`) -- `true` otherwise.
             .and(
-                $excluded
-                    .only
-                    .is_none()
-                    .into_sql::<diesel::sql_types::Bool>()
+                // A SQL *literal*, not a bind parameter: with no subdomain scope (every normal request) Postgres
+                // folds `TRUE OR ...` away at plan time, so ordinary feeds plan exactly as they did before.
+                diesel::dsl::sql::<diesel::sql_types::Bool>(if $excluded.only.is_none() { "TRUE" } else { "FALSE" })
                     .or(posts::user_id.eq_any($excluded.only.clone().unwrap_or_default())),
             )
     };

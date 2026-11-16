@@ -83,9 +83,10 @@ macro_rules! webui {
         pub async fn $name(
             state: &State<RocketState>,
             origin: &Origin<'_>,
+            host: &rocket::http::uri::Host<'_>,
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
-            let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
+            let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
             let server_info = configuration.server_info.unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -99,9 +100,10 @@ macro_rules! webui {
         pub async fn $name(
             state: &State<RocketState>,
             origin: &Origin<'_>,
+            host: &rocket::http::uri::Host<'_>,
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
-            let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
+            let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
             let server_info = configuration.server_info.unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -116,9 +118,10 @@ macro_rules! webui {
         pub async fn $name(
             state: &State<RocketState>,
             origin: &Origin<'_>,
+            host: &rocket::http::uri::Host<'_>,
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
-            let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
+            let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
             let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -135,9 +138,10 @@ macro_rules! webui {
         pub async fn $name(
             state: &State<RocketState>,
             origin: &Origin<'_>,
+            host: &rocket::http::uri::Host<'_>,
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
-            let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
+            let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
             let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -298,9 +302,10 @@ webui!(
 pub async fn post(
     state: &State<RocketState>,
     origin: &Origin<'_>,
+    host: &rocket::http::uri::Host<'_>,
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut connection = state.pool.get().unwrap();
-    let configuration = rpcs::get_server_configuration_proto(&mut connection).unwrap();
+    let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
     let server_info = configuration.server_info.clone().unwrap_or_default();
     let raw_path = origin.path();
     let raw_path = raw_path.as_str();

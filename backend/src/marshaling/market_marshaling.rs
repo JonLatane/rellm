@@ -409,6 +409,13 @@ pub fn subscription_details_to_proto(
             .ok()
             .map(market_subscription::Details::SubdomainSubscriptionDetails),
     };
+    // A subdomain's stylesheet (up to 64 KiB) is read through `GetCustomCSS` / `/custom_css.css`, never carried in
+    // subscription listings -- they are fetched on every profile load -- so it is dropped here.
+    if let Some(market_subscription::Details::SubdomainSubscriptionDetails(d)) = &mut proto {
+        if let Some(css) = d.settings.as_mut().and_then(|s| s.custom_css_configuration.as_mut()) {
+            css.custom_css = None;
+        }
+    }
     // Whatever the row stored (rows from before this rule hold the `AWAITING_HOST_ADMIN` default), a
     // subscription whose entitlement the system grants automatically is `FULFILLED` -- see
     // `automatic_fulfillment_status`.

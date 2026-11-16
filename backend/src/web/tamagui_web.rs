@@ -19,9 +19,12 @@ lazy_static! {
 /// this app and Elm's equivalent (`elm_web::elm_index`) based on the
 /// server's configured `WebUserInterface`.
 #[rocket::get("/tamagui")]
-pub async fn index(state: &State<RocketState>) -> CacheResponse<Result<RellmResponder, Status>> {
+pub async fn index(
+    state: &State<RocketState>,
+    host: &rocket::http::uri::Host<'_>,
+) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut connection = state.pool.get().unwrap();
-    let configuration = crate::rpcs::get_server_configuration_proto(&mut connection).unwrap();
+    let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
     let server_info = configuration.server_info.unwrap_or_default();
     let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
     let server_logo = server_info

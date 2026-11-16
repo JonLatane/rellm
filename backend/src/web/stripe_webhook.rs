@@ -145,7 +145,79 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// Records a checkout that was refunded instead of fulfilled: a purchase (with no subscription) against the Checkout
+/// Session, its payment, and the refund of it. Its existence is what makes a redelivery of the same session a no-op
+/// (`process_checkout_session_completed`'s "already processed" check), so it can never grant the product later.
+pub(crate) fn record_refunded_checkout(
+    conn: &mut PgPooledConnection,
+    buyer: &models::User,
+    product: &models::MarketProduct,
+    session_id: &str,
+    payment_intent_id: Option<&str>,
+    refund_id: &str,
+    paid_amount: i32,
+    paid_currency: i32,
+) -> Result<(), tonic::Status> {
+    let purchase = models::insert_market_purchase(
+        &models::NewMarketPurchase {
+            buyer_id: buyer.id,
+            product_id: product.id,
+            subscription_id: None,
+            product_type: product.product_type.clone(),
+            details: crate::logic::subdomains::subdomain_purchase_details_json_for_label(
+                &crate::logic::subdomains::label_for_username(&buyer.username),
+            ),
+            stripe_checkout_session_id: Some(session_id.to_string()),
+            stripe_payment_intent_id: payment_intent_id.map(str::to_string),
+        },
+        conn,
+    )?;
+    // What the buyer actually paid (the Checkout Session's own total), not the product's price now -- an admin can change
+    // the price while a checkout is open, and the records must match the real Stripe charge.
+    for (amount, stripe_refund_id) in [(paid_amount, None), (-paid_amount, Some(refund_id.to_string()))] {
+        models::insert_market_payment(
+            &models::NewMarketPayment {
+                purchase_id: purchase.id,
+                amount,
+                currency: paid_currency,
+                stripe_payment_intent_id: payment_intent_id.map(str::to_string),
+                stripe_refund_id,
+                method: None,
+            },
+            conn,
+        )?;
+    }
+    Ok(())
+}
+
+/// One delivery at a time per Checkout Session: a transaction-scoped Postgres advisory lock on the session id is held for
+/// the whole of `process_checkout_session_completed`, so a concurrent redelivery waits, then sees the purchase the first
+/// one recorded (fulfilled *or* refunded -- see the subdomain conflict branch) and does nothing.
 fn handle_checkout_session_completed(
+    session: &Value,
+    stripe_config: &crate::protos::StripeConfig,
+    conn: &mut PgPooledConnection,
+) -> Result<(), tonic::Status> {
+    let session_id = session
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| tonic::Status::new(tonic::Code::InvalidArgument, "missing_session_id"))?
+        .to_string();
+    conn.transaction::<(), WebhookTxError, _>(|conn| {
+        diesel::sql_query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind::<diesel::sql_types::Text, _>(session_id.clone())
+            .execute(conn)?;
+        process_checkout_session_completed(session, stripe_config, conn)?;
+        Ok(())
+    })
+    .map_err(|e| e.0)?;
+    // A new (or released) subdomain subscription changes what its host resolves to -- forgotten only *after* the commit,
+    // or a request in between could cache the old answer again.
+    crate::logic::subdomains::invalidate_cache();
+    Ok(())
+}
+
+fn process_checkout_session_completed(
     session: &Value,
     stripe_config: &crate::protos::StripeConfig,
     conn: &mut PgPooledConnection,
@@ -220,17 +292,75 @@ fn handle_checkout_session_completed(
             &crate::logic::subdomains::label_for_username(&buyer.username),
             conn,
         )?;
-        let label = crate::logic::subdomains::validate_label_available(&buyer, conn).map_err(|e| {
-            // The checkout session id is a Stripe identifier and the label comes from the username, so neither is
-            // logged; the user and product ids are enough to find the order (the session's metadata carries both).
-            log::error!(
-                "Paid subdomain checkout for user {} on product {} conflicts ({}); no subscription created -- refund needed",
-                buyer_id,
-                product.id,
-                e.message()
-            );
-            e
-        })?;
+        let label = match crate::logic::subdomains::validate_label_available(&buyer, conn) {
+            Ok(label) => label,
+            // The label can't be had (taken, no longer valid, or the buyer already holds one): nothing is created and
+            // the charge is refunded in full. Handled -- acknowledged to Stripe -- only once the refund went
+            // through; if it didn't, the error makes Stripe redeliver and we try again (the refund is idempotent).
+            Err(e) if e.code() == tonic::Code::FailedPrecondition => {
+                let payment_intent_id = session.get("payment_intent").and_then(|v| v.as_str());
+                let refund = payment_intent_id
+                    .ok_or_else(|| {
+                        tonic::Status::new(tonic::Code::Internal, "subdomain_conflict_without_payment_intent")
+                    })
+                    .and_then(|payment_intent_id| {
+                        stripe_payments::refund_payment_intent_at(
+                            stripe_payments::DEFAULT_BASE_URL,
+                            &stripe_config.stripe_secret_key,
+                            payment_intent_id,
+                            e.message(),
+                        )
+                    });
+                // The checkout session id and the label (from the username) are identifiers, so neither is logged; the
+                // user and product ids identify the order.
+                return match refund {
+                    Ok(refund_id) => {
+                        // Record the outcome -- a purchase (no subscription) with its payment and the refund of it --
+                        // before acknowledging, so a redelivery finds this checkout already processed and can never
+                        // grant the subdomain later, even if the conflict has since gone away.
+                        let paid_amount = session
+                            .get("amount_total")
+                            .and_then(|v| v.as_i64())
+                            .and_then(|v| i32::try_from(v).ok())
+                            .unwrap_or(product.amount);
+                        let paid_currency = session
+                            .get("currency")
+                            .and_then(|v| v.as_str())
+                            .and_then(stripe_payments::currency_numeric_code)
+                            .and_then(|v| i32::try_from(v).ok())
+                            .unwrap_or(product.currency);
+                        record_refunded_checkout(
+                            conn,
+                            &buyer,
+                            &product,
+                            session_id,
+                            payment_intent_id,
+                            &refund_id,
+                            paid_amount,
+                            paid_currency,
+                        )?;
+                        log::warn!(
+                            "Refunded a paid subdomain checkout for user {} on product {}: {}",
+                            buyer_id,
+                            product.id,
+                            e.message()
+                        );
+                        Ok(())
+                    }
+                    Err(refund_error) => {
+                        log::error!(
+                            "Paid subdomain checkout for user {} on product {} conflicts ({}) and the automatic refund failed ({}) -- refund by hand",
+                            buyer_id,
+                            product.id,
+                            e.message(),
+                            refund_error.message()
+                        );
+                        Err(refund_error)
+                    }
+                };
+            }
+            Err(e) => return Err(e),
+        };
         crate::logic::subdomains::subdomain_purchase_details_json_for_label(&label)
     } else {
         product.details.clone()
@@ -323,7 +453,8 @@ fn handle_checkout_session_completed(
         fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)?;
         Ok(())
     })
-    .map_err(|e| e.0)
+    .map_err(|e| e.0)?;
+    Ok(())
 }
 
 /// `conn.transaction`'s error type must absorb Diesel's own errors (it rolls back through them) while carrying the

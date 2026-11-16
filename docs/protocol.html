@@ -8344,7 +8344,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>custom_css_configuration</td>
           <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
           <td>optional</td>
-          <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is only included in the subscription's own copy (<code>GetMarketSubscriptions</code>), never in <code>GetServerConfiguration</code>'s, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveMarketSubscription</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
+          <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is never carried in subscription listings (<code>GetMarketSubscriptions</code>, <code>User.market_subscriptions</code>) or in <code>GetServerConfiguration</code>'s copy -- read the text with <code>GetCustomCSS</code> on the subdomain's host, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveMarketSubscription</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
         </tr>
       </tbody>
     </table>

@@ -66,9 +66,10 @@ async fn elm_file(file: SpaPath) -> CacheResponse<Result<NamedFile, Status>> {
 #[rocket::get("/elm")]
 pub async fn elm_index(
     state: &State<RocketState>,
+    host: &rocket::http::uri::Host<'_>,
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut connection = state.pool.get().unwrap();
-    let configuration = get_server_configuration_proto(&mut connection).unwrap();
+    let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
     let server_info = configuration.server_info.unwrap_or_default();
     let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
     let server_logo = server_info
