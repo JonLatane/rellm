@@ -451,9 +451,11 @@ fn get_search_posts(
     // query even though they share no words with it, and fuse the two rankings. Only ever ids the
     // visibility-filtered queries return.
     if embeddings::semantic_search_ready(conn) {
-        let semantic = if embeddings::semantic_global_available() {
-            // The index holds every vector: take the nearest ids anywhere, then keep only the ones this
-            // viewer may see (the very same visibility-checked query, restricted to those ids).
+        // First the vector search service, if it's configured and up: it holds every vector, so take the nearest ids
+        // anywhere, then keep only the ones this viewer may see (the very same visibility-checked query,
+        // restricted to those ids). If it's absent, down or still building this is `None` and the Postgres scan
+        // below answers instead -- the service is optional.
+        let global = if embeddings::semantic_global_available() {
             match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Post, search_text) {
                 Some(mut nearest) if !nearest.is_empty() => {
                     let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
@@ -479,6 +481,11 @@ fn get_search_posts(
                 }
                 other => other,
             }
+        } else {
+            None
+        };
+        let semantic = if global.is_some() {
+            global
         } else {
             // Scan the newest visible posts (plus the full-text matches) out of Postgres.
             let mut recent = query_visible_posts_unlimited!(user)

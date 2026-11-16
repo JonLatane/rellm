@@ -77,7 +77,7 @@ message VectorSearchRequest {
 
 message VectorSearchResponse {
   // False while the index for this kind is still being built (or the model doesn't match): the
-  // caller should fall back to full-text search for now. `matches` is empty then.
+  // caller should fall back to scanning Postgres for now. `matches` is empty then.
   bool ready = 1;
   // Best first.
   repeated Match matches = 2;

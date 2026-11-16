@@ -546,6 +546,177 @@ fn with_everything_index(kinds: Vec<(&'static str, Vec<i64>)>, body: impl FnOnce
     embeddings::unload_server_embedder();
 }
 
+/// An index that says it can search "anywhere" but then can't answer -- what the vector search service looks like in
+/// the moment between going down and its client noticing.
+struct CannotAnswerIndex;
+
+impl embeddings::SemanticIndex for CannotAnswerIndex {
+    fn supports_global(&self) -> bool {
+        true
+    }
+    fn search(&self, _conn: &mut PgPooledConnection, _query: &embeddings::IndexQuery) -> Option<Vec<(i64, f32)>> {
+        None
+    }
+}
+
+/// Like `with_everything_index` for any index; the fake model embeds queries.
+fn with_index(index: Box<dyn embeddings::SemanticIndex>, body: impl FnOnce()) {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    embeddings::install_server_embedder(Box::new(FakeEmbedder));
+    embeddings::install_semantic_index(index);
+    body();
+    embeddings::reset_semantic_index();
+    embeddings::unload_server_embedder();
+}
+
+/// What the optional vector search service being unavailable must look like to a user: nothing -- the semantic search
+/// still works, through the Postgres scan. One scenario per search type, each run against a few unavailable indexes.
+fn unavailable_indexes() -> Vec<(&'static str, Box<dyn embeddings::SemanticIndex>)> {
+    vec![
+        ("claims to be up but cannot answer", Box::new(CannotAnswerIndex)),
+        (
+            "a real client pointed at nothing",
+            Box::new(embeddings::RemoteIndex::new("http://127.0.0.1:9", None).expect("the client starts lazily")),
+        ),
+    ]
+}
+
+#[test]
+fn without_the_vector_service_posts_are_still_found_by_meaning_through_the_postgres_scan() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "fallback_posts_author");
+        let viewer = create_user(conn, "fallback_posts_viewer");
+        let dog = title_post(conn, &author, "Adopting a puppy");
+        let private_dog = create_post(
+            conn,
+            Some(&author),
+            PostOpts { title: Some("Private puppy diary".to_string()), visibility: Visibility::Private, ..Default::default() },
+        );
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+        let id_of = |p: &crate::models::Post| crate::marshaling::ToProtoId::to_proto_id(&p.id).to_string();
+        for (why, index) in unavailable_indexes() {
+            with_index(index, || {
+                let found: Vec<String> = crate::rpcs::get_posts(
+                    GetPostsRequest {
+                        listing_type: PostListingType::TextSearch as i32,
+                        search_text: Some("getting canine".to_string()),
+                        ..Default::default()
+                    },
+                    &Some(&viewer),
+                    conn,
+                )
+                .unwrap()
+                .posts
+                .iter()
+                .map(|p| p.id.clone())
+                .collect();
+                assert!(found.contains(&id_of(&dog)), "{}: found by meaning via the scan: {:?}", why, found);
+                assert!(!found.contains(&id_of(&private_dog)), "{}: and still never a private post: {:?}", why, found);
+            });
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn without_the_vector_service_users_events_and_media_fall_back_to_the_postgres_scan_too() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let viewer = create_user(conn, "fallback_all_viewer");
+        let organizer = create_user(conn, "fallback_all_organizer");
+        let profile = create_user_with_profile(conn, "fallback_trainer", "Fay Trainer", "trains puppies and rescue dogs");
+        let (event, _event_post) = create_event(
+            conn,
+            &organizer,
+            EventOpts { title: Some("Puppy meetup".to_string()), default_occasion: None, ..Default::default() },
+        );
+        let (_occasion, occasion_post) = create_occasion(conn, &event, Some(&organizer), OccasionOpts::default());
+        let media = create_media_with_opts(conn, Some(&organizer), MediaOpts { name: Some("Puppy video"), ..Default::default() });
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+        for kind in EmbeddingKind::ALL {
+            embeddings::sync_embeddings(conn, kind, &mut ctx)?;
+        }
+        for (why, index) in unavailable_indexes() {
+            with_index(index, || {
+                let users: Vec<String> = crate::rpcs::get_users(
+                    GetUsersRequest {
+                        listing_type: UserListingType::UsersTextSearch as i32,
+                        search_text: Some("canine".to_string()),
+                        ..Default::default()
+                    },
+                    &Some(&viewer),
+                    conn,
+                )
+                .unwrap()
+                .users
+                .iter()
+                .map(|u| u.username.clone())
+                .collect();
+                assert!(users.contains(&profile.username), "{}: users: {:?}", why, users);
+
+                let occasions: Vec<String> = crate::rpcs::get_events(
+                    GetEventsRequest {
+                        listing_type: EventListingType::EventTextSearch as i32,
+                        search_text: Some("canine".to_string()),
+                        ..Default::default()
+                    },
+                    &Some(&viewer),
+                    conn,
+                )
+                .unwrap()
+                .events
+                .iter()
+                .flat_map(|e| e.occasions.iter().map(|o| o.post.as_ref().map(|p| p.id.clone()).unwrap_or_default()))
+                .collect();
+                let occasion_id = crate::marshaling::ToProtoId::to_proto_id(&occasion_post.id).to_string();
+                assert!(occasions.contains(&occasion_id), "{}: events: {:?}", why, occasions);
+
+                let found: Vec<String> = crate::rpcs::get_media(
+                    GetMediaRequest { search_text: Some("canine".to_string()), ..Default::default() },
+                    &Some(&viewer),
+                    conn,
+                )
+                .unwrap()
+                .media
+                .iter()
+                .map(|m| m.id.clone())
+                .collect();
+                let media_id = crate::marshaling::ToProtoId::to_proto_id(&media.id).to_string();
+                assert!(found.contains(&media_id), "{}: media: {:?}", why, found);
+            });
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn a_remote_index_that_fails_stops_asking_so_the_fallback_is_immediate() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let remote = embeddings::RemoteIndex::new("http://127.0.0.1:9", None)?;
+        assert!(embeddings::SemanticIndex::supports_global(&remote), "believed up until it fails");
+        let vector = FakeEmbedder::vector("dog");
+        let query = embeddings::IndexQuery {
+            kind: EmbeddingKind::Post,
+            spec: embeddings::default_model(),
+            vector: &vector,
+            scope: None,
+            limit: 5,
+        };
+        assert_eq!(embeddings::SemanticIndex::search(&remote, conn, &query), None);
+        // The breaker is open: callers now skip it and use the Postgres scan without waiting on a timeout.
+        assert!(!embeddings::SemanticIndex::supports_global(&remote), "down: take the scan path directly");
+        let started = std::time::Instant::now();
+        assert_eq!(embeddings::SemanticIndex::search(&remote, conn, &query), None);
+        assert!(started.elapsed() < std::time::Duration::from_millis(200), "no second wait: {:?}", started.elapsed());
+        Ok(())
+    });
+}
+
 #[test]
 fn global_mode_posts_finds_semantic_only_matches_and_never_shows_what_the_viewer_cannot_see() {
     let mut conn = test_conn();

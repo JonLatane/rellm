@@ -11,7 +11,8 @@
 //!   * in between it polls `(embedded_at, id)` past its last position (`POLL_EVERY`) to add new and re-embedded
 //!     rows. Rows that became un-embeddable in between linger until the next rebuild; the server's visibility
 //!     query discards any id that no longer exists.
-//! Until a kind's first build finishes `Search` answers `ready: false` and the server just uses full-text search.
+//! Until a kind's first build finishes `Search` answers `ready: false` and the server just uses the Postgres scan (the
+//! service is optional).
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 

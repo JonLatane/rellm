@@ -4,7 +4,7 @@
 # the source of truth; this is a rebuildable cache that reads the embedding tables. Opt-in: see SEMANTIC_SEARCH.md.
 #
 # - replicas stays 1 (a second pod would just hold a second copy of the index); strategy Recreate. While it is
-#   down or still building its index, searches silently use plain full-text search.
+#   down or still building its index, searches silently use the Postgres scan (the service is optional).
 # - Cluster-internal only (ClusterIP). Callers authenticate with `vector-service-secret` from this namespace's
 #   rellm-data-credentials Secret, sent as `x-rellm-internal-secret`.
 # - It indexes whatever model the cluster's shared embedding service runs (RELLM_EMBEDDING_SERVICE_URL); set

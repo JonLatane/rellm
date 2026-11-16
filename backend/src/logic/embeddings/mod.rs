@@ -452,7 +452,9 @@ pub fn semantic_ranking(
         .embed_query(query_text.trim())
         .map_err(|e| log::error!("Couldn't embed search query: {:?}", e))
         .ok()?;
-    semantic_index().search(
+    // Scoped search is always the Postgres scan: it reads only `scope_ids`' vectors and needs nothing else running.
+    // It is also the fallback when the optional vector search service can't answer a "search anywhere" query.
+    PostgresScanIndex.search(
         conn,
         &IndexQuery {
             kind,

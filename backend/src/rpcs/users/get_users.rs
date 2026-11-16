@@ -154,20 +154,30 @@ fn semantic_user_page_ids(
         .limit(embeddings::SEMANTIC_SCAN_LIMIT)
         .load(conn)
         .ok()?;
-    let semantic = if embeddings::semantic_global_available() {
-        // The index holds every profile: take the nearest anywhere, then keep the visible ones.
-        let mut nearest = embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::UserProfile, search_text)?;
-        let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
-        let visible_ids: std::collections::HashSet<i64> = users::table
-            .filter(visible())
-            .filter(users::id.eq_any(&nearest_ids))
-            .select(users::id)
-            .load::<i64>(conn)
-            .ok()?
-            .into_iter()
-            .collect();
-        nearest.retain(|(id, _)| visible_ids.contains(id));
-        nearest
+    // First the vector search service, if configured and up: the nearest profiles anywhere, kept to the visible ones.
+    // `None` when it's absent, down or still building -- then the Postgres scan below answers instead.
+    let global = if embeddings::semantic_global_available() {
+        match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::UserProfile, search_text) {
+            Some(mut nearest) => {
+                let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                let visible_ids: std::collections::HashSet<i64> = users::table
+                    .filter(visible())
+                    .filter(users::id.eq_any(&nearest_ids))
+                    .select(users::id)
+                    .load::<i64>(conn)
+                    .ok()?
+                    .into_iter()
+                    .collect();
+                nearest.retain(|(id, _)| visible_ids.contains(id));
+                Some(nearest)
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    let semantic = if let Some(global) = global {
+        global
     } else {
         let mut scope: Vec<i64> = users::table
             .filter(visible())

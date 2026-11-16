@@ -13,7 +13,8 @@ server and job. Two **opt-in** services remove that duplication:
 | `rellm-vector` (`vector_search_service`) | one per **namespace** | a USearch index of that namespace's embeddings, shared by its servers | ~400 bytes per row |
 
 Both are single-pod, cluster-internal (ClusterIP), authenticated with a shared secret, and **optional at runtime**: if a
-service is down or still starting, searches fall back to plain full-text search.
+service is down or still starting, searches keep working: if the vector service can't answer they use the Postgres scan
+(no extra service, no pgvector), and if the model service is also unavailable they use plain full-text search.
 
 ## Enabling
 
@@ -51,6 +52,7 @@ cluster's model (`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's co
 
 - Private post/profile text is sent to the shared model service. It stores and logs nothing, but only point namespaces
   you operate at it.
-- One pod per service: if it restarts, semantic search is full-text-only until it is back (the vector service also
+- One pod per service: if the vector service restarts, searches use the Postgres scan until it is back (its client skips
+  it for ~15 seconds after a failure so the fallback is immediate; the vector service also
   rebuilds its index from Postgres, a few seconds per 100k rows).
 - The vector service must be built with `--features vector-service` (the server Docker image is).

@@ -555,8 +555,9 @@ fn get_search_events(
         // (occasion id, its event id) pairs of the occasions semantic matches may map to, and the Events'
         // semantic ranking. Both only ever involve occasions the visibility-checked queries return.
         let (occasion_event, semantic): (Vec<(i64, i64)>, Option<Vec<(i64, f32)>>) = if embeddings::semantic_global_available() {
-            // The index holds every Event: take the nearest anywhere, then keep the occasions of those
-            // Events this viewer may see (the same visibility-checked query, restricted to those Events).
+            // First the vector search service, if configured and up: the nearest Events anywhere, kept to the
+            // occasions of those this viewer may see (the same visibility-checked query, restricted to those Events).
+            // `None` when it's absent, down or still building -- then the Postgres scan below answers instead.
             match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Event, search_text) {
                 Some(nearest) if !nearest.is_empty() => {
                     let nearest_event_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
@@ -576,6 +577,11 @@ fn get_search_events(
                 }
                 other => (vec![], other),
             }
+        } else {
+            (vec![], None)
+        };
+        let (occasion_event, semantic) = if semantic.is_some() {
+            (occasion_event, semantic)
         } else {
             let mut recent = query_visible_events!(user, request.time_filter)
                 .select((occasions::post_id, occasions::event_id))

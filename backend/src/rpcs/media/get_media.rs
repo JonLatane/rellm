@@ -193,9 +193,10 @@ pub fn get_media(
         // its words, and fuse the two rankings. The final `query` below still applies visibility.
         let mut matching_ids = matching_ids;
         if embeddings::semantic_search_ready(conn) {
-            let semantic = if embeddings::semantic_global_available() {
-                // The index holds every vector: take the nearest ids anywhere, then keep only the media this
-                // viewer may see with the request's owner/type filters (the same visibility-checked query).
+            // First the vector search service, if configured and up: the nearest ids anywhere, kept to the media this
+            // viewer may see with the request's owner/type filters (the same visibility-checked query). `None` when
+            // it's absent, down or still building -- then the Postgres scan below answers (the service is optional).
+            let global = if embeddings::semantic_global_available() {
                 match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Media, search_text.unwrap_or_default()) {
                     Some(mut nearest) if !nearest.is_empty() => {
                         let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
@@ -221,6 +222,11 @@ pub fn get_media(
                     }
                     other => other,
                 }
+            } else {
+                None
+            };
+            let semantic = if global.is_some() {
+                global
             } else {
                 // Scan the newest visible media (of the requested owner/type) out of Postgres.
                 let mut recent = apply_content_type_filter(
