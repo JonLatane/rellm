@@ -43,6 +43,7 @@ Mounted by `Components.Pages.MediaPage`, which `Pages.Video`/`Pages.Audio`/`Page
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.Users as Users
 import Dict exposing (Dict)
@@ -195,7 +196,7 @@ fedKey source =
 
 {-| Every Mastodon instance (connected, or browsed and enabled) and Bluesky account/AppView in use, for the
 Video and Audio feeds -- never for Images (neither network has a media library, and a photo feed isn't
-asked for).
+asked for), and Bluesky only for Videos (it has no audio).
 -}
 federatedSources : Shared.Model -> Kind -> List FedSource
 federatedSources shared kind =
@@ -209,8 +210,14 @@ federatedSources shared kind =
             |> Set.toList
             |> List.map FedMastodon
         )
-            ++ List.map FedBlueskyAccount (List.filter .enabled shared.accounts.blueskyAccounts)
-            ++ List.map (.host >> FedBlueskyAppView) (List.filter .enabled shared.accounts.blueskyAppViews)
+            ++ (if kind == Videos then
+                    -- (Bluesky has video but no audio, so the Audio page has nothing to look for there.)
+                    List.map FedBlueskyAccount (List.filter .enabled shared.accounts.blueskyAccounts)
+                        ++ List.map (.host >> FedBlueskyAppView) (List.filter .enabled shared.accounts.blueskyAppViews)
+
+                else
+                    []
+               )
 
 
 type Msg
@@ -440,13 +447,16 @@ fetchFederated model source requestId cursor append =
         search =
             String.trim model.searchText
 
-        blueskyPage : BlueskyAuth -> Maybe String -> Task.Task Http.Error ( List Post, Maybe String )
-        blueskyPage auth page =
+        -- Without a search it reads Bluesky's "What's Hot" feed: about one post in ten there has a video, where the
+        -- newest posts (`Bluesky.fetchLatestPosts`) have one in fifty or fewer, so a few pages of those often held
+        -- none at all. With a search it's the network-wide search, which needs its own host for an AppView.
+        blueskyPage : { feedAuth : BlueskyAuth, searchAuth : BlueskyAuth } -> Maybe String -> Task.Task Http.Error ( List Post, Maybe String )
+        blueskyPage { feedAuth, searchAuth } page =
             if String.isEmpty search then
-                Bluesky.fetchLatestPosts Nothing auth page
+                Bluesky.fetchWhatsHot feedAuth page
 
             else
-                Bluesky.searchPosts Bluesky.SearchTop Nothing auth search page
+                Bluesky.searchPosts Bluesky.SearchTop Nothing searchAuth search page
 
         task : Task.Task Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String )
         task =
@@ -456,11 +466,11 @@ fetchFederated model source requestId cursor append =
                         |> Task.map (\( items, next ) -> ( Nothing, items, next ))
 
                 FedBlueskyAccount account ->
-                    BlueskyAccounts.performWithBlueskyAccount account (\auth -> FedMedia.collect kind key (blueskyPage auth) cursor)
+                    BlueskyAccounts.performWithBlueskyAccount account (\auth -> FedMedia.collect kind key (blueskyPage { feedAuth = auth, searchAuth = auth }) cursor)
                         |> Task.map (\( refreshed, ( items, next ) ) -> ( Actions.rotatedBluesky account refreshed, items, next ))
 
                 FedBlueskyAppView host ->
-                    FedMedia.collect kind key (blueskyPage (blueskyAuthFor (anonymousSearchHost host))) cursor
+                    FedMedia.collect kind key (blueskyPage { feedAuth = blueskyAuthFor host, searchAuth = blueskyAuthFor (anonymousSearchHost host) }) cursor
                         |> Task.map (\( items, next ) -> ( Nothing, items, next ))
     in
     task
@@ -1099,7 +1109,8 @@ thumbnailUrl kind maybeServer media =
     in
     case kind of
         Videos ->
-            ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
+            -- (Video cards draw theirs with `MediaRenderer.videoPosterUrl`/`posterFrame`.)
+            Nothing
 
         Audio ->
             -- The cover art picked for the track, else what's embedded in the file, else the waveform.
@@ -1251,15 +1262,13 @@ videoCard shared showHost host maybeServer media =
     in
     div [ class "media-card video-card" ]
         [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
-            [ case thumbnailUrl Videos maybeServer media of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
-            , licensedBadge media
-            ]
+            (MediaRenderer.posterFrame "🎬"
+                (MediaRenderer.videoPosterUrl maybeServer
+                    (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host)
+                    (MediaViewerPanel.mediaToReference media)
+                )
+                ++ [ licensedBadge media ]
+            )
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]
             , div [ class "media-card-sub" ]
@@ -1473,14 +1482,7 @@ fedVideoCard : Shared.Model -> Bool -> FedMedia.Item -> Html Msg
 fedVideoCard shared showHost item =
     div [ class "media-card video-card" ]
         [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
-            [ case item.thumbnailUrl of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
-            ]
+            (MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media))
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]
             , div [ class "media-card-sub" ]
