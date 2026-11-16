@@ -9,6 +9,7 @@ module Components.MediaFeed exposing
     , replaceMedia
     , requestFor
     , retryFetch
+    , singleReference
     , syncMsg
     , clearMsg
     , update
@@ -613,7 +614,7 @@ update shared msg model =
                 Effect.fromShared
                     (Shared.MediaViewerPanelMsg
                         (MediaViewerPanel.OpenWithPostLinks
-                            (List.filter (\reference -> reference.id == mediaId) references)
+                            (singleReference mediaId references)
                             (Dict.filter (\id _ -> id == mediaId) postLinks)
                             mediaId
                             key
@@ -763,8 +764,8 @@ update shared msg model =
                                 |> Maybe.withDefault []
                                 -- A video opens alone (the viewer would otherwise page through every video listed from
                                 -- this server); images are a gallery, so they page.
-                                |> List.filter (\media -> model.kind /= Videos || media.id == mediaId)
                                 |> List.map MediaViewerPanel.mediaToReference
+                                |> (\references -> if model.kind == Videos then singleReference mediaId references else references)
                             )
                             Nothing
                             mediaId
@@ -778,6 +779,14 @@ update shared msg model =
             , Effect.fromShared (Shared.AudioPlayerPanelMsg (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast video (Just title)))
             )
 
+
+
+{-| Just the reference with `mediaId` -- exactly one, even when several entries share it (two Bluesky posts can carry the same
+video, whose URL is its id) -- so the viewer opening on a video has nothing to page to. Pure so it's unit-testable.
+-}
+singleReference : String -> List MediaReference -> List MediaReference
+singleReference mediaId references =
+    references |> List.filter (\reference -> reference.id == mediaId) |> List.take 1
 
 
 {-| Restarts every already-started federated feed from its first page for the current search, keeping what's
