@@ -15,6 +15,10 @@ suite =
             \_ ->
                 VideoPoster.posterUrl "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8"
                     |> Expect.equal (Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg")
+        , test "a Bluesky playlist with a query string still finds its thumbnail" <|
+            \_ ->
+                VideoPoster.posterUrl "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8?token=abc"
+                    |> Expect.equal (Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg")
         , test "a Mastodon video's thumbnail is its small/ copy as a png, keeping the query" <|
             \_ ->
                 VideoPoster.posterUrl "https://s3.example.com/mastodonworld/cache/media_attachments/files/117/554/560/original/1eb5c8d5.mp4?X=1"

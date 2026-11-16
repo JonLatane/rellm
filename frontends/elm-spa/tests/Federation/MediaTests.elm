@@ -50,6 +50,7 @@ suite =
                     [ post "p1" [ reference "a" "video/*" (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/playlist.m3u8") ]
                     , post "p2" [ reference "b" "video/*" (Just "https://m.example/media_attachments/files/1/2/original/clip.mp4") ]
                     , post "p3" [ reference "c" "video/*" (Just "https://example.social/video.mp4") ]
+                    , post "p4" [ reference "d" "video/*" (Just "https://video.bsky.app/watch/did:plc:abc/bafy456/playlist.m3u8?token=abc") ]
                     ]
                         |> Media.itemsOf VideoKind "mixed"
                         |> List.map .thumbnailUrl
@@ -57,6 +58,7 @@ suite =
                             [ Just "https://video.bsky.app/watch/did:plc:abc/bafy123/thumbnail.jpg"
                             , Just "https://m.example/media_attachments/files/1/2/small/clip.png"
                             , Nothing
+                            , Just "https://video.bsky.app/watch/did:plc:abc/bafy456/thumbnail.jpg"
                             ]
             ]
         , describe "plainTitle"
