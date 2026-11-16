@@ -32,7 +32,14 @@ service is down or still starting, searches keep working: if the vector service 
    - name: RELLM_EMBEDDING_SERVICE_SECRET
      valueFrom:
        secretKeyRef: { name: rellm-data-credentials, key: embedding-service-secret }
+   - name: RELLM_EMBEDDING_SERVICE_REQUIRED
+     value: "1"
    ```
+
+   `RELLM_EMBEDDING_SERVICE_REQUIRED=1` is the safety net for a cluster: servers and jobs then **never** load a model of
+   their own. If `RELLM_EMBEDDING_SERVICE_URL` is ever missing or wrong, semantic search is simply unavailable (full-text
+   only, with a clear error in the log) and `generate_embeddings` exits without embedding, instead of every pod quietly
+   loading its own ~1GB copy of the model. Leave it unset on a self-hosted install with no model service.
 
    and, on the **servers only** (the jobs don't search):
 

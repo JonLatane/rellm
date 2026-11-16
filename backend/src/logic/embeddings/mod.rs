@@ -36,8 +36,11 @@ mod vector_client;
 pub mod model_service;
 #[cfg(feature = "vector-service")]
 pub mod vector_service;
-pub use embedder::{load_embedder, load_embedder_local, BoxedEmbedder, LocalEmbedder, TextEmbedder};
-pub use model_service::{cluster_model, cluster_model_blocking, embedding_service_config, embedding_service_configured, RemoteEmbedder};
+pub use embedder::{load_embedder, load_embedder_local, load_embedder_with, BoxedEmbedder, LocalEmbedder, TextEmbedder};
+pub use model_service::{
+    cluster_model, cluster_model_blocking, embedding_service_config, embedding_service_configured,
+    embedding_service_required, RemoteEmbedder,
+};
 pub use index::{install_semantic_index, reset_semantic_index, semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
 pub use vector_client::{vector_service_config, RemoteIndex};
 

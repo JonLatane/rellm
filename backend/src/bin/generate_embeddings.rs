@@ -4,6 +4,8 @@
 // Built for small hardware:
 //   * Does nothing (and never loads the model) unless `SearchSettings.semantic_search_enabled` is on,
 //     or when no text needs embedding.
+//   * With RELLM_EMBEDDING_SERVICE_REQUIRED=1 and no RELLM_EMBEDDING_SERVICE_URL it refuses to run at all rather than
+//     load a model of its own.
 //   * With a cluster-shared model service (`RELLM_EMBEDDING_SERVICE_URL`) the model runs there, not here: this
 //     job only sends it text, loads nothing, and takes no lock.
 //   * In a cluster (`ClusterResources` configured) without one, takes the `CLUSTER_RESOURCE_EMBEDDINGS` lock
@@ -49,6 +51,14 @@ pub fn main() {
 
     if !embeddings::semantic_search_enabled(&mut conn) {
         log::info!("Semantic search is disabled in the server settings; nothing to do.");
+        return;
+    }
+
+    if embeddings::embedding_service_required() && !embeddings::embedding_service_configured() {
+        log::error!(
+            "RELLM_EMBEDDING_SERVICE_REQUIRED is set but RELLM_EMBEDDING_SERVICE_URL is not: this job must not load a model of \
+             its own, so it embeds nothing. Point it at the cluster's embedding service."
+        );
         return;
     }
 

@@ -19,12 +19,35 @@ pub type BoxedEmbedder = Box<dyn TextEmbedder>;
 /// Loads the embedder for `spec`, downloading the model first if it isn't cached. Blocking, and slow
 /// the first time. The one place that decides where the model runs.
 pub fn load_embedder(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<BoxedEmbedder> {
-    // With a cluster-shared model service configured, the model runs there (and is *its* model: `spec` is only
-    // what an in-process load would use -- see `search_configuration`, which resolves the cluster's model).
-    if let Some((url, secret)) = super::embedding_service_config() {
-        return Ok(Box::new(super::RemoteEmbedder::connect(&url, secret)?));
+    load_embedder_with(
+        spec,
+        threads,
+        super::embedding_service_config(),
+        super::embedding_service_required(),
+    )
+}
+
+/// `load_embedder` with its two environment inputs passed in:
+///   * a cluster-shared model service configured -> embed through it (and it is *its* model: `spec` is only what an
+///     in-process load would use -- see `search_configuration`, which resolves the cluster's model);
+///   * none configured and `required` (`RELLM_EMBEDDING_SERVICE_REQUIRED`) -> refuse: servers and jobs must never
+///     load a model of their own, so a missing `RELLM_EMBEDDING_SERVICE_URL` is a loud error, not a silent extra
+///     ~1GB copy of the model per process;
+///   * otherwise -> load the model in this process.
+pub fn load_embedder_with(
+    spec: &'static ModelSpec,
+    threads: usize,
+    service: Option<(String, Option<String>)>,
+    required: bool,
+) -> anyhow::Result<BoxedEmbedder> {
+    match service {
+        Some((url, secret)) => Ok(Box::new(super::RemoteEmbedder::connect(&url, secret)?)),
+        None if required => Err(anyhow::anyhow!(
+            "RELLM_EMBEDDING_SERVICE_REQUIRED is set but RELLM_EMBEDDING_SERVICE_URL is not: refusing to load the {} model in this process",
+            spec.id
+        )),
+        None => Ok(Box::new(LocalEmbedder::load(spec, threads)?)),
     }
-    Ok(Box::new(LocalEmbedder::load(spec, threads)?))
 }
 
 /// Like `load_embedder` but always runs the model in this process, ignoring any configured model service:

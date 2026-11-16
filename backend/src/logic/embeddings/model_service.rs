@@ -7,6 +7,7 @@
 //! Configuration (environment):
 //!   * client: `RELLM_EMBEDDING_SERVICE_URL` (e.g. `http://rellm-embedding.rellm-central:8090`) turns it on;
 //!     `RELLM_EMBEDDING_SERVICE_SECRET` is sent as `x-rellm-internal-secret`.
+//!   * `RELLM_EMBEDDING_SERVICE_REQUIRED=1` forbids loading a model in-process at all (see `embedding_service_required`).
 //!   * service: `RELLM_EMBEDDING_SERVICE_MODEL` (default `DEFAULT_MODEL_ID`), `RELLM_EMBEDDING_SERVICE_ADDR`
 //!     (default `0.0.0.0:8090`), `RELLM_EMBEDDING_SERVICE_SECRET` (required unless
 //!     `RELLM_EMBEDDING_SERVICE_INSECURE=1`), `RELLM_EMBEDDING_THREADS`.
@@ -49,6 +50,15 @@ pub fn embedding_service_config() -> Option<(String, Option<String>)> {
 
 pub fn embedding_service_configured() -> bool {
     embedding_service_config().is_some()
+}
+
+/// `RELLM_EMBEDDING_SERVICE_REQUIRED=1`: servers and jobs must embed through the cluster-shared model service and
+/// never load a model in-process. Without a configured service, semantic search is simply unavailable (full-text
+/// only, with a clear error in the log) instead of every pod quietly loading its own copy of the model -- the
+/// RAM-multiplying misconfiguration the shared service exists to prevent. Off by default so a self-hosted install
+/// with no cluster works with no extra service.
+pub fn embedding_service_required() -> bool {
+    matches!(std::env::var("RELLM_EMBEDDING_SERVICE_REQUIRED").as_deref(), Ok("1") | Ok("true") | Ok("TRUE"))
 }
 
 enum Job {

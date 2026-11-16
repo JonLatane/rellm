@@ -893,6 +893,20 @@ fn the_model_service_embeds_for_a_remote_client_and_reports_its_model() {
 }
 
 #[test]
+fn a_required_model_service_means_servers_and_jobs_never_load_a_model_themselves() {
+    // Required but not configured: refused outright, without ever touching the model (so no download, no RAM).
+    let refused = embeddings::load_embedder_with(embeddings::default_model(), 1, None, true);
+    let message = format!("{:?}", refused.err().expect("must refuse"));
+    assert!(message.contains("RELLM_EMBEDDING_SERVICE_REQUIRED"), "{}", message);
+    assert!(message.contains(embeddings::default_model().id), "says which model it refused: {}", message);
+
+    // Required and configured: embeds through the service, whose model it uses.
+    let url = start_model_service(None);
+    let remote = embeddings::load_embedder_with(embeddings::default_model(), 1, Some((url, None)), true).expect("remote");
+    assert_eq!(remote.spec().id, embeddings::default_model().id);
+}
+
+#[test]
 fn the_model_service_refuses_callers_without_the_secret() {
     let url = start_model_service(Some("right"));
     let denied = embeddings::RemoteEmbedder::connect(&url, Some("wrong".to_string()));
