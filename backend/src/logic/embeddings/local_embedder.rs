@@ -14,7 +14,8 @@ const MAX_TOKENS: usize = 256;
 /// The `fastembed` model behind a registry id. Every `MODELS` entry has one (a test checks).
 pub fn fastembed_model(id: &str) -> Option<EmbeddingModel> {
     Some(match id {
-        "embeddinggemma-300m-int8" => EmbeddingModel::EmbeddingGemma300MQ,
+        // Same model as `embeddinggemma-300m-int8`; `embed_with_prefix` cuts its vectors to the registry's `dimensions`.
+        "embeddinggemma-300m-int8-384" | "embeddinggemma-300m-int8" => EmbeddingModel::EmbeddingGemma300MQ,
         "embeddinggemma-300m-q4" => EmbeddingModel::EmbeddingGemma300MQ4,
         "embeddinggemma-300m" => EmbeddingModel::EmbeddingGemma300M,
         "multilingual-e5-small" => EmbeddingModel::MultilingualE5Small,
@@ -69,7 +70,13 @@ impl LocalEmbedder {
     fn embed_with_prefix(&mut self, prefix: &str, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         let prefixed: Vec<String> = texts.iter().map(|t| format!("{}{}", prefix, t)).collect();
         let mut vectors = self.inner.embed(&prefixed, Some(32))?;
-        vectors.iter_mut().for_each(|v| normalize(v));
+        // Matryoshka models keep their best information in the leading dimensions, so a registry entry asking for fewer
+        // dimensions than the model makes is served by keeping the first N and re-normalizing.
+        let dimensions = self.spec.dimensions as usize;
+        for v in vectors.iter_mut() {
+            v.truncate(dimensions);
+            normalize(v);
+        }
         Ok(vectors)
     }
 }
@@ -101,6 +108,14 @@ mod tests {
             assert!(fastembed_model(spec.id).is_some(), "{} has no fastembed model", spec.id);
         }
         assert!(fastembed_model("not-a-model").is_none());
+    }
+
+    #[test]
+    fn the_384_entry_runs_the_same_model_as_the_full_one() {
+        assert_eq!(
+            format!("{:?}", fastembed_model("embeddinggemma-300m-int8-384")),
+            format!("{:?}", fastembed_model("embeddinggemma-300m-int8"))
+        );
     }
 
     #[test]

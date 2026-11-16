@@ -73,17 +73,29 @@ pub struct ModelSpec {
     pub min_similarity: f32,
 }
 
-/// The default is the multilingual, search-tuned model: Rellm servers are not English-only, and it was the
-/// best multilingual retriever in `compare_models`. It is also the heaviest (~1GB resident, ~465MB download), so
-/// a host that can't spare that should pick a lighter model, or share one model service across namespaces.
-pub const DEFAULT_MODEL_ID: &str = "multilingual-e5-small";
+/// The default is EmbeddingGemma 300M (int8) with its Matryoshka (MRL) output cut to the first 384 dimensions: multilingual,
+/// search-tuned, about a third of e5-small's memory, and vectors the size of e5's (half of the full 768). Rellm servers are
+/// not English-only. The trade-off is speed (~5x slower to embed than e5-small) and the Gemma Terms of Use license.
+pub const DEFAULT_MODEL_ID: &str = "embeddinggemma-300m-int8-384";
 
 // Download/RAM/threshold figures are measured by `embeddings_tests::with_model::compare_models`.
-pub static MODELS: [ModelSpec; 7] = [
+pub static MODELS: [ModelSpec; 8] = [
     ModelSpec {
         id: DEFAULT_MODEL_ID,
+        name: "EmbeddingGemma 300M (int8, 384 dimensions)",
+        description: "Multilingual (100+ languages), search-tuned, 8-bit weights, with the vectors cut to their first 384 dimensions (Matryoshka representation learning), so storage and index memory match e5-small. The default: ~330MB of memory, a third of e5's. ~5x slower to embed than e5-small.",
+        dimensions: 384,
+        download_megabytes: 295,
+        memory_megabytes: 331,
+        multilingual: true,
+        query_prefix: "task: search result | query: ",
+        document_prefix: "title: none | text: ",
+        min_similarity: 0.23,
+    },
+    ModelSpec {
+        id: "multilingual-e5-small",
         name: "multilingual-e5-small",
-        description: "Multilingual (100 languages), search-tuned (queries vs. passages), not quantized. The default. The heaviest option: ~1GB of memory.",
+        description: "Multilingual (100 languages), search-tuned (queries vs. passages), not quantized. The heaviest option: ~1GB of memory, but the fastest multilingual one.",
         dimensions: 384,
         download_megabytes: 465,
         memory_megabytes: 980,
