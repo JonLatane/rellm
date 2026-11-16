@@ -46,6 +46,13 @@ pub fn currency_code(currency: u32) -> Result<&'static str, Status> {
     }
 }
 
+/// The inverse of `currency_code`: Stripe's lowercase alpha code -> numeric ISO 4217 (what `market_payments.currency` stores).
+pub fn currency_numeric_code(stripe_currency: &str) -> Option<u32> {
+    [840u32, 978, 826, 124, 36, 392, 756]
+        .into_iter()
+        .find(|numeric| currency_code(*numeric).is_ok_and(|alpha| alpha.eq_ignore_ascii_case(stripe_currency)))
+}
+
 /// Whether `currency` has no minor unit (e.g. Japanese yen has no "cents") -- Stripe's own
 /// zero-decimal currency list (a superset of this); only JPY is reachable through the currencies
 /// `currency_code` actually supports today. `MarketProduct.amount` is still always a plain integer

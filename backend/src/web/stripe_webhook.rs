@@ -155,6 +155,8 @@ pub(crate) fn record_refunded_checkout(
     session_id: &str,
     payment_intent_id: Option<&str>,
     refund_id: &str,
+    paid_amount: i32,
+    paid_currency: i32,
 ) -> Result<(), tonic::Status> {
     let purchase = models::insert_market_purchase(
         &models::NewMarketPurchase {
@@ -170,12 +172,14 @@ pub(crate) fn record_refunded_checkout(
         },
         conn,
     )?;
-    for (amount, stripe_refund_id) in [(product.amount, None), (-product.amount, Some(refund_id.to_string()))] {
+    // What the buyer actually paid (the Checkout Session's own total), not the product's price now -- an admin can change
+    // the price while a checkout is open, and the records must match the real Stripe charge.
+    for (amount, stripe_refund_id) in [(paid_amount, None), (-paid_amount, Some(refund_id.to_string()))] {
         models::insert_market_payment(
             &models::NewMarketPayment {
                 purchase_id: purchase.id,
                 amount,
-                currency: product.currency,
+                currency: paid_currency,
                 stripe_payment_intent_id: payment_intent_id.map(str::to_string),
                 stripe_refund_id,
                 method: None,
@@ -314,6 +318,17 @@ fn process_checkout_session_completed(
                         // Record the outcome -- a purchase (no subscription) with its payment and the refund of it --
                         // before acknowledging, so a redelivery finds this checkout already processed and can never
                         // grant the subdomain later, even if the conflict has since gone away.
+                        let paid_amount = session
+                            .get("amount_total")
+                            .and_then(|v| v.as_i64())
+                            .and_then(|v| i32::try_from(v).ok())
+                            .unwrap_or(product.amount);
+                        let paid_currency = session
+                            .get("currency")
+                            .and_then(|v| v.as_str())
+                            .and_then(stripe_payments::currency_numeric_code)
+                            .and_then(|v| i32::try_from(v).ok())
+                            .unwrap_or(product.currency);
                         record_refunded_checkout(
                             conn,
                             &buyer,
@@ -321,6 +336,8 @@ fn process_checkout_session_completed(
                             session_id,
                             payment_intent_id,
                             &refund_id,
+                            paid_amount,
+                            paid_currency,
                         )?;
                         log::warn!(
                             "Refunded a paid subdomain checkout for user {} on product {}: {}",

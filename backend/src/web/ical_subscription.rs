@@ -130,6 +130,7 @@ async fn ical_subscription(
     // Get the frontend domain for event links
     let frontend_domain = crate::web::subdomain_web::feed_frontend_domain(
         configured_frontend_domain(state, host),
+        &host.domain().to_string(),
         &subdomain,
     );
 

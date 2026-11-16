@@ -82,6 +82,7 @@ async fn rss_subscription(
 
     let frontend_domain = crate::web::subdomain_web::feed_frontend_domain(
         configured_frontend_domain(state, host),
+        &host.domain().to_string(),
         &subdomain,
     );
     let channel_link = format!("https://{frontend_domain}/");

@@ -506,11 +506,15 @@ fn feed_links_use_the_subdomains_own_domain() {
         subscribe(conn, &admin, &owner, SubdomainSettings::default());
         let context = scope(conn, "sd10owner.bullcity.test");
         assert_eq!(
-            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), &context),
+            crate::web::subdomain_web::feed_frontend_domain(
+                FRONTEND_HOST.to_string(),
+                "sd10owner.bullcity.test",
+                &context
+            ),
             "sd10owner.bullcity.test"
         );
         assert_eq!(
-            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), &None),
+            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), FRONTEND_HOST, &None),
             FRONTEND_HOST
         );
         Ok(())
@@ -529,11 +533,19 @@ fn a_feed_domain_that_is_already_the_subdomain_is_not_prefixed_twice() {
         let context = scope(conn, "sd11owner.bullcity.test");
         // With `cdn_grpc` on, the configured domain is the request's own host -- already the subdomain.
         assert_eq!(
-            crate::web::subdomain_web::feed_frontend_domain("sd11owner.bullcity.test".to_string(), &context),
+            crate::web::subdomain_web::feed_frontend_domain(
+                "sd11owner.bullcity.test".to_string(),
+                "sd11owner.bullcity.test",
+                &context
+            ),
             "sd11owner.bullcity.test"
         );
         assert_eq!(
-            crate::web::subdomain_web::feed_frontend_domain("bullcity.test".to_string(), &context),
+            crate::web::subdomain_web::feed_frontend_domain(
+                "bullcity.test".to_string(),
+                "sd11owner.bullcity.test",
+                &context
+            ),
             "sd11owner.bullcity.test"
         );
         Ok(())
@@ -553,7 +565,10 @@ fn a_refunded_checkout_is_recorded_so_a_redelivery_cannot_grant_it() {
         let product = models::get_market_product(subscription.product_id, conn)?;
         let loser = create_user(conn, "SD12HOLDER");
 
-        crate::web::stripe_webhook::record_refunded_checkout(conn, &loser, &product, "cs_test_1", Some("pi_1"), "re_1")?;
+        // The buyer paid 250 (the price when they started checkout); the product has since been re-priced to 300.
+        crate::web::stripe_webhook::record_refunded_checkout(
+            conn, &loser, &product, "cs_test_1", Some("pi_1"), "re_1", 250, 978,
+        )?;
 
         // The "already processed" lookup `process_checkout_session_completed` starts with finds it...
         let purchase = market_purchases::table
@@ -569,7 +584,32 @@ fn a_refunded_checkout_is_recorded_so_a_redelivery_cannot_grant_it() {
             .load(conn)
             .unwrap();
         payments.sort();
-        assert_eq!(payments, vec![(-300, Some("re_1".to_string())), (300, None)]);
+        // The records carry what was actually charged, not the product's current price.
+        assert_eq!(payments, vec![(-250, Some("re_1".to_string())), (250, None)]);
+        Ok(())
+    });
+}
+
+#[test]
+fn an_owner_named_like_the_parents_first_label_still_gets_a_prefixed_feed_domain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd13_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "bullcity");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "bullcity.bullcity.test");
+        assert!(context.is_some());
+        // `cdn_grpc` off: the configured domain is the parent's, "bullcity.test" -- which *starts with* the owner's label.
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(
+                "bullcity.test".to_string(),
+                "bullcity.bullcity.test",
+                &context
+            ),
+            "bullcity.bullcity.test"
+        );
         Ok(())
     });
 }

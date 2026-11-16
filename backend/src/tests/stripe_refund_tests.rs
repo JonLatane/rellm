@@ -26,3 +26,11 @@ fn a_rejected_refund_is_an_error_not_a_silent_success() {
     let error = refund_payment_intent_at(&base_url, "sk_test", "pi_abc", "x").unwrap_err();
     assert_eq!(error.message(), "stripe_refund_failed");
 }
+
+#[test]
+fn stripes_currency_code_maps_back_to_the_numeric_code() {
+    use crate::logic::stripe_payments::currency_numeric_code;
+    assert_eq!(currency_numeric_code("usd"), Some(840));
+    assert_eq!(currency_numeric_code("EUR"), Some(978));
+    assert_eq!(currency_numeric_code("xyz"), None);
+}

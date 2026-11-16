@@ -79,6 +79,7 @@ async fn atom_subscription(
 
     let frontend_domain = crate::web::subdomain_web::feed_frontend_domain(
         configured_frontend_domain(state, host),
+        &host.domain().to_string(),
         &subdomain,
     );
     let feed_link = format!("https://{frontend_domain}/");
