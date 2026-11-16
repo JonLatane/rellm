@@ -8,7 +8,7 @@
 # - Cluster-internal only (ClusterIP). Callers authenticate with `vector-service-secret` from this namespace's
 #   rellm-data-credentials Secret, sent as `x-rellm-internal-secret`.
 # - It indexes whatever model the cluster's shared embedding service runs (RELLM_EMBEDDING_SERVICE_URL).
-# - Image: rellm-embeddings (the same image as the model service); it never loads a model itself.
+# - Image: rellm_embeddings (the same image as the model service); it never loads a model itself.
 # - Memory is about 400 bytes per vector (int8 + graph); 100k rows ~ 40MB, 1M ~ 400MB -- size the limit to the data.
 apiVersion: v1
 kind: Service
@@ -45,7 +45,7 @@ spec:
     spec:
       containers:
         - name: rellm-vector
-          image: docker.io/jonlatane/rellm-embeddings:0.5.553
+          image: docker.io/jonlatane/rellm_embeddings:0.5.553
           imagePullPolicy: IfNotPresent
           command: ["/opt/vector_search_service"]
           env:

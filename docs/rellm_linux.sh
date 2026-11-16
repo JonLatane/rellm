@@ -168,7 +168,7 @@ Commands:
                              occasion counts for every User, correcting any drift
     generate_embeddings      Create/refresh text embeddings of Posts, Events, Media and User
                              profiles for semantic search by calling the cluster's embedding
-                             service ($RELLM_EMBEDDING_SERVICE_URL, from the rellm-embeddings
+                             service ($RELLM_EMBEDDING_SERVICE_URL, from the rellm_embeddings
                              image). Loads no model itself; a no-op when "semantic search" is off
                              in the server settings or no embedding service is configured
     convert_media_sizes      Generate small/medium/large resized copies of unprocessed PNG/JPEG

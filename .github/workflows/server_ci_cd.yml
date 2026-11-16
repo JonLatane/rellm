@@ -329,7 +329,7 @@ jobs:
           cache-workspace-crates: true
 
       # Default features only: no embedding model, ONNX Runtime or USearch code goes into the server or job
-      # binaries (see build_embeddings_binaries for the separate rellm-embeddings image).
+      # binaries (see build_embeddings_binaries for the separate rellm_embeddings image).
       - working-directory: backend
         run: cargo build --release
 
@@ -345,7 +345,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # The rellm-embeddings image's two binaries (the cluster's embedding model service, which is the ONLY code that
+  # The rellm_embeddings image's two binaries (the cluster's embedding model service, which is the ONLY code that
   # loads a model, and the per-namespace vector search service). Built separately, with their cargo features, so
   # nothing model-related is ever linked into the server or jobs.
   build_embeddings_binaries:
@@ -627,7 +627,7 @@ jobs:
           cache-workspace-crates: true
       - working-directory: backend
         run: cargo test
-      # The rellm-embeddings services (model service, USearch vector service) are behind cargo features.
+      # The rellm_embeddings services (model service, USearch vector service) are behind cargo features.
       - working-directory: backend
         run: cargo test --features embedding-service,vector-service -- embeddings_tests vector_service_tests
       - working-directory: backend
@@ -882,11 +882,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push rellm-embeddings image
+      - name: Build and push rellm_embeddings image
         uses: docker/build-push-action@v7
         with:
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm-embeddings:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm-embeddings:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
           context: .
           file: ./deploys/docker/embeddings/Dockerfile
           platforms: linux/amd64
@@ -1052,7 +1052,7 @@ jobs:
             - [DockerHub: Rellm Server (jonlatane/rellm:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm/tags?page=1&name=${{ steps.vars.outputs.full_version }})
 
             - [DockerHub: Rellm Preview Generator (jonlatane/rellm_preview_generator:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_preview_generator/tags?page=1&name=${{ steps.vars.outputs.full_version }})
-            - [DockerHub: Rellm Embeddings (jonlatane/rellm-embeddings:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm-embeddings/tags?page=1&name=${{ steps.vars.outputs.full_version }})
+            - [DockerHub: Rellm Embeddings (jonlatane/rellm_embeddings:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_embeddings/tags?page=1&name=${{ steps.vars.outputs.full_version }})
 
             A macOS (Apple Silicon) build is available via Homebrew:
 

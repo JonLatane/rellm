@@ -14,7 +14,7 @@ COPY backend/target/release/sync_sources__server_release /opt/sync_sources
 COPY backend/target/release/update_user_counts__server_release /opt/update_user_counts
 COPY backend/target/release/generate_embeddings__server_release /opt/generate_embeddings
 # (generate_embeddings only calls the cluster's embedding service -- the model itself lives in the separate
-# rellm-embeddings image, see deploys/docker/embeddings/Dockerfile.)
+# rellm_embeddings image, see deploys/docker/embeddings/Dockerfile.)
 COPY backend/target/release/convert_media_sizes__server_release /opt/convert_media_sizes
 COPY backend/target/release/renew_market_subscriptions__server_release /opt/renew_market_subscriptions
 COPY backend/target/release/calculate_server_media_usage__server_release /opt/calculate_server_media_usage

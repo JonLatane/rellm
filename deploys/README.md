@@ -58,7 +58,7 @@ As a user or a contributor, it's helpful to understand that Rellm deployment is 
   * `mc`, the MinIO Client (`brew install minio/stable/mc`) -- only for [central storage](./central_storage/README.md) provisioning/transitions
   * `tmux` -- only for `view_tmux_logs` (see [Viewing Logs](#viewing-logs))
 * `Dockerfile`s in `deploys/docker`
-  * As a user, these are really just for reference, as you'll likely be deploying pre-built images from [jonlatane/rellm](https://hub.docker.com/r/jonlatane/rellm) (plus [jonlatane/rellm_preview_generator](https://hub.docker.com/r/jonlatane/rellm_preview_generator) and, for semantic search, [jonlatane/rellm-embeddings](https://hub.docker.com/r/jonlatane/rellm-embeddings), see [k8s/SEMANTIC_SEARCH.md](k8s/SEMANTIC_SEARCH.md)).
+  * As a user, these are really just for reference, as you'll likely be deploying pre-built images from [jonlatane/rellm](https://hub.docker.com/r/jonlatane/rellm) (plus [jonlatane/rellm_preview_generator](https://hub.docker.com/r/jonlatane/rellm_preview_generator) and, for semantic search, [jonlatane/rellm_embeddings](https://hub.docker.com/r/jonlatane/rellm_embeddings), see [k8s/SEMANTIC_SEARCH.md](k8s/SEMANTIC_SEARCH.md)).
 * Kubernetes `.yml` files in `deploys/k8s` and `deploys/generated_certs/k8s` (for using Rellm's Cert-Manager integration)
   * `.template.yml` files are used to generate `.yml` files for managing your own deployment.
 
