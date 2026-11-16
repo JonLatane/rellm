@@ -582,26 +582,62 @@
   bottom: 0.5rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.7);
   color: white;
   font-size: 0.8rem;
   cursor: pointer;
+  /* Hidden: faded out and shrunk toward its corner, with its label collapsed to just the glyph; shown: it fades in,
+     scales up and the label unrolls. (Not clickable while hidden.) */
   opacity: 0;
-  transition: opacity 0.15s;
+  transform: scale(0.8);
+  transform-origin: bottom right;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.video-card-queue span {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-left: 0;
+  transition: max-width 0.22s ease, margin-left 0.22s ease;
 }
 
 .video-card:hover .video-card-queue,
 .video-card:focus-within .video-card-queue,
 .video-card-queue:focus-visible {
   opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.video-card:hover .video-card-queue span,
+.video-card:focus-within .video-card-queue span,
+.video-card-queue:focus-visible span {
+  max-width: 8rem;
+  margin-left: 0.3rem;
 }
 
 @media (hover: none) {
   .video-card-queue {
     opacity: 0.9;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .video-card-queue span {
+    max-width: 8rem;
+    margin-left: 0.3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-card-queue,
+  .video-card-queue span {
+    transition: none;
   }
 }
