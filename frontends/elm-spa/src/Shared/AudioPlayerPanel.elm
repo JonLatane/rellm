@@ -252,6 +252,9 @@ type Msg
     | LinkPromptDismissed
       -- Adds a track (and the host it's on) to the queue -- starting it if nothing's loaded yet.
     | Enqueue Placement MediaReference String
+      -- The same for a video (and its title): it joins the queue, to play in the miniplayer when its turn comes -- starting it if
+      -- nothing's loaded yet. `Shared.update` fills a blank `returnUrl` with the page the click came from.
+    | EnqueueVideo Placement VideoItem (Maybe String)
       -- Notes the post a queued track was opened from (a post card's audio handed over): `id` on `host`, and its post link.
     | AttachPostUrl String String (Maybe String)
     | ToggleQueue
@@ -386,6 +389,18 @@ beginItem item model =
 
         Nothing ->
             beginTrack item model
+
+
+{-| The queue entry for `video`: a stand-in `MediaReference` (`id` = the video's `src`, `name` = its title) so the queue treats it
+like any other entry, on no server of ours (`host` `""`).
+-}
+videoQueueItem : VideoItem -> Maybe String -> QueueItem
+videoQueueItem video title =
+    { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
+    , host = ""
+    , video = Just video
+    , postUrl = video.postUrl
+    }
 
 
 {-| Makes a video entry current. The audio slots are let go (nothing here plays); `Shared.update` shows the miniplayer, which
@@ -1036,11 +1051,7 @@ updateHelp msg model =
             let
                 item : QueueItem
                 item =
-                    { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
-                    , host = ""
-                    , video = Just video
-                    , postUrl = video.postUrl
-                    }
+                    videoQueueItem video title
             in
             if isCurrentVideoSrc video.src model then
                 -- Already the miniplayer's video: its player stays (a new one would reload the stream and leave a gap), and is
@@ -1081,11 +1092,7 @@ updateHelp msg model =
                 let
                     item : QueueItem
                     item =
-                        { media = { defaultMediaReference | id = video.src, name = Just (Maybe.withDefault "Video" title) }
-                        , host = ""
-                        , video = Just video
-                        , postUrl = video.postUrl
-                        }
+                        videoQueueItem video title
                 in
                 ( { model | queue = playNowQueue item [] model.queue, videoPrior = prior }, Cmd.none )
 
@@ -1229,6 +1236,22 @@ updateHelp msg model =
                 beginItem item { model | queue = playNowQueue item [] model.queue }
 
             else if isCurrent model item then
+                ( model, Cmd.none )
+
+            else
+                ( enqueue placement item model, Cmd.none )
+
+        EnqueueVideo placement video title ->
+            let
+                item : QueueItem
+                item =
+                    videoQueueItem video title
+            in
+            if model.currentId == Nothing then
+                -- Nothing loaded: the queued video just starts.
+                beginItem item { model | queue = playNowQueue item [] model.queue }
+
+            else if isCurrentVideoSrc video.src model || isCurrent model item then
                 ( model, Cmd.none )
 
             else

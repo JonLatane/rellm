@@ -15,6 +15,7 @@ audio at all.
 
 -}
 
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Dict
 import Effect exposing (Effect)
@@ -571,29 +572,21 @@ tile shared model item =
     in
     div [ class "federated-my-media-tile" ]
         [ button [ class "federated-my-media-thumb", onClick (ItemClicked item.id), attribute "aria-label" ("Open " ++ title) ]
-            [ case ( item.kind, item.media.url ) of
+            (case ( item.kind, item.media.url ) of
                 ( ImageKind, Just url ) ->
-                    img [ src url, attribute "alt" title, attribute "loading" "lazy" ] []
+                    [ img [ src url, attribute "alt" title, attribute "loading" "lazy" ] [] ]
+
+                ( ImageKind, Nothing ) ->
+                    [ span [ class "media-card-thumb-placeholder" ] [ text "🖼️" ] ]
 
                 ( VideoKind, _ ) ->
-                    case FedMedia.thumbnailFor host item.media of
-                        Just url ->
-                            img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                        Nothing ->
-                            span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
+                    MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media)
 
                 ( AudioKind, _ ) ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
-
-                _ ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🖼️" ]
-            , if item.kind == ImageKind then
-                text ""
-
-              else
-                span [ class "media-card-play" ] [ text Glyph.play ]
-            ]
+                    [ span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
+                    , span [ class "media-card-play" ] [ text Glyph.play ]
+                    ]
+            )
         , div [ class "federated-my-media-caption" ]
             [ span [ class "federated-my-media-title" ] [ text title ]
             , div [ class "federated-my-media-actions" ]

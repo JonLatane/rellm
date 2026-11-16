@@ -50,7 +50,7 @@ permissions:
 jobs:
   test_consistency:
     name: Test Proto/Docs Consistency
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: Install protoc
@@ -127,7 +127,7 @@ jobs:
 
   test_deploys:
     name: Test Deploy Scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       # No cluster needed: the tests run the deploys/ Makefiles and scripts against stub kubectl/tmux.
@@ -135,7 +135,7 @@ jobs:
 
   build_flutter_ui:
     name: Build Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -169,7 +169,7 @@ jobs:
         run: make -C frontends/flutter build_web
 
       - name: Upload Flutter web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
@@ -179,7 +179,7 @@ jobs:
 
   build_tamagui_ui:
     name: Build Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -238,7 +238,7 @@ jobs:
         run: yarn web:prod:build
 
       - name: Upload tamagui-web-build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tamagui-web-build
           path: |
@@ -250,7 +250,7 @@ jobs:
 
   build_elm_ui:
     name: Test & Build Elm SPA Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -287,7 +287,7 @@ jobs:
         run: make build
 
       - name: Upload elm-web-build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
@@ -297,7 +297,7 @@ jobs:
 
   build_rust_binaries:
     name: Build Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -331,11 +331,17 @@ jobs:
       - working-directory: backend
         run: cargo build --release
 
-      - uses: actions/cache/save@v6
-        id: rust-app-cache
+      - name: Pack Rust binaries (tar keeps the executable bits)
+        run: |
+          cd backend/target/release
+          tar -cf "$RUNNER_TEMP/rust-binaries.tar" $(find . -maxdepth 1 -type f -perm -u+x ! -name '*.*' | sed 's|^\./||')
+      - name: Upload rust-binaries
+        uses: actions/upload-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          name: rust-binaries
+          path: ${{ runner.temp }}/rust-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
 
   build_rust_binaries_macos:
     name: Build Rust Binaries (macOS arm64)
@@ -382,15 +388,21 @@ jobs:
       - working-directory: backend
         run: cargo build --release
 
-      - uses: actions/cache/save@v6
-        id: rust-macos-app-cache
+      - name: Pack Rust binaries (tar keeps the executable bits)
+        run: |
+          cd backend/target/release
+          tar -cf "$RUNNER_TEMP/rust-macos-arm64-binaries.tar" $(find . -maxdepth 1 -type f -perm -u+x ! -name '*.*' | sed 's|^\./||')
+      - name: Upload rust-macos-arm64-binaries
+        uses: actions/upload-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          name: rust-macos-arm64-binaries
+          path: ${{ runner.temp }}/rust-macos-arm64-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
 
   build_rust_binaries_linux_amd64_static:
     name: Build Rust Binaries (Linux amd64, static libpq)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -430,15 +442,21 @@ jobs:
       - working-directory: backend
         run: cargo build --release --features static_pq
 
-      - uses: actions/cache/save@v6
-        id: rust-linux-amd64-static-app-cache
+      - name: Pack Rust binaries (tar keeps the executable bits)
+        run: |
+          cd backend/target/release
+          tar -cf "$RUNNER_TEMP/rust-linux-amd64-static-binaries.tar" $(find . -maxdepth 1 -type f -perm -u+x ! -name '*.*' | sed 's|^\./||')
+      - name: Upload rust-linux-amd64-static-binaries
+        uses: actions/upload-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          name: rust-linux-amd64-static-binaries
+          path: ${{ runner.temp }}/rust-linux-amd64-static-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
 
   build_rust_binaries_linux_arm64_static:
     name: Build Rust Binaries (Linux arm64, static libpq)
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     env:
       CARGO_INCREMENTAL: "0"
 
@@ -473,22 +491,28 @@ jobs:
       - working-directory: backend
         run: cargo build --release --features static_pq
 
-      - uses: actions/cache/save@v6
-        id: rust-linux-arm64-static-app-cache
+      - name: Pack Rust binaries (tar keeps the executable bits)
+        run: |
+          cd backend/target/release
+          tar -cf "$RUNNER_TEMP/rust-linux-arm64-static-binaries.tar" $(find . -maxdepth 1 -type f -perm -u+x ! -name '*.*' | sed 's|^\./||')
+      - name: Upload rust-linux-arm64-static-binaries
+        uses: actions/upload-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          name: rust-linux-arm64-static-binaries
+          path: ${{ runner.temp }}/rust-linux-arm64-static-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
 
   test_rust_binaries:
     name: Test Rust Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Backs the DB-backed specs under backend/src/tests/ (see src/tests/factories.rs), which run
     # against TEST_DATABASE_URL - a dedicated `rellm_test` DB, analogous to a Rails dev/test
     # split, kept separate from the `rellm_dev` DB used by a real running server. Migrations are
     # applied automatically on first test run, so no separate migration step is needed here.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17.6
         env:
           POSTGRES_DB: rellm_test
           POSTGRES_HOST_AUTH_METHOD: trust
@@ -560,7 +584,7 @@ jobs:
 
   test_tamagui_ui:
     name: Test Tamagui Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -615,7 +639,7 @@ jobs:
 
   test_flutter_ui:
     name: Test Flutter Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -639,7 +663,7 @@ jobs:
   push_server:
     name: "DockerHub: Server"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - build_flutter_ui
       - build_tamagui_ui
@@ -659,27 +683,30 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
-      - uses: actions/cache/restore@v6
-        id: rust-app-cache
+      - name: Download rust-binaries
+        uses: actions/download-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
+          name: rust-binaries
+          path: ${{ runner.temp }}/rust-binaries
+      - name: Unpack Rust binaries
+        run: |
+          mkdir -p backend/target/release
+          tar -xf "$RUNNER_TEMP/rust-binaries/rust-binaries.tar" -C backend/target/release
 
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -722,7 +749,7 @@ jobs:
   push_preview_generator:
     name: "DockerHub: Preview Generator"
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - build_rust_binaries
       - test_consistency
@@ -738,12 +765,15 @@ jobs:
       - name: Store Versioning Data for release ${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
-      - uses: actions/cache/restore@v6
-        id: rust-app-cache
+      - name: Download rust-binaries
+        uses: actions/download-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
+          name: rust-binaries
+          path: ${{ runner.temp }}/rust-binaries
+      - name: Unpack Rust binaries
+        run: |
+          mkdir -p backend/target/release
+          tar -xf "$RUNNER_TEMP/rust-binaries/rust-binaries.tar" -C backend/target/release
 
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -780,7 +810,7 @@ jobs:
       - test_flutter_ui
       - test_tamagui_ui
       - push_server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -835,7 +865,7 @@ jobs:
     needs:
       - test_rust_binaries
       - push_preview_generator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -861,7 +891,7 @@ jobs:
     permissions:
       contents: write # pushes the version tag and creates the release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - test_deploys
       - deploy_jonlineio_server
@@ -980,7 +1010,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - create_github_release
       - build_rust_binaries_macos
@@ -1004,27 +1034,30 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
-      - uses: actions/cache/restore@v6
-        id: rust-macos-app-cache
+      - name: Download rust-macos-arm64-binaries
+        uses: actions/download-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-macos-arm64-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
+          name: rust-macos-arm64-binaries
+          path: ${{ runner.temp }}/rust-macos-arm64-binaries
+      - name: Unpack Rust binaries
+        run: |
+          mkdir -p backend/target/release
+          tar -xf "$RUNNER_TEMP/rust-macos-arm64-binaries/rust-macos-arm64-binaries.tar" -C backend/target/release
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout, but rooted at a
       # staging dir that becomes /opt/homebrew/etc/rellm on the installed Mac.
@@ -1170,7 +1203,7 @@ jobs:
     permissions:
       contents: write # `gh release upload` onto the release created above
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - create_github_release
       - build_rust_binaries_linux_amd64_static
@@ -1195,18 +1228,18 @@ jobs:
         run: echo ${{ steps.vars.outputs.dated_sha_short }} > deploys/docker/continuous_delivery_hash
 
       - name: Download tamagui-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: tamagui-web-build
           # The artifact holds `out` and `out-tamagui`, rooted at their common parent.
           path: frontends/tamagui/apps/next
       - name: Download elm-web-build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: elm-web-build
           path: frontends/elm-spa/public
       - name: Download Flutter web build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: flutter-web-build
           path: frontends/flutter/build/web
@@ -1215,20 +1248,26 @@ jobs:
       # path, so they're restored one at a time and moved aside immediately --
       # restoring both to that path in one job would have the second clobber
       # the first.
-      - uses: actions/cache/restore@v6
-        id: rust-linux-amd64-static-app-cache
+      - name: Download rust-linux-amd64-static-binaries
+        uses: actions/download-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-linux-amd64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
+          name: rust-linux-amd64-static-binaries
+          path: ${{ runner.temp }}/rust-linux-amd64-static-binaries
+      - name: Unpack Rust binaries
+        run: |
+          mkdir -p backend/target/release
+          tar -xf "$RUNNER_TEMP/rust-linux-amd64-static-binaries/rust-linux-amd64-static-binaries.tar" -C backend/target/release
       - run: mv backend/target/release backend/target/release-amd64
 
-      - uses: actions/cache/restore@v6
-        id: rust-linux-arm64-static-app-cache
+      - name: Download rust-linux-arm64-static-binaries
+        uses: actions/download-artifact@v7
         with:
-          path: backend/target/release
-          key: rust-linux-arm64-static-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
-          fail-on-cache-miss: true
+          name: rust-linux-arm64-static-binaries
+          path: ${{ runner.temp }}/rust-linux-arm64-static-binaries
+      - name: Unpack Rust binaries
+        run: |
+          mkdir -p backend/target/release
+          tar -xf "$RUNNER_TEMP/rust-linux-arm64-static-binaries/rust-linux-arm64-static-binaries.tar" -C backend/target/release
       - run: mv backend/target/release backend/target/release-arm64
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout (and the
@@ -1314,7 +1353,7 @@ jobs:
     name: Deploy Bull City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1354,7 +1393,7 @@ jobs:
     name: Deploy Oak City Social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1394,7 +1433,7 @@ jobs:
     name: Deploy ATO Band
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1434,7 +1473,7 @@ jobs:
     name: Deploy to rellm.org
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1474,7 +1513,7 @@ jobs:
     name: Deploy to neurospicysteve.bullcity.social
     needs: create_github_release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7
@@ -1518,7 +1557,7 @@ jobs:
     if: |
       always() && github.ref == 'refs/heads/main' &&
       (needs.deploy_bullcitysocial.result == 'success' || needs.deploy_oakcitysocial.result == 'success' || needs.deploy_ato_band.result == 'success' || needs.deploy_rellm_org.result == 'success' || needs.deploy_neurospicysteve_bullcity_social.result == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: digitalocean/action-doctl@v2
@@ -1539,7 +1578,7 @@ jobs:
   manifest_change_notice:
     name: Notice if deploy manifests changed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7

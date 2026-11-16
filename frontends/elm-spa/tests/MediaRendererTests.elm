@@ -11,6 +11,7 @@ import Html.Attributes
 import Json.Encode as Encode
 import Proto.Rellm exposing (MediaReference, defaultMediaReference, defaultMediaSize)
 import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
+import Shared.AccountsPanel.RellmServers exposing (RellmServer)
 import Support.RellmServerFactory as RellmServerFactory
 import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
@@ -88,6 +89,38 @@ suite =
                     ]
                         |> List.map (\videoUrl -> (MediaRenderer.naturalVideo (RellmServerFactory.connected "rellm.org") Nothing (media "video/*" videoUrl)).poster)
                         |> Expect.equal [ Nothing, Nothing, Nothing ]
+            , test "videoPosterUrl: an external (Mastodon/Bluesky) video's poster is derived from its URL; one with no layout we know has none" <|
+                \_ ->
+                    [ media "video/*" "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/playlist.m3u8?token=1"
+                    , media "video/*" "https://m.example/media_attachments/files/1/2/original/clip.mp4"
+                    , media "video/*" "https://example.com/clip.mp4"
+                    ]
+                        |> List.map (MediaRenderer.videoPosterUrl (Just (RellmServerFactory.connected "rellm.org")) Nothing)
+                        |> Expect.equal
+                            [ Just "https://video.bsky.app/watch/did%3Aplc%3Aabc/bafk/thumbnail.jpg"
+                            , Just "https://m.example/media_attachments/files/1/2/small/clip.png"
+                            , Nothing
+                            ]
+            , test "videoPosterUrl: a Rellm video's poster is its generated preview thumbnail, and only once that exists" <|
+                \_ ->
+                    let
+                        rellmVideo : List MediaConversion -> MediaReference
+                        rellmVideo conversions =
+                            { defaultMediaReference
+                                | id = "v1"
+                                , url = Nothing
+                                , sizes = List.map (\conversion -> { defaultMediaSize | conversion = conversion, contentType = "video/mp4" }) conversions
+                            }
+
+                        server : Maybe RellmServer
+                        server =
+                            Just (RellmServerFactory.connected "rellm.org")
+                    in
+                    ( MediaRenderer.videoPosterUrl server Nothing (rellmVideo [ MEDIACONVERSIONORIGINAL ])
+                    , MediaRenderer.videoPosterUrl server Nothing (rellmVideo [ MEDIACONVERSIONORIGINAL, VIDEOPREVIEWTHUMBNAILMEDIUM ])
+                        |> Maybe.map (String.contains "size=video_preview_medium")
+                    )
+                        |> Expect.equal ( Nothing, Just True )
             , test "tells <rellm-video> its MediaSize, so only thumbnails get the enlarge button" <|
                 \_ ->
                     let
