@@ -220,17 +220,51 @@ fn handle_checkout_session_completed(
             &crate::logic::subdomains::label_for_username(&buyer.username),
             conn,
         )?;
-        let label = crate::logic::subdomains::validate_label_available(&buyer, conn).map_err(|e| {
-            // The checkout session id is a Stripe identifier and the label comes from the username, so neither is
-            // logged; the user and product ids are enough to find the order (the session's metadata carries both).
-            log::error!(
-                "Paid subdomain checkout for user {} on product {} conflicts ({}); no subscription created -- refund needed",
-                buyer_id,
-                product.id,
-                e.message()
-            );
-            e
-        })?;
+        let label = match crate::logic::subdomains::validate_label_available(&buyer, conn) {
+            Ok(label) => label,
+            // The label can't be had (taken, no longer valid, or the buyer already holds one): nothing is created and
+            // the charge is refunded in full. Handled -- acknowledged to Stripe -- only once the refund went
+            // through; if it didn't, the error makes Stripe redeliver and we try again (the refund is idempotent).
+            Err(e) if e.code() == tonic::Code::FailedPrecondition => {
+                let payment_intent_id = session.get("payment_intent").and_then(|v| v.as_str());
+                let refund = payment_intent_id
+                    .ok_or_else(|| {
+                        tonic::Status::new(tonic::Code::Internal, "subdomain_conflict_without_payment_intent")
+                    })
+                    .and_then(|payment_intent_id| {
+                        stripe_payments::refund_payment_intent_at(
+                            stripe_payments::DEFAULT_BASE_URL,
+                            &stripe_config.stripe_secret_key,
+                            payment_intent_id,
+                            e.message(),
+                        )
+                    });
+                // The checkout session id and the label (from the username) are identifiers, so neither is logged; the
+                // user and product ids identify the order.
+                return match refund {
+                    Ok(_) => {
+                        log::warn!(
+                            "Refunded a paid subdomain checkout for user {} on product {}: {}",
+                            buyer_id,
+                            product.id,
+                            e.message()
+                        );
+                        Ok(())
+                    }
+                    Err(refund_error) => {
+                        log::error!(
+                            "Paid subdomain checkout for user {} on product {} conflicts ({}) and the automatic refund failed ({}) -- refund by hand",
+                            buyer_id,
+                            product.id,
+                            e.message(),
+                            refund_error.message()
+                        );
+                        Err(refund_error)
+                    }
+                };
+            }
+            Err(e) => return Err(e),
+        };
         crate::logic::subdomains::subdomain_purchase_details_json_for_label(&label)
     } else {
         product.details.clone()

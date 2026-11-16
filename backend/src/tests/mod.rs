@@ -1,5 +1,6 @@
 pub mod factories;
 
+mod stripe_refund_tests;
 mod subdomain_tests;
 
 mod backfill_audio_metadata_tests;
