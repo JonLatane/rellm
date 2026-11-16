@@ -14,11 +14,11 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'federation.pb.dart' as $0;
-import 'google/protobuf/timestamp.pb.dart' as $1;
-import 'permissions.pbenum.dart' as $2;
+import 'federation.pb.dart' as $1;
+import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'permissions.pbenum.dart' as $15;
 import 'server_configuration.pbenum.dart';
-import 'visibility_moderation.pbenum.dart' as $3;
+import 'visibility_moderation.pbenum.dart' as $14;
 
 export 'server_configuration.pbenum.dart';
 
@@ -26,10 +26,10 @@ export 'server_configuration.pbenum.dart';
 class ServerConfiguration extends $pb.GeneratedMessage {
   factory ServerConfiguration({
     ServerInfo? serverInfo,
-    $0.FederationInfo? federationInfo,
-    $core.Iterable<$2.Permission>? anonymousUserPermissions,
-    $core.Iterable<$2.Permission>? defaultUserPermissions,
-    $core.Iterable<$2.Permission>? basicUserPermissions,
+    $1.FederationInfo? federationInfo,
+    $core.Iterable<$15.Permission>? anonymousUserPermissions,
+    $core.Iterable<$15.Permission>? defaultUserPermissions,
+    $core.Iterable<$15.Permission>? basicUserPermissions,
     CustomNavigationTabSet? customTabs,
     FeatureSettings? peopleSettings,
     FeatureSettings? groupSettings,
@@ -147,10 +147,10 @@ class ServerConfiguration extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ServerConfiguration', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOM<ServerInfo>(1, _omitFieldNames ? '' : 'serverInfo', subBuilder: ServerInfo.create)
-    ..aOM<$0.FederationInfo>(2, _omitFieldNames ? '' : 'federationInfo', subBuilder: $0.FederationInfo.create)
-    ..pc<$2.Permission>(10, _omitFieldNames ? '' : 'anonymousUserPermissions', $pb.PbFieldType.KE, valueOf: $2.Permission.valueOf, enumValues: $2.Permission.values, defaultEnumValue: $2.Permission.PERMISSION_UNKNOWN)
-    ..pc<$2.Permission>(11, _omitFieldNames ? '' : 'defaultUserPermissions', $pb.PbFieldType.KE, valueOf: $2.Permission.valueOf, enumValues: $2.Permission.values, defaultEnumValue: $2.Permission.PERMISSION_UNKNOWN)
-    ..pc<$2.Permission>(12, _omitFieldNames ? '' : 'basicUserPermissions', $pb.PbFieldType.KE, valueOf: $2.Permission.valueOf, enumValues: $2.Permission.values, defaultEnumValue: $2.Permission.PERMISSION_UNKNOWN)
+    ..aOM<$1.FederationInfo>(2, _omitFieldNames ? '' : 'federationInfo', subBuilder: $1.FederationInfo.create)
+    ..pc<$15.Permission>(10, _omitFieldNames ? '' : 'anonymousUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$15.Permission>(11, _omitFieldNames ? '' : 'defaultUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$15.Permission>(12, _omitFieldNames ? '' : 'basicUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
     ..aOM<CustomNavigationTabSet>(19, _omitFieldNames ? '' : 'customTabs', subBuilder: CustomNavigationTabSet.create)
     ..aOM<FeatureSettings>(20, _omitFieldNames ? '' : 'peopleSettings', subBuilder: FeatureSettings.create)
     ..aOM<FeatureSettings>(21, _omitFieldNames ? '' : 'groupSettings', subBuilder: FeatureSettings.create)
@@ -212,21 +212,21 @@ class ServerConfiguration extends $pb.GeneratedMessage {
 
   /// The federation configuration for the server.
   @$pb.TagNumber(2)
-  $0.FederationInfo get federationInfo => $_getN(1);
+  $1.FederationInfo get federationInfo => $_getN(1);
   @$pb.TagNumber(2)
-  set federationInfo($0.FederationInfo v) { setField(2, v); }
+  set federationInfo($1.FederationInfo v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasFederationInfo() => $_has(1);
   @$pb.TagNumber(2)
   void clearFederationInfo() => clearField(2);
   @$pb.TagNumber(2)
-  $0.FederationInfo ensureFederationInfo() => $_ensure(1);
+  $1.FederationInfo ensureFederationInfo() => $_ensure(1);
 
   /// Permissions for a user who isn't logged in to the server. Allows
   /// admins to disable certain features for anonymous users. Valid values are
   /// `VIEW_USERS`, `VIEW_GROUPS`, `VIEW_POSTS`, and `VIEW_EVENTS`.
   @$pb.TagNumber(10)
-  $core.List<$2.Permission> get anonymousUserPermissions => $_getList(2);
+  $core.List<$15.Permission> get anonymousUserPermissions => $_getList(2);
 
   /// Default user permissions given to a new user. Users with `MODERATE_USERS` permission can also
   /// grant/revoke these permissions for others. Valid values are
@@ -235,7 +235,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// `VIEW_POSTS`, `CREATE_POSTS`, `PUBLISH_POSTS_LOCALLY`, `PUBLISH_POSTS_GLOBALLY`,
   /// `VIEW_EVENTS`, `CREATE_EVENTS`, `PUBLISH_EVENTS_LOCALLY`, and `PUBLISH_EVENTS_GLOBALLY`.
   @$pb.TagNumber(11)
-  $core.List<$2.Permission> get defaultUserPermissions => $_getList(3);
+  $core.List<$15.Permission> get defaultUserPermissions => $_getList(3);
 
   /// Permissions grantable by a user with the `GRANT_BASIC_PERMISSIONS` permission. Valid values are
   /// `VIEW_USERS`, `PUBLISH_USERS_LOCALLY`, `PUBLISH_USERS_GLOBALLY`,
@@ -243,7 +243,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// `VIEW_POSTS`, `CREATE_POSTS`, `PUBLISH_POSTS_LOCALLY`, `PUBLISH_POSTS_GLOBALLY`,
   /// `VIEW_EVENTS`, `CREATE_EVENTS`, `PUBLISH_EVENTS_LOCALLY`, and `PUBLISH_EVENTS_GLOBALLY`.
   @$pb.TagNumber(12)
-  $core.List<$2.Permission> get basicUserPermissions => $_getList(4);
+  $core.List<$15.Permission> get basicUserPermissions => $_getList(4);
 
   @$pb.TagNumber(19)
   CustomNavigationTabSet get customTabs => $_getN(5);
@@ -922,7 +922,7 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
   factory ClusterResourceLock({
     $core.String? lockHolderNamespaceId,
     $core.Iterable<ClusterResource>? resources,
-    $1.Timestamp? acquiredAt,
+    $13.Timestamp? acquiredAt,
   }) {
     final $result = create();
     if (lockHolderNamespaceId != null) {
@@ -943,7 +943,7 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ClusterResourceLock', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'lockHolderNamespaceId')
     ..pc<ClusterResource>(2, _omitFieldNames ? '' : 'resources', $pb.PbFieldType.KE, valueOf: ClusterResource.valueOf, enumValues: ClusterResource.values, defaultEnumValue: ClusterResource.CLUSTER_RESOURCE_BROWSER)
-    ..aOM<$1.Timestamp>(20, _omitFieldNames ? '' : 'acquiredAt', subBuilder: $1.Timestamp.create)
+    ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'acquiredAt', subBuilder: $13.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -984,15 +984,15 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
 
   /// When `LockClusterResources` granted this lock.
   @$pb.TagNumber(20)
-  $1.Timestamp get acquiredAt => $_getN(2);
+  $13.Timestamp get acquiredAt => $_getN(2);
   @$pb.TagNumber(20)
-  set acquiredAt($1.Timestamp v) { setField(20, v); }
+  set acquiredAt($13.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasAcquiredAt() => $_has(2);
   @$pb.TagNumber(20)
   void clearAcquiredAt() => clearField(20);
   @$pb.TagNumber(20)
-  $1.Timestamp ensureAcquiredAt() => $_ensure(2);
+  $13.Timestamp ensureAcquiredAt() => $_ensure(2);
 }
 
 /// One `ClusterResource`'s configured concurrency limit - a single `resource`/`limit` pairing per
@@ -1397,14 +1397,14 @@ class ExternalCDNConfig extends $pb.GeneratedMessage {
 class MediaSettings extends $pb.GeneratedMessage {
   factory MediaSettings({
     $core.bool? visible,
-    $3.Moderation? defaultModeration,
-    $3.Visibility? defaultVisibility,
+    $14.Moderation? defaultModeration,
+    $14.Visibility? defaultVisibility,
     $fixnum.Int64? defaultUserMediaAllocationBytes,
     $fixnum.Int64? serverMediaAllocationBytes,
     $fixnum.Int64? serverMediaUsageBytes,
-    $1.Timestamp? serverMediaUsageCalculatedAt,
+    $13.Timestamp? serverMediaUsageCalculatedAt,
     $fixnum.Int64? serverObjectStorageUsageBytes,
-    $1.Timestamp? serverObjectStorageUsageCalculatedAt,
+    $13.Timestamp? serverObjectStorageUsageCalculatedAt,
     $core.bool? disableLinkPreviewImages,
     $core.bool? preferMetadataForLinkPreviewImages,
     $core.bool? blockCorsAnonymousMediaAccess,
@@ -1462,14 +1462,14 @@ class MediaSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MediaSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$3.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $3.Moderation.MODERATION_UNKNOWN, valueOf: $3.Moderation.valueOf, enumValues: $3.Moderation.values)
-    ..e<$3.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $3.Visibility.VISIBILITY_UNKNOWN, valueOf: $3.Visibility.valueOf, enumValues: $3.Visibility.values)
+    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'defaultUserMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'serverMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(6, _omitFieldNames ? '' : 'serverMediaUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$1.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $1.Timestamp.create)
+    ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$1.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $1.Timestamp.create)
+    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
     ..aOB(10, _omitFieldNames ? '' : 'disableLinkPreviewImages')
     ..aOB(11, _omitFieldNames ? '' : 'preferMetadataForLinkPreviewImages')
     ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
@@ -1516,9 +1516,9 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $3.Moderation get defaultModeration => $_getN(1);
+  $14.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($3.Moderation v) { setField(2, v); }
+  set defaultModeration($14.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -1528,9 +1528,9 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $3.Visibility get defaultVisibility => $_getN(2);
+  $14.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($3.Visibility v) { setField(3, v); }
+  set defaultVisibility($14.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -1579,15 +1579,15 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a
   /// full recompute (see that field's own doc); not limited to just the periodic job's runs.
   @$pb.TagNumber(7)
-  $1.Timestamp get serverMediaUsageCalculatedAt => $_getN(6);
+  $13.Timestamp get serverMediaUsageCalculatedAt => $_getN(6);
   @$pb.TagNumber(7)
-  set serverMediaUsageCalculatedAt($1.Timestamp v) { setField(7, v); }
+  set serverMediaUsageCalculatedAt($13.Timestamp v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasServerMediaUsageCalculatedAt() => $_has(6);
   @$pb.TagNumber(7)
   void clearServerMediaUsageCalculatedAt() => clearField(7);
   @$pb.TagNumber(7)
-  $1.Timestamp ensureServerMediaUsageCalculatedAt() => $_ensure(6);
+  $13.Timestamp ensureServerMediaUsageCalculatedAt() => $_ensure(6);
 
   /// (Read-only) Amount of storage used by S3 (or compatible) object storage.
   /// Periodically computed via list+sum from object storage itself, by the
@@ -1604,15 +1604,15 @@ class MediaSettings extends $pb.GeneratedMessage {
   void clearServerObjectStorageUsageBytes() => clearField(8);
 
   @$pb.TagNumber(9)
-  $1.Timestamp get serverObjectStorageUsageCalculatedAt => $_getN(8);
+  $13.Timestamp get serverObjectStorageUsageCalculatedAt => $_getN(8);
   @$pb.TagNumber(9)
-  set serverObjectStorageUsageCalculatedAt($1.Timestamp v) { setField(9, v); }
+  set serverObjectStorageUsageCalculatedAt($13.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasServerObjectStorageUsageCalculatedAt() => $_has(8);
   @$pb.TagNumber(9)
   void clearServerObjectStorageUsageCalculatedAt() => clearField(9);
   @$pb.TagNumber(9)
-  $1.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
+  $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
 
   /// Turns off the `generate_link_preview_images` background job's generation of a preview image
   /// (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation
@@ -2039,8 +2039,8 @@ class EmbeddingModel extends $pb.GeneratedMessage {
 class FeatureSettings extends $pb.GeneratedMessage {
   factory FeatureSettings({
     $core.bool? visible,
-    $3.Moderation? defaultModeration,
-    $3.Visibility? defaultVisibility,
+    $14.Moderation? defaultModeration,
+    $14.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
   }) {
@@ -2068,8 +2068,8 @@ class FeatureSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'FeatureSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$3.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $3.Moderation.MODERATION_UNKNOWN, valueOf: $3.Moderation.valueOf, enumValues: $3.Moderation.values)
-    ..e<$3.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $3.Visibility.VISIBILITY_UNKNOWN, valueOf: $3.Visibility.valueOf, enumValues: $3.Visibility.values)
+    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..hasRequiredFields = false
@@ -2113,9 +2113,9 @@ class FeatureSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $3.Moderation get defaultModeration => $_getN(1);
+  $14.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($3.Moderation v) { setField(2, v); }
+  set defaultModeration($14.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2125,9 +2125,9 @@ class FeatureSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $3.Visibility get defaultVisibility => $_getN(2);
+  $14.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($3.Visibility v) { setField(3, v); }
+  set defaultVisibility($14.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -2158,8 +2158,8 @@ class FeatureSettings extends $pb.GeneratedMessage {
 class PostSettings extends $pb.GeneratedMessage {
   factory PostSettings({
     $core.bool? visible,
-    $3.Moderation? defaultModeration,
-    $3.Visibility? defaultVisibility,
+    $14.Moderation? defaultModeration,
+    $14.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
     $core.bool? enableReplies,
@@ -2195,8 +2195,8 @@ class PostSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PostSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$3.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $3.Moderation.MODERATION_UNKNOWN, valueOf: $3.Moderation.valueOf, enumValues: $3.Moderation.values)
-    ..e<$3.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $3.Visibility.VISIBILITY_UNKNOWN, valueOf: $3.Visibility.valueOf, enumValues: $3.Visibility.values)
+    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..aOB(6, _omitFieldNames ? '' : 'enableReplies')
@@ -2242,9 +2242,9 @@ class PostSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $3.Moderation get defaultModeration => $_getN(1);
+  $14.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($3.Moderation v) { setField(2, v); }
+  set defaultModeration($14.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2254,9 +2254,9 @@ class PostSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $3.Visibility get defaultVisibility => $_getN(2);
+  $14.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($3.Visibility v) { setField(3, v); }
+  set defaultVisibility($14.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -2311,8 +2311,8 @@ class PostSettings extends $pb.GeneratedMessage {
 class EventSettings extends $pb.GeneratedMessage {
   factory EventSettings({
     $core.bool? visible,
-    $3.Moderation? defaultModeration,
-    $3.Visibility? defaultVisibility,
+    $14.Moderation? defaultModeration,
+    $14.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
     $core.bool? enableReplies,
@@ -2356,8 +2356,8 @@ class EventSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$3.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $3.Moderation.MODERATION_UNKNOWN, valueOf: $3.Moderation.valueOf, enumValues: $3.Moderation.values)
-    ..e<$3.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $3.Visibility.VISIBILITY_UNKNOWN, valueOf: $3.Visibility.valueOf, enumValues: $3.Visibility.values)
+    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..aOB(6, _omitFieldNames ? '' : 'enableReplies')
@@ -2405,9 +2405,9 @@ class EventSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $3.Moderation get defaultModeration => $_getN(1);
+  $14.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($3.Moderation v) { setField(2, v); }
+  set defaultModeration($14.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2417,9 +2417,9 @@ class EventSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $3.Visibility get defaultVisibility => $_getN(2);
+  $14.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($3.Visibility v) { setField(3, v); }
+  set defaultVisibility($14.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
