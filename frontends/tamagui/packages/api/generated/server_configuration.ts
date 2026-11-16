@@ -1146,6 +1146,12 @@ export interface SearchSettings {
    * `GetServerConfiguration` and ignored by `ConfigureServer`.
    */
   availableModels: EmbeddingModel[];
+  /**
+   * True when this server embeds through a cluster-shared model service, which hosts ONE model for every
+   * namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
+   * read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
+   */
+  modelChosenByCluster: boolean;
 }
 
 /** One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`. */
@@ -3549,7 +3555,7 @@ export const MarketSettings: MessageFns<MarketSettings> = {
 };
 
 function createBaseSearchSettings(): SearchSettings {
-  return { semanticSearchEnabled: false, embeddingModel: "", availableModels: [] };
+  return { semanticSearchEnabled: false, embeddingModel: "", availableModels: [], modelChosenByCluster: false };
 }
 
 export const SearchSettings: MessageFns<SearchSettings> = {
@@ -3562,6 +3568,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     }
     for (const v of message.availableModels) {
       EmbeddingModel.encode(v!, writer.uint32(26).fork()).join();
+    }
+    if (message.modelChosenByCluster !== false) {
+      writer.uint32(32).bool(message.modelChosenByCluster);
     }
     return writer;
   },
@@ -3597,6 +3606,14 @@ export const SearchSettings: MessageFns<SearchSettings> = {
           message.availableModels.push(EmbeddingModel.decode(reader, reader.uint32()));
           continue;
         }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.modelChosenByCluster = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -3615,6 +3632,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
       availableModels: globalThis.Array.isArray(object?.availableModels)
         ? object.availableModels.map((e: any) => EmbeddingModel.fromJSON(e))
         : [],
+      modelChosenByCluster: isSet(object.modelChosenByCluster)
+        ? globalThis.Boolean(object.modelChosenByCluster)
+        : false,
     };
   },
 
@@ -3629,6 +3649,9 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     if (message.availableModels?.length) {
       obj.availableModels = message.availableModels.map((e) => EmbeddingModel.toJSON(e));
     }
+    if (message.modelChosenByCluster !== false) {
+      obj.modelChosenByCluster = message.modelChosenByCluster;
+    }
     return obj;
   },
 
@@ -3640,6 +3663,7 @@ export const SearchSettings: MessageFns<SearchSettings> = {
     message.semanticSearchEnabled = object.semanticSearchEnabled ?? false;
     message.embeddingModel = object.embeddingModel ?? "";
     message.availableModels = object.availableModels?.map((e) => EmbeddingModel.fromPartial(e)) || [];
+    message.modelChosenByCluster = object.modelChosenByCluster ?? false;
     return message;
   },
 };

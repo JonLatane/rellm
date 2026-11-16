@@ -478,6 +478,7 @@ const SearchSettings$json = {
     {'1': 'semantic_search_enabled', '3': 1, '4': 1, '5': 8, '10': 'semanticSearchEnabled'},
     {'1': 'embedding_model', '3': 2, '4': 1, '5': 9, '10': 'embeddingModel'},
     {'1': 'available_models', '3': 3, '4': 3, '5': 11, '6': '.rellm.EmbeddingModel', '10': 'availableModels'},
+    {'1': 'model_chosen_by_cluster', '3': 4, '4': 1, '5': 8, '10': 'modelChosenByCluster'},
   ],
 };
 
@@ -486,7 +487,8 @@ final $typed_data.Uint8List searchSettingsDescriptor = $convert.base64Decode(
     'Cg5TZWFyY2hTZXR0aW5ncxI2ChdzZW1hbnRpY19zZWFyY2hfZW5hYmxlZBgBIAEoCFIVc2VtYW'
     '50aWNTZWFyY2hFbmFibGVkEicKD2VtYmVkZGluZ19tb2RlbBgCIAEoCVIOZW1iZWRkaW5nTW9k'
     'ZWwSQAoQYXZhaWxhYmxlX21vZGVscxgDIAMoCzIVLnJlbGxtLkVtYmVkZGluZ01vZGVsUg9hdm'
-    'FpbGFibGVNb2RlbHM=');
+    'FpbGFibGVNb2RlbHMSNQoXbW9kZWxfY2hvc2VuX2J5X2NsdXN0ZXIYBCABKAhSFG1vZGVsQ2hv'
+    'c2VuQnlDbHVzdGVy');
 
 @$core.Deprecated('Use embeddingModelDescriptor instead')
 const EmbeddingModel$json = {

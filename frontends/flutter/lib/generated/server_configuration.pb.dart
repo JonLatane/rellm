@@ -1611,6 +1611,7 @@ class SearchSettings extends $pb.GeneratedMessage {
     $core.bool? semanticSearchEnabled,
     $core.String? embeddingModel,
     $core.Iterable<EmbeddingModel>? availableModels,
+    $core.bool? modelChosenByCluster,
   }) {
     final $result = create();
     if (semanticSearchEnabled != null) {
@@ -1622,6 +1623,9 @@ class SearchSettings extends $pb.GeneratedMessage {
     if (availableModels != null) {
       $result.availableModels.addAll(availableModels);
     }
+    if (modelChosenByCluster != null) {
+      $result.modelChosenByCluster = modelChosenByCluster;
+    }
     return $result;
   }
   SearchSettings._() : super();
@@ -1632,6 +1636,7 @@ class SearchSettings extends $pb.GeneratedMessage {
     ..aOB(1, _omitFieldNames ? '' : 'semanticSearchEnabled')
     ..aOS(2, _omitFieldNames ? '' : 'embeddingModel')
     ..pc<EmbeddingModel>(3, _omitFieldNames ? '' : 'availableModels', $pb.PbFieldType.PM, subBuilder: EmbeddingModel.create)
+    ..aOB(4, _omitFieldNames ? '' : 'modelChosenByCluster')
     ..hasRequiredFields = false
   ;
 
@@ -1702,6 +1707,18 @@ class SearchSettings extends $pb.GeneratedMessage {
   /// `GetServerConfiguration` and ignored by `ConfigureServer`.
   @$pb.TagNumber(3)
   $core.List<EmbeddingModel> get availableModels => $_getList(2);
+
+  /// True when this server embeds through a cluster-shared model service, which hosts ONE model for every
+  /// namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
+  /// read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
+  @$pb.TagNumber(4)
+  $core.bool get modelChosenByCluster => $_getBF(3);
+  @$pb.TagNumber(4)
+  set modelChosenByCluster($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasModelChosenByCluster() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearModelChosenByCluster() => clearField(4);
 }
 
 /// One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.

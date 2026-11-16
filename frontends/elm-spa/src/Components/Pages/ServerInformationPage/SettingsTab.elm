@@ -1280,8 +1280,13 @@ searchSection maybeAdminAccount status settings =
         , Common.settingsRow "Embedding Model"
             (case ( maybeAdminAccount, selectedModel ) of
                 ( Just _, _ ) ->
-                    select [ onInput EmbeddingModelChanged, disabled (status == AccountsPanel.Submitting) ]
-                        (List.map modelOption settings.availableModels)
+                    if settings.modelChosenByCluster then
+                        span [ Html.Attributes.class "server-details-feature-settings-value" ]
+                            [ text (selectedModel |> Maybe.map .name |> Maybe.withDefault settings.embeddingModel) ]
+
+                    else
+                        select [ onInput EmbeddingModelChanged, disabled (status == AccountsPanel.Submitting) ]
+                            (List.map modelOption settings.availableModels)
 
                 ( Nothing, Just m ) ->
                     span [ Html.Attributes.class "server-details-feature-settings-value" ] [ text m.name ]
@@ -1295,6 +1300,11 @@ searchSection maybeAdminAccount status settings =
 
             Nothing ->
                 text ""
+        , if settings.modelChosenByCluster then
+            Common.settingsNote "This server embeds through its cluster's shared model service, which runs one model for every server in the cluster, so the model can't be chosen here."
+
+          else
+            text ""
         , Common.settingsNote "Changing the model downloads it (once) and re-embeds all content in the background; until that finishes, search leans on full-text. Each model's RAM is used by the server and again by the embedding job while it runs -- check it against your hardware."
         , Common.editErrorView status
         ]

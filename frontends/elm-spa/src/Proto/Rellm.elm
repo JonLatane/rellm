@@ -1551,7 +1551,8 @@ type alias EmbeddingModel =
 {-| The field numbers for the fields of `SearchSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersSearchSettings : { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int }
+fieldNumbersSearchSettings :
+    { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int, modelChosenByCluster : Int }
 fieldNumbersSearchSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SearchSettings
 
@@ -1621,6 +1622,13 @@ encodeSearchSettings =
 
  The models an admin can choose from. Read-only: always filled in by the server on
  `GetServerConfiguration` and ignored by `ConfigureServer`.
+
+
+### modelChosenByCluster
+
+ True when this server embeds through a cluster-shared model service, which hosts ONE model for every
+ namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
+ read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
 
 
 -}

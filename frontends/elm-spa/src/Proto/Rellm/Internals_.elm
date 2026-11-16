@@ -2728,9 +2728,10 @@ type alias Proto__Rellm__EmbeddingModel =
 {-| The field numbers for the fields of `Proto__Rellm__SearchSettings`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersProto__Rellm__SearchSettings : { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int }
+fieldNumbersProto__Rellm__SearchSettings :
+    { semanticSearchEnabled : Int, embeddingModel : Int, availableModels : Int, modelChosenByCluster : Int }
 fieldNumbersProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = 1, embeddingModel = 2, availableModels = 3 }
+    { semanticSearchEnabled = 1, embeddingModel = 2, availableModels = 3, modelChosenByCluster = 4 }
 
 
 {-| Default for Proto__Rellm__SearchSettings. Should only be used for 'required' decoders as an initial value.
@@ -2738,7 +2739,7 @@ fieldNumbersProto__Rellm__SearchSettings =
 -}
 defaultProto__Rellm__SearchSettings : Proto__Rellm__SearchSettings
 defaultProto__Rellm__SearchSettings =
-    { semanticSearchEnabled = False, embeddingModel = "", availableModels = [] }
+    { semanticSearchEnabled = False, embeddingModel = "", availableModels = [], modelChosenByCluster = False }
 
 
 {-| Declares how to decode a `Proto__Rellm__SearchSettings` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -2755,6 +2756,7 @@ decodeProto__Rellm__SearchSettings =
             decodeProto__Rellm__EmbeddingModel
             .availableModels
             (\a r -> { r | availableModels = a })
+        , Protobuf.Decode.optional 4 Protobuf.Decode.bool (\a r -> { r | modelChosenByCluster = a })
         ]
 
 
@@ -2767,6 +2769,7 @@ encodeProto__Rellm__SearchSettings value =
         [ ( 1, Protobuf.Encode.bool value.semanticSearchEnabled )
         , ( 2, Protobuf.Encode.string value.embeddingModel )
         , ( 3, (Protobuf.Encode.list encodeProto__Rellm__EmbeddingModel) value.availableModels )
+        , ( 4, Protobuf.Encode.bool value.modelChosenByCluster )
         ]
 
 
@@ -2774,7 +2777,11 @@ encodeProto__Rellm__SearchSettings value =
 
 -}
 type alias Proto__Rellm__SearchSettings =
-    { semanticSearchEnabled : Bool, embeddingModel : String, availableModels : List Proto__Rellm__EmbeddingModel }
+    { semanticSearchEnabled : Bool
+    , embeddingModel : String
+    , availableModels : List Proto__Rellm__EmbeddingModel
+    , modelChosenByCluster : Bool
+    }
 
 
 {-| The field numbers for the fields of `Proto__Rellm__MarketSettings`. This is mostly useful for internals, like documentation generation.
