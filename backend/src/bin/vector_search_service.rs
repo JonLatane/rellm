@@ -13,7 +13,7 @@ extern crate rellm;
 use std::time::Duration;
 
 use rellm::logic::embeddings::vector_service::{run_indexer, serve, VectorIndexes};
-use rellm::logic::embeddings::{cluster_model, default_model, embedding_service_configured, model_spec};
+use rellm::logic::embeddings::{cluster_model_blocking, default_model, embedding_service_configured, model_spec};
 use rellm::{db_connection, init_bin_logging, init_crypto};
 
 #[tokio::main]
@@ -25,7 +25,7 @@ async fn main() {
         Ok(id) if !id.is_empty() => model_spec(&id).unwrap_or_else(|| panic!("RELLM_VECTOR_SERVICE_MODEL `{}` isn't a known model", id)),
         _ if embedding_service_configured() => loop {
             // Index whatever the cluster's model service runs -- wait for it rather than guess.
-            match tokio::task::spawn_blocking(cluster_model).await.expect("probe task") {
+            match tokio::task::spawn_blocking(cluster_model_blocking).await.expect("probe task") {
                 Some(spec) => break spec,
                 None => {
                     log::warn!("Waiting for the cluster's embedding model service to say which model it runs...");

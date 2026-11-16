@@ -328,8 +328,10 @@ jobs:
           shared-key: rellm-build-${{ runner.OS }}-github-build
           cache-workspace-crates: true
 
+      # `vector-service` also builds the per-namespace `vector_search_service` (USearch, a C++ build) that the
+      # server Docker image ships; nothing else enables it, so the release tarballs and macOS build don't.
       - working-directory: backend
-        run: cargo build --release
+        run: cargo build --release --features vector-service
 
       - uses: actions/cache/save@v6
         id: rust-app-cache
@@ -555,6 +557,9 @@ jobs:
           cache-workspace-crates: true
       - working-directory: backend
         run: cargo test
+      # The per-namespace vector search service (USearch index + gRPC) is behind a cargo feature.
+      - working-directory: backend
+        run: cargo test --features vector-service vector_service_tests
       - working-directory: backend
         run: cargo build
 
@@ -696,6 +701,8 @@ jobs:
           mv backend/target/release/sync_sources backend/target/release/sync_sources__server_release &&
           mv backend/target/release/update_user_counts backend/target/release/update_user_counts__server_release &&
           mv backend/target/release/generate_embeddings backend/target/release/generate_embeddings__server_release &&
+          mv backend/target/release/embedding_service backend/target/release/embedding_service__server_release &&
+          mv backend/target/release/vector_search_service backend/target/release/vector_search_service__server_release &&
           mv backend/target/release/convert_media_sizes backend/target/release/convert_media_sizes__server_release &&
           mv backend/target/release/renew_market_subscriptions backend/target/release/renew_market_subscriptions__server_release &&
           mv backend/target/release/generate_link_preview_images backend/target/release/generate_link_preview_images__server_release &&

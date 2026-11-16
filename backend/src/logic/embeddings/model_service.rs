@@ -166,9 +166,10 @@ static CLUSTER_MODEL: Mutex<Option<&'static ModelSpec>> = Mutex::new(None);
 static LAST_PROBE: Mutex<Option<Instant>> = Mutex::new(None);
 const PROBE_EVERY: Duration = Duration::from_secs(30);
 
-/// The model the cluster-shared service runs, when one is configured and answering. Asks the service (a few
-/// seconds at most) at most every 30 seconds until it has an answer; afterwards the answer is remembered for
-/// the life of the process.
+/// The model the cluster-shared service runs, when one is configured and has answered. Never blocks: if the answer
+/// isn't known yet it starts a background probe (at most one every 30 seconds) and returns `None` for now -- so a
+/// service that is down costs a request nothing, and searches are full-text until it has been reached once. Once
+/// known, the answer is remembered for the life of the process.
 pub fn cluster_model() -> Option<&'static ModelSpec> {
     let (url, secret) = embedding_service_config()?;
     if let Some(spec) = *CLUSTER_MODEL.lock().unwrap() {
@@ -181,7 +182,27 @@ pub fn cluster_model() -> Option<&'static ModelSpec> {
         }
         *last = Some(Instant::now());
     }
-    match RemoteEmbedder::connect(&url, secret) {
+    std::thread::Builder::new()
+        .name("embedding-service-probe".to_string())
+        .spawn(move || {
+            probe(&url, secret);
+        })
+        .ok();
+    None
+}
+
+/// Like `cluster_model` but waits for the answer (a few seconds at most) and asks every time it isn't known: for
+/// callers that can't proceed without it (the vector service at startup, tests).
+pub fn cluster_model_blocking() -> Option<&'static ModelSpec> {
+    let (url, secret) = embedding_service_config()?;
+    if let Some(spec) = *CLUSTER_MODEL.lock().unwrap() {
+        return Some(spec);
+    }
+    probe(&url, secret)
+}
+
+fn probe(url: &str, secret: Option<String>) -> Option<&'static ModelSpec> {
+    match RemoteEmbedder::connect(url, secret) {
         Ok(embedder) => {
             *CLUSTER_MODEL.lock().unwrap() = Some(embedder.spec);
             Some(embedder.spec)

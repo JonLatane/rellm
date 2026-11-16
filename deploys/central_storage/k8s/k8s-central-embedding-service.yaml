@@ -1,0 +1,112 @@
+# The cluster-shared embedding model service (backend `embedding_service`): ONE pod per cluster that holds ONE text
+# embedding model in memory and embeds text for every namespace's Rellm servers and `generate_embeddings` jobs,
+# so the model's RAM (~1GB for the default multilingual-e5-small) is paid once instead of once per namespace
+# server/job. Opt-in: see ../../k8s/SEMANTIC_SEARCH.md for how a namespace starts using it.
+#
+# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default multilingual-e5-small); every namespace that
+#   uses it uses that model, whatever model its admin picked.
+# - It stores nothing and never logs text. Callers authenticate with the shared secret in the
+#   rellm-central-embedding-credentials Secret (key `secret`), sent as `x-rellm-internal-secret`.
+# - Cluster-internal only: the Service is a ClusterIP, never expose it outside the cluster network. Note that
+#   namespaces' private text is sent to it -- only point namespaces you operate at it.
+# - replicas stays 1: a second pod would load a second copy of the model, defeating the point.
+#
+# Create the secret once:
+#   kubectl -n rellm-storage create secret generic rellm-central-embedding-credentials \
+#     --from-literal=secret="$(openssl rand -hex 24)"
+# Namespaces reach it at http://rellm-central-embedding.rellm-storage:8090 (adjust for your storage namespace).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: rellm-central-embedding
+  name: rellm-central-embedding-models
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Holds the downloaded model so a restart doesn't download it again (~0.5GB for e5-small).
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-central-embedding
+  labels:
+    app: rellm-central-embedding
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8090
+      targetPort: 8090
+      name: grpc
+  selector:
+    app: rellm-central-embedding
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rellm-central-embedding
+  labels:
+    app: rellm-central-embedding
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rellm-central-embedding
+  template:
+    metadata:
+      labels:
+        app: rellm-central-embedding
+    spec:
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: rellm-central-embedding-models
+      containers:
+        - name: embedding
+          image: docker.io/jonlatane/rellm:0.5.553
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/embedding_service"]
+          env:
+            - name: RELLM_EMBEDDING_SERVICE_MODEL
+              value: multilingual-e5-small
+            - name: RELLM_EMBEDDING_SERVICE_ADDR
+              value: 0.0.0.0:8090
+            - name: RELLM_EMBEDDING_THREADS
+              value: "2"
+            - name: RELLM_EMBEDDING_CACHE_DIR
+              value: /models
+            - name: RELLM_EMBEDDING_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-embedding-credentials
+                  key: secret
+          ports:
+            - containerPort: 8090
+              name: grpc
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          # multilingual-e5-small measured ~980MB resident (see the PR / compare_models); the first start also
+          # downloads ~465MB, so give the readiness probe time.
+          resources:
+            requests:
+              memory: 1200Mi
+              cpu: 500m
+            limits:
+              memory: 1600Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            tcpSocket:
+              port: 8090
+            initialDelaySeconds: 60
+            periodSeconds: 20
