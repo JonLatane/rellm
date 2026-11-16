@@ -1,6 +1,6 @@
 FROM debian:testing-slim
 
-# The rellm_embeddings image: the ONLY place an embedding model is ever loaded, and the per-namespace vector index.
+# The rellm-embeddings image: the ONLY place an embedding model is ever loaded, and the per-namespace vector index.
 # The server and jobs images contain no model, ONNX Runtime or USearch code at all -- they reach these services over
 # gRPC (RELLM_EMBEDDING_SERVICE_URL / RELLM_VECTOR_SERVICE_URL). See deploys/k8s/SEMANTIC_SEARCH.md.
 #

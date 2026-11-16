@@ -1295,7 +1295,7 @@ searchSection maybeAdminAccount status settings =
             Common.settingsNote "The model is run by this cluster's embedding service, one model for every server in the cluster, so it can't be chosen here. Changing it means redeploying the service; every server then re-embeds in the background."
 
           else
-            Common.settingsNote "No embedding service is configured for this server (RELLM_EMBEDDING_SERVICE_URL), so search is plain full-text until the rellm_embeddings service is deployed."
+            Common.settingsNote "No embedding service is configured for this server (RELLM_EMBEDDING_SERVICE_URL), so search is plain full-text until the rellm-embeddings service is deployed."
         , Common.editErrorView status
         ]
 

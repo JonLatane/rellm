@@ -1,7 +1,7 @@
 # Semantic search deployment
 
-Semantic search (embeddings + hybrid reranking) needs the **`rellm_embeddings` image**
-(`docker.io/jonlatane/rellm_embeddings`, built from `deploys/docker/embeddings/Dockerfile`). It is the **only** place an
+Semantic search (embeddings + hybrid reranking) needs the **`rellm-embeddings` image**
+(`docker.io/jonlatane/rellm-embeddings`, built from `deploys/docker/embeddings/Dockerfile`). It is the **only** place an
 embedding model is ever loaded: the `rellm` server and `rellm-jobs` images contain no model, ONNX Runtime or USearch code at
 all, and have no option or default that would load one. With no embedding service deployed (or reachable), Rellm simply
 runs plain Postgres full-text search, and Settings → Search says so.
@@ -49,7 +49,7 @@ The model is **chosen by the cluster** (Settings → Search shows it read-only);
 `generate_embeddings` job takes no lock: it only calls the service. Changing the cluster's model
 (`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's content in the background.
 
-Image tags: CI builds and pushes `rellm_embeddings:<version>` (and `<version>-<sha>`) but, like all deploys, never applies
+Image tags: CI builds and pushes `rellm-embeddings:<version>` (and `<version>-<sha>`) but, like all deploys, never applies
 manifests. Roll a new image with `kubectl set image` or by editing the tag in the two manifests and applying them.
 
 ## Running locally
@@ -90,4 +90,4 @@ dimensions) needs no migration: vectors are stored per row with the model that m
   it for ~15 seconds after a failure so the fallback is immediate; the vector service also
   rebuilds its index from Postgres, a few seconds per 100k rows).
 - Self-hosters on the Homebrew/Linux packages don't get these services (they are not in those packages): run the
-  `rellm_embeddings` image alongside, or search stays full-text.
+  `rellm-embeddings` image alongside, or search stays full-text.

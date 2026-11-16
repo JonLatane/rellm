@@ -15,7 +15,7 @@ run_background_jobs:
 # script expects a prebuilt ./generate_link_preview_images next to it and has a random startup delay.
 run_preview_generator:
 	cd backend && while true; do RELLM_LOG_JOB_NAME=generate_link_preview_images cargo run --bin generate_link_preview_images; sleep 120; done
-# Semantic search services (the backend's `rellm_embeddings` image, run from source here with their cargo
+# Semantic search services (the backend's `rellm-embeddings` image, run from source here with their cargo
 # features). The model service is the only code that loads an embedding model -- servers and jobs just call it
 # (RELLM_EMBEDDING_SERVICE_URL in backend/.env, see .env-example). The vector service is optional.
 run_embedding_service:
