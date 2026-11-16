@@ -127,47 +127,48 @@ pub static MODELS: [ModelSpec; 7] = [
         document_prefix: "",
         min_similarity: 0.33,
     },
-    // EmbeddingGemma (Google): multilingual, 768 dimensions, search-tuned with documented task prompts. Gemma's
-    // terms of use apply to the weights (not Apache/MIT like the others). Figures below are filled in from
-    // `compare_models`.
+    // EmbeddingGemma (Google): multilingual, 768 dimensions (twice the vector size of the 384-dimension models), search-tuned
+    // with documented task prompts. Gemma's terms of use apply to the weights (not Apache/MIT like the others). Unlike
+    // every other model here its right answers and no-answer queries don't overlap in `compare_models`, with a wide
+    // gap (~0.17-0.29), so its threshold is the middle of that gap and has real margin. Figures from `compare_models`.
     ModelSpec {
         id: "embeddinggemma-300m",
         name: "EmbeddingGemma 300M",
-        description: "TBD",
+        description: "Multilingual (100+ languages), search-tuned, full precision. Perfect on our test set with a clean margin between matches and non-matches. Large download (~1.2GB) and ~5x slower to embed than e5-small, with 768-dimension vectors; the int8 and 4-bit variants are far smaller.",
         dimensions: 768,
-        download_megabytes: 0,
-        memory_megabytes: 0,
+        download_megabytes: 1198,
+        memory_megabytes: 734,
         multilingual: true,
         model: EmbeddingModel::EmbeddingGemma300M,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
-        min_similarity: 0.50,
+        min_similarity: 0.22,
     },
     ModelSpec {
         id: "embeddinggemma-300m-int8",
         name: "EmbeddingGemma 300M (int8)",
-        description: "TBD",
+        description: "Multilingual (100+ languages), search-tuned, 8-bit weights. Matched the best quality in our test with the smallest memory of any multilingual option (~330MB) and a clean margin between matches and non-matches. ~5x slower to embed than e5-small, with 768-dimension vectors (twice the storage).",
         dimensions: 768,
-        download_megabytes: 0,
-        memory_megabytes: 0,
+        download_megabytes: 295,
+        memory_megabytes: 331,
         multilingual: true,
         model: EmbeddingModel::EmbeddingGemma300MQ,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
-        min_similarity: 0.50,
+        min_similarity: 0.23,
     },
     ModelSpec {
         id: "embeddinggemma-300m-q4",
         name: "EmbeddingGemma 300M (4-bit)",
-        description: "TBD",
+        description: "Multilingual (100+ languages), search-tuned, 4-bit weights. Smallest download of the multilingual options (~190MB), ~420MB of memory, and the same clean test result as the larger variants (4-bit may lose more on real content than int8). ~4x slower to embed than e5-small, with 768-dimension vectors.",
         dimensions: 768,
-        download_megabytes: 0,
-        memory_megabytes: 0,
+        download_megabytes: 188,
+        memory_megabytes: 421,
         multilingual: true,
         model: EmbeddingModel::EmbeddingGemma300MQ4,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
-        min_similarity: 0.50,
+        min_similarity: 0.24,
     },
 ];
 
