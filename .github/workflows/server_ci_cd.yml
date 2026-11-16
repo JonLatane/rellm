@@ -605,7 +605,7 @@ jobs:
         run: cargo test
       # The rellm-embeddings services (model service, USearch vector service) are behind cargo features.
       - working-directory: backend
-        run: cargo test --features embedding-service,vector-service embeddings_tests vector_service_tests
+        run: cargo test --features embedding-service,vector-service -- embeddings_tests vector_service_tests
       - working-directory: backend
         run: cargo build
 
