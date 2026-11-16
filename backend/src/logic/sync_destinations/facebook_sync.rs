@@ -414,7 +414,7 @@ fn graph_request(
             Status::new(Code::FailedPrecondition, "facebook_request_failed")
         })?;
         if let Some(error) = value.get("error") {
-            log::error!("Facebook Graph API returned an error: {:?}", crate::logic::log_redaction::safe_error(&error));
+            log::error!("Facebook Graph API returned an error: {:?}", crate::logic::log_redaction::summarize(&error));
             // Facebook's top-level `error.code` is a documented, stable field (unlike
             // `error_subcode`, which isn't) -- 190 is always an invalid/expired OAuth token, 368
             // is Facebook's "confirm your identity" checkpoint (surfaced to the Page admin via

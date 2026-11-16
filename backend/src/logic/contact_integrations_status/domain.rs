@@ -47,19 +47,28 @@ pub fn domain_of_address(address: &str) -> Option<String> {
     }
 }
 
-/// Looks up the DMARC record for `domain`, falling back to parent domains the way receivers do
-/// when a subdomain has none of its own (RFC 7489 §6.6.3). Returns the status plus the name the
-/// record was found at (`None` if there is none / the lookup failed).
+/// The organizational domain receivers fall back to (RFC 7489 §6.6.3): the registrable domain under
+/// the public suffix list (`example.co.uk` for `a.b.example.co.uk`).
+fn organizational_domain(domain: &str) -> Option<String> {
+    psl::domain_str(domain).map(str::to_string)
+}
+
+/// Looks up the DMARC record for `domain` the way receivers do (RFC 7489 §6.6.3): the exact domain
+/// first, then -- only if that has none -- its organizational domain. Intermediate parents
+/// (`_dmarc.b.example.com` for `a.b.example.com`) are never consulted. Returns the status plus the
+/// name the record was found at (`None` if there is none / the lookup failed).
 fn lookup_dmarc(resolver: &dyn DnsResolver, domain: &str) -> (DmarcStatus, Option<String>) {
-    let labels: Vec<&str> = domain.split('.').collect();
+    let mut candidates = vec![domain.to_string()];
+    if let Some(org) = organizational_domain(domain).filter(|org| org != domain) {
+        candidates.push(org);
+    }
     let mut failure: Option<String> = None;
-    for start in 0..labels.len().saturating_sub(1) {
-        let candidate = labels[start..].join(".");
+    for candidate in candidates {
         match resolver.lookup(&format!("_dmarc.{candidate}"), RecordType::Txt) {
             lookup @ DnsLookup::Found(_) => {
                 let status = parse_dmarc(&lookup.txt_records());
                 if status.record_found {
-                    // A record on a parent domain governs this subdomain through its `sp=`.
+                    // A record on the organizational domain governs this subdomain through its `sp=`.
                     let status = if candidate == domain { status } else { apply_inherited_policy(status) };
                     return (status, Some(candidate));
                 }
@@ -665,6 +674,29 @@ mod tests {
         // The apex domain itself is still judged by p=.
         let apex = build_domain_status(&sending("example.com", &["mailgun"]), &[], &r);
         assert_eq!(apex.checks.iter().find(|c| c.name == "DMARC").unwrap().level, StatusLevel::Ok as i32);
+    }
+
+    #[test]
+    fn dmarc_lookup_skips_intermediate_parents_and_uses_the_organizational_domain() {
+        // `_dmarc.b.example.com` is not on the receiver's lookup path for a.b.example.com.
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.b.example.com".into(), vec!["v=DMARC1; p=reject; rua=mailto:a@example.com".into()]);
+        let status = build_domain_status(&sending("a.b.example.com", &["mailgun"]), &[], &r);
+        let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
+        assert_ne!(dmarc.level, StatusLevel::Ok as i32, "{}", dmarc.detail);
+        assert!(!status.dmarc.as_ref().unwrap().record_found);
+
+        // The organizational domain is used (here under a multi-label public suffix).
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.example.co.uk".into(), vec!["v=DMARC1; p=reject; rua=mailto:a@example.co.uk".into()]);
+        let status = build_domain_status(&sending("a.b.example.co.uk", &["mailgun"]), &[], &r);
+        let dmarc = status.checks.iter().find(|c| c.name == "DMARC").unwrap();
+        assert!(dmarc.detail.contains("Uses the record on example.co.uk"), "{}", dmarc.detail);
+        // ...and `co.uk` itself is never consulted.
+        let mut r = FakeResolver::new();
+        r.txt.insert("_dmarc.co.uk".into(), vec!["v=DMARC1; p=reject".into()]);
+        let status = build_domain_status(&sending("example.co.uk", &["mailgun"]), &[], &r);
+        assert!(!status.dmarc.as_ref().unwrap().record_found);
     }
 
     #[test]

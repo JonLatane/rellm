@@ -130,6 +130,7 @@ mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
 atom_syndication = { version = "0.12.10", default-features = false, features = ["builders"] }
+psl = "2"
 
 [features]
 static_pq = ["dep:pq-sys"]
