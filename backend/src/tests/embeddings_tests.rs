@@ -10,7 +10,7 @@ use diesel::sql_types::{BigInt, Nullable, Text};
 use diesel::*;
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::embeddings::{self, EmbeddingKind, ModelUnavailable, SyncContext};
+use crate::logic::embeddings::{self, EmbeddingKind, ModelUnavailable, SyncContext, TextEmbedder};
 use crate::protos::*;
 use crate::tests::factories::*;
 
@@ -328,6 +328,7 @@ fn configure_server_rejects_an_unknown_embedding_model() {
 
 #[test]
 fn saving_the_configuration_without_search_settings_keeps_what_was_saved() {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
     let mut conn = test_conn();
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let admin = create_user(conn, "older_client_admin");
@@ -382,13 +383,183 @@ fn rows_embedded_by_another_model_are_redone_when_the_model_changes() {
     });
 }
 
+/// A deterministic stand-in for the model, so the sync and hybrid-search paths are tested in CI without
+/// downloading anything. Each word maps to a "concept" (a tiny synonym table), concepts are hashed into
+/// a 384-dimension bag-of-concepts vector, and that is normalized: texts about the same concepts are
+/// close, texts about different ones are not -- enough to exercise everything around the model.
+struct FakeEmbedder;
+
+impl FakeEmbedder {
+    /// `Some(concept)` for words the fake "understands" (synonyms share one), `None` for filler.
+    fn concept(word: &str) -> Option<&'static str> {
+        match word.to_lowercase().as_str() {
+            "dog" | "dogs" | "puppy" | "puppies" | "canine" => Some("dog"),
+            "bread" | "loaf" | "sourdough" | "dough" => Some("bread"),
+            "tax" | "taxes" | "accountant" | "fiscal" => Some("tax"),
+            _ => None,
+        }
+    }
+
+    fn slot(word: &str) -> usize {
+        word.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % 384
+    }
+
+    /// Concept words weigh a lot, filler (titles' other words, usernames, "Test content") barely --
+    /// roughly how a real model attends to a document's topic.
+    fn vector(text: &str) -> Vec<f32> {
+        let mut v = vec![0f32; 384];
+        for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 2) {
+            match Self::concept(word) {
+                Some(concept) => v[Self::slot(concept)] += 3.0,
+                None => v[Self::slot(&word.to_lowercase())] += 0.1,
+            }
+        }
+        let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            v.iter_mut().for_each(|x| *x /= norm);
+        }
+        v
+    }
+}
+
+impl TextEmbedder for FakeEmbedder {
+    fn spec(&self) -> &'static embeddings::ModelSpec {
+        embeddings::default_model()
+    }
+    fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        Ok(texts.iter().map(|t| Self::vector(t)).collect())
+    }
+    fn embed_query(&mut self, text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(Self::vector(text))
+    }
+}
+
+#[test]
+fn sync_embeds_and_re_embeds_only_what_changed_through_the_embedder_seam() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "seam_sync");
+        let post = title_post(conn, &author, "Adopting a puppy");
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+
+        let first = embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+        assert!(first.embedded >= 1);
+        let stored = |conn: &mut PgPooledConnection| -> (i64, i32) {
+            post_embeddings::table
+                .filter(post_embeddings::post_id.eq(post.id))
+                .select((post_embeddings::document_hash, diesel::dsl::sql::<diesel::sql_types::Integer>("octet_length(embedding)")))
+                .first(conn)
+                .unwrap()
+        };
+        let (hash, bytes) = stored(conn);
+        assert_eq!(bytes, 384 * 4);
+
+        assert_eq!(embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?.embedded, 0, "unchanged");
+
+        update(posts::table.filter(posts::id.eq(post.id))).set(posts::title.eq("Adopting a kitten")).execute(conn)?;
+        assert_eq!(embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?.embedded, 1, "edited");
+        assert_ne!(stored(conn).0, hash);
+        Ok(())
+    });
+}
+
+#[test]
+fn hybrid_search_finds_posts_by_meaning_and_never_returns_one_the_viewer_cannot_see() {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut conn = test_conn();
+    // Search uses the process-wide query embedder; give it the fake for this test, and restore after.
+    embeddings::install_server_embedder(Box::new(FakeEmbedder));
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "meaning_author");
+        let viewer = create_user(conn, "meaning_viewer");
+        let dog = title_post(conn, &author, "Adopting a puppy from the shelter");
+        let tax = title_post(conn, &author, "Corporate tax deadlines for the accountant");
+        // The closest match of all -- but private to its author, so the viewer must never see it.
+        let private_dog = create_post(
+            conn,
+            Some(&author),
+            PostOpts {
+                title: Some("Canine puppy dog diary".to_string()),
+                content: Some("Private notes".to_string()),
+                visibility: Visibility::Private,
+                ..Default::default()
+            },
+        );
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+
+        let search = |conn: &mut PgPooledConnection, who: &crate::models::User| -> Vec<String> {
+            crate::rpcs::get_posts(
+                GetPostsRequest {
+                    listing_type: PostListingType::TextSearch as i32,
+                    search_text: Some("getting canine".to_string()),
+                    ..Default::default()
+                },
+                &Some(who),
+                conn,
+            )
+            .unwrap()
+            .posts
+            .iter()
+            .map(|p| p.id.clone())
+            .collect()
+        };
+        let id_of = |p: &crate::models::Post| crate::marshaling::ToProtoId::to_proto_id(&p.id).to_string();
+
+        // "getting canine" shares no word with the puppy post: full-text alone finds nothing.
+        let found = search(conn, &viewer);
+        assert!(found.contains(&id_of(&dog)), "found by meaning: {:?}", found);
+        assert!(!found.contains(&id_of(&tax)), "unrelated stays out: {:?}", found);
+        assert!(!found.contains(&id_of(&private_dog)), "never a post the viewer can't see: {:?}", found);
+        // Its own author does see their private post.
+        assert!(search(conn, &author).contains(&id_of(&private_dog)));
+        Ok(())
+    });
+    embeddings::unload_server_embedder();
+}
+
+#[test]
+fn the_postgres_scan_index_needs_a_scope_and_answers_only_within_it() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "scan_scope");
+        let a = title_post(conn, &author, "Dog puppy");
+        let b = title_post(conn, &author, "Dog canine");
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(FakeEmbedder));
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+
+        let vector = FakeEmbedder::vector("dog puppy canine");
+        let spec = embeddings::default_model();
+        let ask = |conn: &mut PgPooledConnection, scope: Option<&[i64]>| {
+            embeddings::semantic_index().search(
+                conn,
+                &embeddings::IndexQuery { kind: EmbeddingKind::Post, spec, vector: &vector, scope, limit: 10 },
+            )
+        };
+        assert_eq!(ask(conn, None), None, "a per-query scan can't answer 'anywhere'");
+        let only_a = ask(conn, Some(&[a.id])).unwrap();
+        assert_eq!(only_a.iter().map(|m| m.0).collect::<Vec<_>>(), vec![a.id]);
+        let both = ask(conn, Some(&[a.id, b.id])).unwrap();
+        assert_eq!(both.len(), 2);
+        Ok(())
+    });
+}
+
 use crate::schema::{post_embeddings, posts, server_configurations};
+
+/// The server's query embedder is process-wide state; tests that install, replace or free it (or save a
+/// configuration, which does) take this so they can't interfere with each other.
+static EMBEDDER_STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 mod with_model {
     use super::*;
     use crate::rpcs::get_posts;
 
     fn wait_for_server_model() {
+        embeddings::enable_model_loading();
         let started = std::time::Instant::now();
         while embeddings::server_embedder(embeddings::default_model()).is_none() {
             assert!(started.elapsed().as_secs() < 900, "embedding model never became ready");
@@ -624,7 +795,7 @@ mod with_model {
         for spec in embeddings::MODELS.iter().filter(|m| only.as_deref().map_or(true, |o| o == m.id)) {
             let cache = embeddings::model_cache_dir();
             let (bytes_before, rss_before) = (dir_bytes(&cache), resident_megabytes());
-            let mut embedder = embeddings::Embedder::load(spec, 2).expect("model loads");
+            let mut embedder = embeddings::LocalEmbedder::load(spec, 2).expect("model loads");
             let downloaded_mb = dir_bytes(&cache).saturating_sub(bytes_before) as f64 / 1_048_576.0;
             let ram_mb = resident_megabytes() - rss_before;
 

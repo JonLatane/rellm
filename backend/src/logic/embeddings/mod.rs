@@ -26,12 +26,17 @@ use std::time::{Duration, Instant};
 
 use diesel::sql_types::{BigInt, Binary, Nullable, Text};
 use diesel::*;
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use fastembed::EmbeddingModel;
 
 use crate::db_connection::PgPooledConnection;
 
+mod embedder;
+mod index;
+pub use embedder::{load_embedder, BoxedEmbedder, LocalEmbedder, TextEmbedder};
+pub use index::{semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
+
 // Longer input is truncated by the tokenizer; documents list their most important text first.
-const MAX_TOKENS: usize = 256;
+pub(self) const MAX_TOKENS: usize = 256;
 
 /// One embedding model an admin can choose. `id` is what's stored in `SearchSettings.embedding_model`
 /// and in every embedding row's `model` column. See the PR description for how these compare.
@@ -117,6 +122,18 @@ pub static MODELS: [ModelSpec; 4] = [
         min_similarity: 0.81,
     },
 ];
+
+impl ModelSpec {
+    fn model(&self) -> &EmbeddingModel {
+        &self.model
+    }
+    fn query_prefix(&self) -> &'static str {
+        self.query_prefix
+    }
+    fn document_prefix(&self) -> &'static str {
+        self.document_prefix
+    }
+}
 
 /// The model with this id; `None` for an unknown id.
 pub fn model_spec(id: &str) -> Option<&'static ModelSpec> {
@@ -237,45 +254,7 @@ pub fn model_cache_dir() -> PathBuf {
     }
 }
 
-pub struct Embedder {
-    inner: TextEmbedding,
-    pub spec: &'static ModelSpec,
-}
-
-impl Embedder {
-    /// Loads the model, downloading it into `model_cache_dir()` first if it isn't there. Blocking,
-    /// and slow the first time. ONNX Runtime uses `threads` CPU threads (it would otherwise take
-    /// every core, which is rude on small shared hardware).
-    pub fn load(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<Embedder> {
-        let model = TextEmbedding::try_new(
-            TextInitOptions::new(spec.model.clone())
-                .with_cache_dir(model_cache_dir())
-                .with_intra_threads(threads.max(1))
-                .with_max_length(MAX_TOKENS)
-                .with_show_download_progress(false),
-        )?;
-        Ok(Embedder { inner: model, spec })
-    }
-
-    /// One L2-normalized vector per document text, in order. Empty texts are the caller's to skip.
-    pub fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        self.embed_with_prefix(self.spec.document_prefix, texts)
-    }
-
-    /// The vector for a search query (models that tell queries from documents get their query prefix).
-    pub fn embed_query(&mut self, text: &str) -> anyhow::Result<Vec<f32>> {
-        Ok(self.embed_with_prefix(self.spec.query_prefix, &[text.to_string()])?.remove(0))
-    }
-
-    fn embed_with_prefix(&mut self, prefix: &str, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
-        let prefixed: Vec<String> = texts.iter().map(|t| format!("{}{}", prefix, t)).collect();
-        let mut vectors = self.inner.embed(&prefixed, Some(32))?;
-        vectors.iter_mut().for_each(|v| normalize(v));
-        Ok(vectors)
-    }
-}
-
-fn normalize(vector: &mut [f32]) {
+pub(self) fn normalize(vector: &mut [f32]) {
     let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
         vector.iter_mut().for_each(|x| *x /= norm);
@@ -286,33 +265,22 @@ pub fn vector_to_bytes(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
-/// Dot product of a vector and stored bytes -- cosine similarity, both being normalized. `None` if
-/// the stored vector has a different dimension (a different model's leftovers).
-fn similarity(query: &[f32], stored: &[u8]) -> Option<f32> {
-    if stored.len() != query.len() * 4 {
-        return None;
-    }
-    Some(
-        query
-            .iter()
-            .zip(stored.chunks_exact(4))
-            .map(|(q, b)| q * f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .sum(),
-    )
-}
-
 // ---------------------------------------------------------------------------------------------
 // The server's query embedder
 // ---------------------------------------------------------------------------------------------
 
 // `None` until loaded, and again after `unload_server_embedder` (setting turned off) so a small host gets
 // the model's memory back without a restart. Searches hold their own `Arc` while using it.
-static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<Embedder>>>> = RwLock::new(None);
+static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<BoxedEmbedder>>>> = RwLock::new(None);
 // What the last `search_configuration` check saw, so a load that finishes after the setting was turned
 // off (or the model changed) discards the model instead of keeping the wrong one.
 static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
 static LAST_KNOWN_MODEL_ID: Mutex<&'static str> = Mutex::new(DEFAULT_MODEL_ID);
 static LOADING: AtomicBool = AtomicBool::new(false);
+// Whether `server_embedder` may start loading (downloading) a model by itself. Always, except in the
+// crate's own tests: nearly every test that searches or saves the configuration would otherwise kick off
+// a background model download. Tests that really want the model call `enable_model_loading`.
+static AUTO_LOAD: AtomicBool = AtomicBool::new(!cfg!(test));
 // Which model failed to load, and when: a cooldown only applies to *that* model, so an admin who
 // switches to a working one isn't stuck on full-text search until the failed model's timer expires.
 static LAST_LOAD_FAILURE: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
@@ -320,14 +288,19 @@ const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
 // Embedding one short search query needs no more than this.
 const SERVER_THREADS: usize = 1;
 
+/// Lets `server_embedder` load models in the crate's own tests (see `AUTO_LOAD`).
+pub fn enable_model_loading() {
+    AUTO_LOAD.store(true, Ordering::SeqCst);
+}
+
 /// The server's embedder for `spec`, once it's loaded. The first call (when semantic search is on)
 /// starts loading it on a background thread -- downloading the model if need be -- and returns `None`
 /// until that finishes, so a search never waits on a download: it's just full-text until then. A
 /// model loaded for a *different* choice is dropped (the admin switched models). A failed load is
 /// retried at most every ten minutes.
-pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<Embedder>>> {
+pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedder>>> {
     if let Some(embedder) = SERVER_EMBEDDER.read().unwrap().as_ref() {
-        if embedder.lock().map(|e| e.spec.id == spec.id).unwrap_or(false) {
+        if embedder.lock().map(|e| e.spec().id == spec.id).unwrap_or(false) {
             return Some(embedder.clone());
         }
     }
@@ -340,10 +313,13 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<Embedder>>>
             return None;
         }
     }
+    if !AUTO_LOAD.load(Ordering::SeqCst) {
+        return None;
+    }
     if !LOADING.swap(true, Ordering::SeqCst) {
         std::thread::spawn(move || {
             log::info!("Loading embedding model {} for semantic search...", spec.id);
-            match Embedder::load(spec, SERVER_THREADS) {
+            match load_embedder(spec, SERVER_THREADS) {
                 Ok(embedder)
                     if LAST_KNOWN_ENABLED.load(Ordering::SeqCst)
                         && *LAST_KNOWN_MODEL_ID.lock().unwrap() == spec.id =>
@@ -362,6 +338,13 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<Embedder>>>
         });
     }
     None
+}
+
+/// Installs `embedder` as the server's query embedder, replacing whatever is loaded. For embedders that
+/// aren't loaded on demand by `server_embedder` -- a client of a shared model service set up at startup,
+/// or a deterministic fake in tests. It is used for as long as its `spec()` is the configured model.
+pub fn install_server_embedder(embedder: BoxedEmbedder) {
+    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
 }
 
 /// Frees the server's query model (the setting was turned off, or the model changed). A search
@@ -432,14 +415,6 @@ pub fn semantic_search_ready(conn: &mut PgPooledConnection) -> bool {
     server_embedder(spec).is_some()
 }
 
-#[derive(QueryableByName)]
-struct StoredVector {
-    #[diesel(sql_type = BigInt)]
-    id: i64,
-    #[diesel(sql_type = Binary)]
-    embedding: Vec<u8>,
-}
-
 /// Ids of the rows of `kind` (among `scope_ids`) most semantically similar to `query`, best first,
 /// with their cosine similarity -- only those at least `MIN_SIMILARITY` similar, at most
 /// `SEMANTIC_RESULT_LIMIT`. `None` when semantic search can't be used right now (it's turned off, or
@@ -468,27 +443,16 @@ pub fn semantic_ranking(
         .embed_query(query_text.trim())
         .map_err(|e| log::error!("Couldn't embed search query: {:?}", e))
         .ok()?;
-
-    let rows = sql_query(format!(
-        "SELECT {id} AS id, embedding FROM {table} \
-         WHERE {id} = ANY($1) AND embedding IS NOT NULL AND model = $2",
-        id = kind.embeddings_id_column(),
-        table = kind.embeddings_table(),
-    ))
-    .bind::<diesel::sql_types::Array<BigInt>, _>(scope_ids.to_vec())
-    .bind::<Text, _>(spec.id)
-    .load::<StoredVector>(conn)
-    .map_err(|e| log::error!("Couldn't load {} embeddings: {:?}", kind.name(), e))
-    .ok()?;
-
-    let mut matches: Vec<(i64, f32)> = rows
-        .iter()
-        .filter_map(|row| Some((row.id, similarity(&query, &row.embedding)?)))
-        .filter(|(_, similarity)| *similarity >= spec.min_similarity)
-        .collect();
-    matches.sort_by(|a, b| b.1.total_cmp(&a.1).then(b.0.cmp(&a.0)));
-    matches.truncate(SEMANTIC_RESULT_LIMIT);
-    Some(matches)
+    semantic_index().search(
+        conn,
+        &IndexQuery {
+            kind,
+            spec,
+            vector: &query,
+            scope: Some(scope_ids),
+            limit: SEMANTIC_RESULT_LIMIT,
+        },
+    )
 }
 
 /// Reranks by reciprocal rank fusion: each id scores `1/(k + rank)` in every list it appears in
@@ -566,7 +530,7 @@ impl std::error::Error for ModelUnavailable {}
 pub struct SyncContext<'a> {
     /// The model to embed with (`active_model`): rows made by any other model count as missing.
     pub spec: &'static ModelSpec,
-    pub embedder: Option<Embedder>,
+    pub embedder: Option<BoxedEmbedder>,
     pub deadline: Instant,
     pub threads: usize,
     pub before_model_load: Box<dyn FnMut() -> bool + 'a>,
@@ -683,7 +647,7 @@ fn store_embeddings(
                 return Err(ModelUnavailable.into());
             }
             log::info!("Loading embedding model {} (downloads it the first time)...", ctx.spec.id);
-            ctx.embedder = Some(Embedder::load(ctx.spec, ctx.threads)?);
+            ctx.embedder = Some(load_embedder(ctx.spec, ctx.threads)?);
         }
         let texts: Vec<String> = to_embed.iter().map(|r| r.document.clone()).collect();
         let embedded = ctx.embedder.as_mut().unwrap().embed_documents(&texts)?;
@@ -715,6 +679,7 @@ fn store_embeddings(
 
 #[cfg(test)]
 mod unit_tests {
+    use super::index::similarity;
     use super::*;
 
     #[test]
