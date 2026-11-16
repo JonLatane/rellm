@@ -65,10 +65,10 @@ fn published_or_created_before(request: &GetPostsRequest) -> Option<std::time::S
 #[derive(Clone, Debug, Default)]
 pub struct AuthorScope {
     pub excluded: Vec<i64>,
-    pub only: Option<Vec<i64>>,
+    pub only: Option<crate::logic::subdomains::AuthorSet>,
 }
 
-fn author_scope(request: &GetPostsRequest, only: &Option<Vec<i64>>) -> Result<AuthorScope, Status> {
+fn author_scope(request: &GetPostsRequest, only: &Option<crate::logic::subdomains::AuthorSet>) -> Result<AuthorScope, Status> {
     Ok(AuthorScope { excluded: excluded_author_db_ids(request)?, only: only.clone() })
 }
 
@@ -91,10 +91,12 @@ macro_rules! exclude_authors {
             .or(posts::user_id.ne_all($excluded.excluded.to_vec()))
             // A subdomain's feed only ever shows its `only` authors (see `AuthorScope`) -- `true` otherwise.
             .and(
-                // A SQL *literal*, not a bind parameter: with no subdomain scope (every normal request) Postgres
-                // folds `TRUE OR ...` away at plan time, so ordinary feeds plan exactly as they did before.
-                diesel::dsl::sql::<diesel::sql_types::Bool>(if $excluded.only.is_none() { "TRUE" } else { "FALSE" })
-                    .or(posts::user_id.eq_any($excluded.only.clone().unwrap_or_default())),
+                // SQL *text*, not a bind parameter: with no subdomain scope (every normal request) it is the literal
+                // `TRUE`, which Postgres folds away at plan time, so ordinary feeds plan exactly as they did before.
+                // On a subdomain it is the owner-and-sharers condition with its `follows` subqueries.
+                diesel::dsl::sql::<diesel::sql_types::Bool>(
+                    &$excluded.only.as_ref().map_or("TRUE".to_string(), |set| set.sql_condition("posts.user_id")),
+                ),
             )
     };
 }
@@ -111,7 +113,7 @@ pub fn get_posts(
 pub fn get_posts_scoped(
     request: GetPostsRequest,
     user: &Option<&models::User>,
-    only: &Option<Vec<i64>>,
+    only: &Option<crate::logic::subdomains::AuthorSet>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetPostsResponse, Status> {
     let cutoff = published_or_created_before(&request);

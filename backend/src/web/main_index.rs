@@ -5,7 +5,6 @@ use rocket::{http::Status, State};
 use super::RocketState;
 
 use crate::protos::*;
-use crate::rpcs::get_server_configuration_proto;
 use rocket_cache_response::CacheResponse;
 use std::fs;
 use std::str::FromStr;
