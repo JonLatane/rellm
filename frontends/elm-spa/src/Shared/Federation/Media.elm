@@ -20,7 +20,6 @@ enough of what it was asked for, or has run out of patience (`maxPages`).
 import Http
 import Proto.Rellm exposing (MediaReference, Post)
 import Shared.Federation.Common exposing (sensitiveMediaHiddenId)
-import Shared.Federation.VideoPoster as VideoPoster
 import Task exposing (Task)
 
 
@@ -39,7 +38,6 @@ type alias Item =
     , kind : Kind
     , media : MediaReference
     , post : Post
-    , thumbnailUrl : Maybe String
     }
 
 
@@ -74,7 +72,6 @@ itemsOf kind host posts =
                             , kind = kind
                             , media = media
                             , post = post
-                            , thumbnailUrl = media.url |> Maybe.andThen VideoPoster.posterUrl
                             }
                         )
             )

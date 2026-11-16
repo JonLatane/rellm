@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, videoDownloadSizes, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, posterFrame, videoDownloadSizes, videoPosterUrl, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -67,7 +67,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, audio, button, div, img, input, node, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, input, node, object, span, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
@@ -596,6 +596,46 @@ videoDownloadSizes media =
         |> List.filter (\( conversion, _ ) -> List.any (\size -> size.conversion == conversion) media.sizes)
         |> List.map Tuple.second
         |> (\stored -> stored ++ [ "original" ])
+
+
+{-| The still a card (the Video page's, My Media's) shows for a video: a Rellm video's generated
+`VIDEO_PREVIEW_THUMBNAIL_MEDIUM` (if the server has made one -- without it `size=` would just serve the whole video),
+or, for a Mastodon/Bluesky video (it has an external `url`), the poster `Shared.Federation.VideoPoster` finds from that
+URL. `Nothing` when there's neither, and the card shows a placeholder (see `posterFrame`).
+-}
+videoPosterUrl : Maybe RellmServer -> Maybe RellmAccount -> MediaReference -> Maybe String
+videoPosterUrl maybeServer maybeAccount media =
+    case media.url of
+        Just externalUrl ->
+            VideoPoster.posterUrl externalUrl
+
+        Nothing ->
+            case maybeServer of
+                Just server ->
+                    if List.any (\size -> size.conversion == VIDEOPREVIEWTHUMBNAILMEDIUM) media.sizes then
+                        Just (thumbnailUrl "video" TierMedium server maybeAccount media)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+
+{-| The contents of a video card's thumbnail button: its `poster` still -- or `placeholder` (a glyph) while it has
+none -- with the play glyph overlaid. Every video card (Rellm, Mastodon, Bluesky; the Video page, My Media) draws
+its thumbnail this way, from `videoPosterUrl`.
+-}
+posterFrame : String -> Maybe String -> List (Html msg)
+posterFrame placeholder poster =
+    [ case poster of
+        Just posterSrc ->
+            img [ src posterSrc, attribute "alt" "", attribute "loading" "lazy" ] []
+
+        Nothing ->
+            span [ class "media-card-thumb-placeholder" ] [ text placeholder ]
+    , span [ class "media-card-play" ] [ text Glyph.play ]
+    ]
 
 
 {-| What the media viewer plays a video from (`Shared.VideoPlayerPanel`'s player): its URL at the `Natural` size, the poster

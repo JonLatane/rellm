@@ -43,6 +43,7 @@ Mounted by `Components.Pages.MediaPage`, which `Pages.Video`/`Pages.Audio`/`Page
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.Users as Users
 import Dict exposing (Dict)
@@ -1099,7 +1100,8 @@ thumbnailUrl kind maybeServer media =
     in
     case kind of
         Videos ->
-            ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
+            -- (Video cards draw theirs with `MediaRenderer.videoPosterUrl`/`posterFrame`.)
+            Nothing
 
         Audio ->
             -- The cover art picked for the track, else what's embedded in the file, else the waveform.
@@ -1251,15 +1253,13 @@ videoCard shared showHost host maybeServer media =
     in
     div [ class "media-card video-card" ]
         [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
-            [ case thumbnailUrl Videos maybeServer media of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
-            , licensedBadge media
-            ]
+            (MediaRenderer.posterFrame "🎬"
+                (MediaRenderer.videoPosterUrl maybeServer
+                    (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host)
+                    (MediaViewerPanel.mediaToReference media)
+                )
+                ++ [ licensedBadge media ]
+            )
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]
             , div [ class "media-card-sub" ]
@@ -1473,14 +1473,7 @@ fedVideoCard : Shared.Model -> Bool -> FedMedia.Item -> Html Msg
 fedVideoCard shared showHost item =
     div [ class "media-card video-card" ]
         [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
-            [ case item.thumbnailUrl of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
-            ]
+            (MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media))
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]
             , div [ class "media-card-sub" ]

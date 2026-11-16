@@ -15,6 +15,7 @@ audio at all.
 
 -}
 
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Dict
 import Effect exposing (Effect)
@@ -32,7 +33,6 @@ import Shared.Federation.Actions as Actions exposing (ServerAccount(..))
 import Shared.Federation.Common exposing (sensitiveMediaHiddenId)
 import Shared.Federation.Mastodon as Mastodon exposing (MastodonVisibility(..))
 import Shared.Federation.Media as FedMedia
-import Shared.Federation.VideoPoster as VideoPoster
 import Shared.MediaViewerPanel as MediaViewerPanel
 import Task
 import UI.Classes exposing (classes)
@@ -572,29 +572,21 @@ tile shared model item =
     in
     div [ class "federated-my-media-tile" ]
         [ button [ class "federated-my-media-thumb", onClick (ItemClicked item.id), attribute "aria-label" ("Open " ++ title) ]
-            [ case ( item.kind, item.media.url ) of
+            (case ( item.kind, item.media.url ) of
                 ( ImageKind, Just url ) ->
-                    img [ src url, attribute "alt" title, attribute "loading" "lazy" ] []
+                    [ img [ src url, attribute "alt" title, attribute "loading" "lazy" ] [] ]
+
+                ( ImageKind, Nothing ) ->
+                    [ span [ class "media-card-thumb-placeholder" ] [ text "🖼️" ] ]
 
                 ( VideoKind, _ ) ->
-                    case item.media.url |> Maybe.andThen VideoPoster.posterUrl of
-                        Just url ->
-                            img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                        Nothing ->
-                            span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
+                    MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media)
 
                 ( AudioKind, _ ) ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
-
-                _ ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🖼️" ]
-            , if item.kind == ImageKind then
-                text ""
-
-              else
-                span [ class "media-card-play" ] [ text Glyph.play ]
-            ]
+                    [ span [ class "media-card-thumb-placeholder" ] [ text "🎵" ]
+                    , span [ class "media-card-play" ] [ text Glyph.play ]
+                    ]
+            )
         , div [ class "federated-my-media-caption" ]
             [ span [ class "federated-my-media-title" ] [ text title ]
             , div [ class "federated-my-media-actions" ]
