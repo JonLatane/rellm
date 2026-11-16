@@ -42,5 +42,7 @@ pub use ai::*;
 mod market;
 pub use market::*;
 
+pub mod subdomains;
+
 pub(crate) use contact_methods::{bird_sms, telnyx_sms, twilio_sms};
 pub(crate) use market::stripe_payments;

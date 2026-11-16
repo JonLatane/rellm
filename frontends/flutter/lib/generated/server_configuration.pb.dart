@@ -51,6 +51,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     TelnyxConfig? telnyxConfig,
     StalwartConfig? stalwartConfig,
     CustomCSSConfiguration? customCssConfiguration,
+    SubdomainSettings? subdomainSettings,
   }) {
     final $result = create();
     if (serverInfo != null) {
@@ -131,6 +132,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     if (customCssConfiguration != null) {
       $result.customCssConfiguration = customCssConfiguration;
     }
+    if (subdomainSettings != null) {
+      $result.subdomainSettings = subdomainSettings;
+    }
     return $result;
   }
   ServerConfiguration._() : super();
@@ -164,6 +168,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<TelnyxConfig>(125, _omitFieldNames ? '' : 'telnyxConfig', subBuilder: TelnyxConfig.create)
     ..aOM<StalwartConfig>(126, _omitFieldNames ? '' : 'stalwartConfig', subBuilder: StalwartConfig.create)
     ..aOM<CustomCSSConfiguration>(127, _omitFieldNames ? '' : 'customCssConfiguration', subBuilder: CustomCSSConfiguration.create)
+    ..aOM<SubdomainSettings>(130, _omitFieldNames ? '' : 'subdomainSettings', subBuilder: SubdomainSettings.create)
     ..hasRequiredFields = false
   ;
 
@@ -513,6 +518,164 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   void clearCustomCssConfiguration() => clearField(127);
   @$pb.TagNumber(127)
   CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(25);
+
+  /// Set *only* on the virtual configuration a server returns to requests addressed to a user's
+  /// Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
+  /// Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is
+  /// derived from the owner's `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through
+  /// [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by
+  /// checking `subdomain_settings?.subdomain_of`.
+  @$pb.TagNumber(130)
+  SubdomainSettings get subdomainSettings => $_getN(26);
+  @$pb.TagNumber(130)
+  set subdomainSettings(SubdomainSettings v) { setField(130, v); }
+  @$pb.TagNumber(130)
+  $core.bool hasSubdomainSettings() => $_has(26);
+  @$pb.TagNumber(130)
+  void clearSubdomainSettings() => clearField(130);
+  @$pb.TagNumber(130)
+  SubdomainSettings ensureSubdomainSettings() => $_ensure(26);
+}
+
+/// A user's Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
+/// A server answers requests whose `Host` is `<subdomain>.<its frontend_host>` (`ExternalCDNConfig.frontend_host`) over
+/// both gRPC and HTTP, as a "virtual server" that shares everything with its parent (CDN configuration, contact
+/// integrations, media, login) except that it is scoped to one user: `GetPosts`/`GetEvents` only return that user's
+/// content (plus whatever the `share_content_from_*` toggles add), and `GetServerConfiguration` describes the user
+/// (see `subdomain_of`) rather than the whole server. The subscription's `details` hold these settings; the
+/// subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+class SubdomainSettings extends $pb.GeneratedMessage {
+  factory SubdomainSettings({
+    $core.String? subdomainOf,
+    $core.String? subdomain,
+    $core.bool? shareContentFromFollowers,
+    $core.bool? shareContentFromFollowing,
+    $core.bool? shareContentFromFriends,
+    CustomCSSConfiguration? customCssConfiguration,
+  }) {
+    final $result = create();
+    if (subdomainOf != null) {
+      $result.subdomainOf = subdomainOf;
+    }
+    if (subdomain != null) {
+      $result.subdomain = subdomain;
+    }
+    if (shareContentFromFollowers != null) {
+      $result.shareContentFromFollowers = shareContentFromFollowers;
+    }
+    if (shareContentFromFollowing != null) {
+      $result.shareContentFromFollowing = shareContentFromFollowing;
+    }
+    if (shareContentFromFriends != null) {
+      $result.shareContentFromFriends = shareContentFromFriends;
+    }
+    if (customCssConfiguration != null) {
+      $result.customCssConfiguration = customCssConfiguration;
+    }
+    return $result;
+  }
+  SubdomainSettings._() : super();
+  factory SubdomainSettings.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SubdomainSettings.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SubdomainSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'subdomainOf')
+    ..aOS(2, _omitFieldNames ? '' : 'subdomain')
+    ..aOB(3, _omitFieldNames ? '' : 'shareContentFromFollowers')
+    ..aOB(4, _omitFieldNames ? '' : 'shareContentFromFollowing')
+    ..aOB(5, _omitFieldNames ? '' : 'shareContentFromFriends')
+    ..aOM<CustomCSSConfiguration>(6, _omitFieldNames ? '' : 'customCssConfiguration', subBuilder: CustomCSSConfiguration.create)
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SubdomainSettings clone() => SubdomainSettings()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SubdomainSettings copyWith(void Function(SubdomainSettings) updates) => super.copyWith((message) => updates(message as SubdomainSettings)) as SubdomainSettings;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SubdomainSettings create() => SubdomainSettings._();
+  SubdomainSettings createEmptyInstance() => create();
+  static $pb.PbList<SubdomainSettings> createRepeated() => $pb.PbList<SubdomainSettings>();
+  @$core.pragma('dart2js:noInline')
+  static SubdomainSettings getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SubdomainSettings>(create);
+  static SubdomainSettings? _defaultInstance;
+
+  /// The user ID of the subdomain's owner -- the user whose profile the subdomain's About tab shows and whose content it
+  /// is scoped to. Server-assigned; ignored on `SaveMarketSubscription`.
+  @$pb.TagNumber(1)
+  $core.String get subdomainOf => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set subdomainOf($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSubdomainOf() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSubdomainOf() => clearField(1);
+
+  /// The subdomain's DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner's username when the
+  /// subscription is fulfilled. Server-assigned; ignored on `SaveMarketSubscription`.
+  @$pb.TagNumber(2)
+  $core.String get subdomain => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set subdomain($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasSubdomain() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSubdomain() => clearField(2);
+
+  /// Also show posts/events by users who *follow* the owner (an accepted `Follow` of the owner).
+  @$pb.TagNumber(3)
+  $core.bool get shareContentFromFollowers => $_getBF(2);
+  @$pb.TagNumber(3)
+  set shareContentFromFollowers($core.bool v) { $_setBool(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasShareContentFromFollowers() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearShareContentFromFollowers() => clearField(3);
+
+  /// Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner).
+  @$pb.TagNumber(4)
+  $core.bool get shareContentFromFollowing => $_getBF(3);
+  @$pb.TagNumber(4)
+  set shareContentFromFollowing($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasShareContentFromFollowing() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearShareContentFromFollowing() => clearField(4);
+
+  /// Also show posts/events by the owner's *friends* -- users who follow the owner and whom the owner follows back.
+  @$pb.TagNumber(5)
+  $core.bool get shareContentFromFriends => $_getBF(4);
+  @$pb.TagNumber(5)
+  set shareContentFromFriends($core.bool v) { $_setBool(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasShareContentFromFriends() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearShareContentFromFriends() => clearField(5);
+
+  /// The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
+  /// Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
+  /// `custom_css` is only included in the subscription's own copy (`GetMarketSubscriptions`), never in
+  /// `GetServerConfiguration`'s, same as `ServerConfiguration.custom_css_configuration`. On
+  /// `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet.
+  @$pb.TagNumber(6)
+  CustomCSSConfiguration get customCssConfiguration => $_getN(5);
+  @$pb.TagNumber(6)
+  set customCssConfiguration(CustomCSSConfiguration v) { setField(6, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasCustomCssConfiguration() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearCustomCssConfiguration() => clearField(6);
+  @$pb.TagNumber(6)
+  CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(5);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm

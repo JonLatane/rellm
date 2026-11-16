@@ -38,6 +38,13 @@ type EventLoadData = (
 // these authors (the *Event's* author, same as `author_user_id`) out via `exclude_authors!`.
 // Resolved up front so a malformed id is rejected (`InvalidArgument`) whichever listing type the
 // request lands on.
+/// Which authors a feed-style listing may show -- see `rpcs::posts::AuthorScope` (same meaning).
+#[derive(Clone, Debug, Default)]
+pub struct AuthorScope {
+    pub excluded: Vec<i64>,
+    pub only: Option<Vec<i64>>,
+}
+
 fn excluded_author_db_ids(request: &GetEventsRequest) -> Result<Vec<i64>, Status> {
     request
         .excluded_author_user_ids
@@ -52,7 +59,17 @@ fn excluded_author_db_ids(request: &GetEventsRequest) -> Result<Vec<i64>, Status
 // rather than dropped by SQL's NULL semantics.
 macro_rules! exclude_authors {
     ($column:expr, $excluded:expr) => {
-        $column.is_null().or($column.ne_all($excluded.to_vec()))
+        $column
+            .is_null()
+            .or($column.ne_all($excluded.excluded.to_vec()))
+            // A subdomain's feed only ever shows its `only` authors (see `AuthorScope`) -- `true` otherwise.
+            .and(
+                $excluded
+                    .only
+                    .is_none()
+                    .into_sql::<diesel::sql_types::Bool>()
+                    .or($column.eq_any($excluded.only.clone().unwrap_or_default())),
+            )
     };
 }
 
@@ -61,7 +78,17 @@ pub fn get_events(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetEventsResponse, Status> {
-    let excluded = excluded_author_db_ids(&request)?;
+    get_events_scoped(request, user, &None, conn)
+}
+
+/// `get_events`, limited to the authors `only` (a Rellm Subdomain's visible authors) when set.
+pub fn get_events_scoped(
+    request: GetEventsRequest,
+    user: &Option<&models::User>,
+    only: &Option<Vec<i64>>,
+    conn: &mut PgPooledConnection,
+) -> Result<GetEventsResponse, Status> {
+    let excluded = AuthorScope { excluded: excluded_author_db_ids(&request)?, only: only.clone() };
     let result: Vec<MarshalableEvent> = if !request.occasion_post_ids.is_empty() {
         get_events_by_occasion_post_ids(&user, &request.occasion_post_ids, conn)?
     } else {
@@ -443,7 +470,7 @@ fn get_public_and_following_events(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
     filter: Option<TimeFilter>,
-    excluded: &[i64],
+    excluded: &AuthorScope,
 ) -> Result<Vec<MarshalableEvent>, Status> {
     let query = query_visible_events!(user, filter).filter(exclude_authors!(posts::user_id, excluded));
     let binding = query.load::<EventLoadData>(conn).unwrap();
@@ -457,7 +484,7 @@ fn get_user_events(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
     filter: Option<TimeFilter>,
-    excluded: &[i64],
+    excluded: &AuthorScope,
 ) -> Result<Vec<MarshalableEvent>, Status> {
     let query = query_visible_events!(user, filter)
         .filter(posts::user_id.eq(user_id))
@@ -477,7 +504,7 @@ fn get_user_events(
 // each of those filter combinations is served by a single index scan.
 fn get_search_events(
     request: &GetEventsRequest,
-    excluded: &[i64],
+    excluded: &AuthorScope,
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
 ) -> Result<Vec<MarshalableEvent>, Status> {
@@ -524,7 +551,17 @@ fn get_search_events(
         .select(occasions::post_id)
         .order(occasions::post_id)
         .filter(occasions::search_text.matches(search_query))
-        .filter(exclude_authors!(occasions::user_id, excluded))
+        // Exclusions are about the occasion's own author (the denormalized `occasions::user_id`, which the search's
+        // GIN index serves); a subdomain's author limit is about the *event's* author, `posts::user_id`, same as every
+        // other listing -- the two differ when a moderator adds an occasion to someone else's event.
+        .filter(exclude_authors!(
+            occasions::user_id,
+            &AuthorScope { excluded: excluded.excluded.clone(), only: None }
+        ))
+        .filter(exclude_authors!(
+            posts::user_id,
+            &AuthorScope { excluded: vec![], only: excluded.only.clone() }
+        ))
         .into_boxed();
 
     if let Some(author_user_id) = author_user_id {
@@ -696,7 +733,7 @@ fn get_group_events(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
     filter: Option<TimeFilter>,
-    excluded: &[i64],
+    excluded: &AuthorScope,
 ) -> Result<Vec<MarshalableEvent>, Status> {
     let group = get_group(group_id, conn);
     match group {

@@ -52,7 +52,7 @@ import Gen.Route
 import Grpc
 import Html exposing (Html, a, button, div, h2, h3, hr, input, label, li, option, p, select, span, text, ul)
 import Html.Attributes exposing (attribute, checked, class, classList, disabled, href, id, name, novalidate, placeholder, readonly, selected, tabindex, title, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Ports
@@ -236,6 +236,7 @@ type Msg
     | ShowMyMediaClicked
     | SubscriptionsExpandedToggled
     | CancelSubscriptionClicked MarketSubscription
+    | SaveSubdomainSettingsClicked MarketSubscription Proto.Rellm.SubdomainSettings
     | GotCancelSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | ResumeSubscriptionClicked MarketSubscription
     | GotResumeSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.MakeMarketPurchaseResponse ))
@@ -2635,6 +2636,21 @@ updateInner shared msg model =
                 Just ( server, account ) ->
                     ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
                     , Market.cancelMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription
+                        |> attemptInActingEpoch model (GotCancelSubscriptionResult subscription.id)
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        -- A "Share Content From ..." toggle on the user's own `PURCHASE_TYPE_SUBDOMAIN` subscription -- saved right
+        -- away (`SaveMarketSubscription`); its result is handled like a cancel's (`GotCancelSubscriptionResult`
+        -- just swaps in the returned subscription and clears the in-flight marker).
+        SaveSubdomainSettingsClicked subscription settings ->
+            case serverAndAccount shared model of
+                Just ( server, account ) ->
+                    ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
+                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription.id False { settings | customCssConfiguration = Nothing }
                         |> attemptInActingEpoch model (GotCancelSubscriptionResult subscription.id)
                         |> Effect.fromCmd
                     )
@@ -6322,6 +6338,7 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
         , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
         , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
         , threadLink
+        , subdomainSettingsView (maybeThreadHost /= Nothing && state /= SUBSCRIPTIONCANCELED) actionStatus subscription
         , if canCancel && state == SUBSCRIPTIONACTIVE then
             div [ class "profile-subscription-cancel" ]
                 [ button
@@ -6364,6 +6381,40 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
             text ""
         , billingHistoryView browserTimeZone subscription.billingHistory
         ]
+
+
+{-| A `PURCHASE_TYPE_SUBDOMAIN` subscription's address and its "Share Content From Followers / Following / Friends"
+toggles (`SubdomainSettings`); nothing for any other type. Only the buyer can change them (`editable`) -- an admin
+looking at the profile sees them read-only. Each toggle saves immediately.
+-}
+subdomainSettingsView : Bool -> SubmitStatus -> MarketSubscription -> Html Msg
+subdomainSettingsView editable status subscription =
+    case Market.subdomainSettingsOf subscription of
+        Nothing ->
+            text ""
+
+        Just settings ->
+            let
+                toggle : String -> Bool -> (Bool -> Proto.Rellm.SubdomainSettings) -> Html Msg
+                toggle labelText isOn withValue =
+                    label [ class "profile-subdomain-toggle" ]
+                        [ input
+                            [ type_ "checkbox"
+                            , checked isOn
+                            , disabled (not editable || status == Submitting)
+                            , onCheck (\on -> SaveSubdomainSettingsClicked subscription (withValue on))
+                            ]
+                            []
+                        , text labelText
+                        ]
+            in
+            div [ class "profile-subscription-subdomain" ]
+                [ span [ class "profile-subscription-row-status" ] [ text ("Subdomain: " ++ settings.subdomain) ]
+                , toggle "Share Content From Followers" settings.shareContentFromFollowers (\on -> { settings | shareContentFromFollowers = on })
+                , toggle "Share Content From Following" settings.shareContentFromFollowing (\on -> { settings | shareContentFromFollowing = on })
+                , toggle "Share Content From Friends" settings.shareContentFromFriends (\on -> { settings | shareContentFromFriends = on })
+                , editErrorView status
+                ]
 
 
 {-| The subscription's `state` (`MarketSubscriptionState`) in words. A canceled-but-paid-up

@@ -348,6 +348,9 @@ pub fn product_details_to_json(details: &Option<market_product::Details>) -> ser
         Some(market_product::Details::PermissionsAccessSubscriptionDetails(d)) => {
             serde_json::to_value(d).unwrap_or_default()
         }
+        Some(market_product::Details::SubdomainSubscriptionDetails(d)) => {
+            serde_json::to_value(d).unwrap_or_default()
+        }
         None => serde_json::json!({}),
     }
 }
@@ -374,6 +377,9 @@ pub fn product_details_to_proto(
                 .ok()
                 .map(market_product::Details::PermissionsAccessSubscriptionDetails)
         }
+        PurchaseType::Subdomain => serde_json::from_value::<SubdomainSubscriptionDetails>(details.clone())
+            .ok()
+            .map(market_product::Details::SubdomainSubscriptionDetails),
     }
 }
 
@@ -399,6 +405,9 @@ pub fn subscription_details_to_proto(
                 .ok()
                 .map(market_subscription::Details::PermissionsAccessSubscriptionDetails)
         }
+        PurchaseType::Subdomain => serde_json::from_value::<SubdomainSubscriptionDetails>(details.clone())
+            .ok()
+            .map(market_subscription::Details::SubdomainSubscriptionDetails),
     };
     // Whatever the row stored (rows from before this rule hold the `AWAITING_HOST_ADMIN` default), a
     // subscription whose entitlement the system grants automatically is `FULFILLED` -- see
@@ -411,6 +420,7 @@ pub fn subscription_details_to_proto(
             Some(market_subscription::Details::PermissionsAccessSubscriptionDetails(d)) => {
                 d.fulfillment_status = status
             }
+            Some(market_subscription::Details::SubdomainSubscriptionDetails(d)) => d.fulfillment_status = status,
             Some(market_subscription::Details::RellmHostingSubscriptionDetails(_)) | None => {}
         }
     }
@@ -426,9 +436,10 @@ pub fn subscription_details_to_proto(
 pub fn automatic_fulfillment_status(purchase_type: PurchaseType) -> Option<FulfillmentStatus> {
     match purchase_type {
         PurchaseType::RellmHosting => None,
-        PurchaseType::MediaStorage | PurchaseType::AiGrants | PurchaseType::PermissionsAccess => {
-            Some(FulfillmentStatus::Fulfilled)
-        }
+        PurchaseType::MediaStorage
+        | PurchaseType::AiGrants
+        | PurchaseType::PermissionsAccess
+        | PurchaseType::Subdomain => Some(FulfillmentStatus::Fulfilled),
     }
 }
 
@@ -448,6 +459,9 @@ pub fn purchase_details_to_json(details: &Option<market_purchase::Details>) -> s
             serde_json::to_value(d).unwrap_or_default()
         }
         Some(market_purchase::Details::PermissionsAccessPurchaseDetails(d)) => {
+            serde_json::to_value(d).unwrap_or_default()
+        }
+        Some(market_purchase::Details::SubdomainPurchaseDetails(d)) => {
             serde_json::to_value(d).unwrap_or_default()
         }
         None => serde_json::json!({}),
@@ -473,6 +487,9 @@ pub fn purchase_details_to_proto(
                 .ok()
                 .map(market_purchase::Details::PermissionsAccessPurchaseDetails)
         }
+        PurchaseType::Subdomain => serde_json::from_value::<SubdomainPurchaseDetails>(details.clone())
+            .ok()
+            .map(market_purchase::Details::SubdomainPurchaseDetails),
     }
 }
 
