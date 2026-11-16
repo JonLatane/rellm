@@ -62,17 +62,43 @@ pub struct ModelSpec {
     pub min_similarity: f32,
 }
 
-/// The default is the *light* choice, because semantic search is on by default and the server and the
-/// `generate_embeddings` job each load their own copy: measured per process, the multilingual models need
-/// 750MB-1GB of RAM, the English ones 70-110MB (see `compare_models`).
-pub const DEFAULT_MODEL_ID: &str = "bge-small-en-v1.5";
+/// The default is the multilingual, search-tuned model: Rellm servers are not English-only, and it was the
+/// best multilingual retriever in `compare_models`. It is also the heaviest (~1GB resident, ~465MB download), so
+/// a host that can't spare that should pick a lighter model, or share one model service across namespaces.
+pub const DEFAULT_MODEL_ID: &str = "multilingual-e5-small";
 
 // Download/RAM/threshold figures are measured by `embeddings_tests::with_model::compare_models`.
 pub static MODELS: [ModelSpec; 4] = [
     ModelSpec {
         id: DEFAULT_MODEL_ID,
+        name: "multilingual-e5-small",
+        description: "Multilingual (100 languages), search-tuned (queries vs. passages), not quantized. The default. The heaviest option: ~1GB of memory.",
+        dimensions: 384,
+        download_megabytes: 465,
+        memory_megabytes: 980,
+        multilingual: true,
+        model: EmbeddingModel::MultilingualE5Small,
+        query_prefix: "query: ",
+        document_prefix: "passage: ",
+        min_similarity: 0.81,
+    },
+    ModelSpec {
+        id: "paraphrase-multilingual-minilm-l12-v2",
+        name: "paraphrase-multilingual-MiniLM-L12-v2 (quantized)",
+        description: "Multilingual (50+ languages), including cross-language matches. Best quality in our small test and lighter than e5, but still ~750MB of memory.",
+        dimensions: 384,
+        download_megabytes: 240,
+        memory_megabytes: 750,
+        multilingual: true,
+        model: EmbeddingModel::ParaphraseMLMiniLML12V2Q,
+        query_prefix: "",
+        document_prefix: "",
+        min_similarity: 0.36,
+    },
+    ModelSpec {
+        id: "bge-small-en-v1.5",
         name: "bge-small-en-v1.5 (quantized)",
-        description: "English only. Search-tuned and light: the default. Use a multilingual model if your content isn't mostly English.",
+        description: "English only. Search-tuned and light (~110MB of memory). For an English-language server on small hardware.",
         dimensions: 384,
         download_megabytes: 64,
         memory_megabytes: 110,
@@ -85,7 +111,7 @@ pub static MODELS: [ModelSpec; 4] = [
     ModelSpec {
         id: "all-minilm-l6-v2",
         name: "all-MiniLM-L6-v2 (quantized)",
-        description: "English only. The smallest and fastest; general sentence similarity rather than search-tuned. For the very smallest hosts.",
+        description: "English only. The smallest and fastest (~70MB of memory); general sentence similarity rather than search-tuned. For the very smallest hosts.",
         dimensions: 384,
         download_megabytes: 23,
         memory_megabytes: 70,
@@ -94,32 +120,6 @@ pub static MODELS: [ModelSpec; 4] = [
         query_prefix: "",
         document_prefix: "",
         min_similarity: 0.33,
-    },
-    ModelSpec {
-        id: "paraphrase-multilingual-minilm-l12-v2",
-        name: "paraphrase-multilingual-MiniLM-L12-v2 (quantized)",
-        description: "Multilingual (50+ languages), including cross-language matches. Best quality in our tests, but needs ~7x the memory of the English models, in the server and again in the job.",
-        dimensions: 384,
-        download_megabytes: 240,
-        memory_megabytes: 750,
-        multilingual: true,
-        model: EmbeddingModel::ParaphraseMLMiniLML12V2Q,
-        query_prefix: "",
-        document_prefix: "",
-        min_similarity: 0.36,
-    },
-    ModelSpec {
-        id: "multilingual-e5-small",
-        name: "multilingual-e5-small",
-        description: "Multilingual (100 languages) and search-tuned (queries vs. passages), not quantized. The heaviest option: ~1GB of memory.",
-        dimensions: 384,
-        download_megabytes: 465,
-        memory_megabytes: 980,
-        multilingual: true,
-        model: EmbeddingModel::MultilingualE5Small,
-        query_prefix: "query: ",
-        document_prefix: "passage: ",
-        min_similarity: 0.81,
     },
 ];
 

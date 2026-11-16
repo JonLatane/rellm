@@ -168,7 +168,7 @@ Commands:
                              occasion counts for every User, correcting any drift
     generate_embeddings      Create/refresh text embeddings of Posts, Events, Media and User
                              profiles for semantic search (a no-op when "semantic search" is
-                             off in the server settings). Downloads a small model (~64MB by default) on first
+                             off in the server settings). Downloads a model (~465MB by default) on first
                              use into $RELLM_EMBEDDING_CACHE_DIR (default
                              ~/.cache/rellm/embedding_models)
     convert_media_sizes      Generate small/medium/large resized copies of unprocessed PNG/JPEG

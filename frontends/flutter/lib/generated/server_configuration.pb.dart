@@ -1683,7 +1683,7 @@ class SearchSettings extends $pb.GeneratedMessage {
 
   /// The `EmbeddingModel.id` this server uses, chosen from `available_models`. Empty (or, on read,
   /// never empty -- the server fills in the effective one) means the default,
-  /// `bge-small-en-v1.5`. `ConfigureServer` rejects an unknown id with
+  /// `multilingual-e5-small`. `ConfigureServer` rejects an unknown id with
   /// `INVALID_ARGUMENT` (`unknown_embedding_model`). Changing it makes the server download the new
   /// model (once) and re-embed everything in the background; until a row has been redone it simply
   /// isn't a semantic candidate (full-text search still finds it), so search quality dips and then
