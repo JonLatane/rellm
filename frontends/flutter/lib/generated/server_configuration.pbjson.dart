@@ -213,6 +213,7 @@ const ServerConfiguration$json = {
     {'1': 'telnyx_config', '3': 125, '4': 1, '5': 11, '6': '.rellm.TelnyxConfig', '9': 9, '10': 'telnyxConfig', '17': true},
     {'1': 'stalwart_config', '3': 126, '4': 1, '5': 11, '6': '.rellm.StalwartConfig', '9': 10, '10': 'stalwartConfig', '17': true},
     {'1': 'custom_css_configuration', '3': 127, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 11, '10': 'customCssConfiguration', '17': true},
+    {'1': 'subdomain_settings', '3': 130, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '9': 12, '10': 'subdomainSettings', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -227,6 +228,7 @@ const ServerConfiguration$json = {
     {'1': '_telnyx_config'},
     {'1': '_stalwart_config'},
     {'1': '_custom_css_configuration'},
+    {'1': '_subdomain_settings'},
   ],
 };
 
@@ -267,11 +269,40 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'SAlSDHRlbG55eENvbmZpZ4gBARJDCg9zdGFsd2FydF9jb25maWcYfiABKAsyFS5yZWxsbS5TdG'
     'Fsd2FydENvbmZpZ0gKUg5zdGFsd2FydENvbmZpZ4gBARJcChhjdXN0b21fY3NzX2NvbmZpZ3Vy'
     'YXRpb24YfyABKAsyHS5yZWxsbS5DdXN0b21DU1NDb25maWd1cmF0aW9uSAtSFmN1c3RvbUNzc0'
-    'NvbmZpZ3VyYXRpb26IAQFCDgoMX3NlcnZlcl9pbmZvQhIKEF9mZWRlcmF0aW9uX2luZm9CDgoM'
-    'X2N1c3RvbV90YWJzQhYKFF9leHRlcm5hbF9jZG5fY29uZmlnQhQKEl9jbHVzdGVyX3Jlc291cm'
-    'Nlc0ISChBfd2ViX3B1c2hfY29uZmlnQhAKDl90d2lsaW9fY29uZmlnQg4KDF9iaXJkX2NvbmZp'
-    'Z0IQCg5fc3RyaXBlX2NvbmZpZ0IQCg5fdGVsbnl4X2NvbmZpZ0ISChBfc3RhbHdhcnRfY29uZm'
-    'lnQhsKGV9jdXN0b21fY3NzX2NvbmZpZ3VyYXRpb24=');
+    'NvbmZpZ3VyYXRpb26IAQESTQoSc3ViZG9tYWluX3NldHRpbmdzGIIBIAEoCzIYLnJlbGxtLlN1'
+    'YmRvbWFpblNldHRpbmdzSAxSEXN1YmRvbWFpblNldHRpbmdziAEBQg4KDF9zZXJ2ZXJfaW5mb0'
+    'ISChBfZmVkZXJhdGlvbl9pbmZvQg4KDF9jdXN0b21fdGFic0IWChRfZXh0ZXJuYWxfY2RuX2Nv'
+    'bmZpZ0IUChJfY2x1c3Rlcl9yZXNvdXJjZXNCEgoQX3dlYl9wdXNoX2NvbmZpZ0IQCg5fdHdpbG'
+    'lvX2NvbmZpZ0IOCgxfYmlyZF9jb25maWdCEAoOX3N0cmlwZV9jb25maWdCEAoOX3RlbG55eF9j'
+    'b25maWdCEgoQX3N0YWx3YXJ0X2NvbmZpZ0IbChlfY3VzdG9tX2Nzc19jb25maWd1cmF0aW9uQh'
+    'UKE19zdWJkb21haW5fc2V0dGluZ3M=');
+
+@$core.Deprecated('Use subdomainSettingsDescriptor instead')
+const SubdomainSettings$json = {
+  '1': 'SubdomainSettings',
+  '2': [
+    {'1': 'subdomain_of', '3': 1, '4': 1, '5': 9, '10': 'subdomainOf'},
+    {'1': 'subdomain', '3': 2, '4': 1, '5': 9, '10': 'subdomain'},
+    {'1': 'share_content_from_followers', '3': 3, '4': 1, '5': 8, '10': 'shareContentFromFollowers'},
+    {'1': 'share_content_from_following', '3': 4, '4': 1, '5': 8, '10': 'shareContentFromFollowing'},
+    {'1': 'share_content_from_friends', '3': 5, '4': 1, '5': 8, '10': 'shareContentFromFriends'},
+    {'1': 'custom_css_configuration', '3': 6, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 0, '10': 'customCssConfiguration', '17': true},
+  ],
+  '8': [
+    {'1': '_custom_css_configuration'},
+  ],
+};
+
+/// Descriptor for `SubdomainSettings`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List subdomainSettingsDescriptor = $convert.base64Decode(
+    'ChFTdWJkb21haW5TZXR0aW5ncxIhCgxzdWJkb21haW5fb2YYASABKAlSC3N1YmRvbWFpbk9mEh'
+    'wKCXN1YmRvbWFpbhgCIAEoCVIJc3ViZG9tYWluEj8KHHNoYXJlX2NvbnRlbnRfZnJvbV9mb2xs'
+    'b3dlcnMYAyABKAhSGXNoYXJlQ29udGVudEZyb21Gb2xsb3dlcnMSPwocc2hhcmVfY29udGVudF'
+    '9mcm9tX2ZvbGxvd2luZxgEIAEoCFIZc2hhcmVDb250ZW50RnJvbUZvbGxvd2luZxI7ChpzaGFy'
+    'ZV9jb250ZW50X2Zyb21fZnJpZW5kcxgFIAEoCFIXc2hhcmVDb250ZW50RnJvbUZyaWVuZHMSXA'
+    'oYY3VzdG9tX2Nzc19jb25maWd1cmF0aW9uGAYgASgLMh0ucmVsbG0uQ3VzdG9tQ1NTQ29uZmln'
+    'dXJhdGlvbkgAUhZjdXN0b21Dc3NDb25maWd1cmF0aW9uiAEBQhsKGV9jdXN0b21fY3NzX2Nvbm'
+    'ZpZ3VyYXRpb24=');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {

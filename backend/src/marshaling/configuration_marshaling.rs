@@ -395,6 +395,8 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
             supported_contact_protocols: supported_contact_protocols,
+            // Never stored -- only `SubdomainContext::virtual_server_configuration` sets it.
+            subdomain_settings: None,
         }
     }
 }

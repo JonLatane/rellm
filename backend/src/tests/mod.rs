@@ -1,5 +1,7 @@
 pub mod factories;
 
+mod subdomain_tests;
+
 mod backfill_audio_metadata_tests;
 mod bluesky_sync_tests;
 mod configure_server_cluster_resources_tests;

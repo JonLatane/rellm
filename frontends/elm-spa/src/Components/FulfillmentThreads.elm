@@ -216,6 +216,9 @@ notesOf subscription =
         Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
             details.fulfillmentNotes
 
+        Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
+            details.fulfillmentNotes
+
         Nothing ->
             []
 
@@ -233,6 +236,9 @@ notesLastRead subscription =
             details.notesLastRead
 
         Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.notesLastRead
+
+        Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
             details.notesLastRead
 
         Nothing ->
@@ -257,6 +263,9 @@ withNotes notes status subscription =
 
                 Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
                     Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
+
+                Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
+                    Just (SubscriptionDetails.SubdomainSubscriptionDetails { details | fulfillmentNotes = notes, fulfillmentStatus = status })
 
                 Nothing ->
                     Nothing
@@ -369,6 +378,9 @@ fulfillmentStatusOf subscription =
             details.fulfillmentStatus
 
         Just (SubscriptionDetails.PermissionsAccessSubscriptionDetails details) ->
+            details.fulfillmentStatus
+
+        Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
             details.fulfillmentStatus
 
         Nothing ->

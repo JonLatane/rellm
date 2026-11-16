@@ -14,18 +14,21 @@ here; this module only owns how they're _displayed_, exposing the two types so t
 -}
 
 import Components.Markdown as Markdown
+import Components.Market as Market
 import Components.Pages.ServerInformationPage.Common as Common
 import Components.Users as Users
 import Effect exposing (Effect)
-import Html exposing (Html, button, div, h2, h3, input, p, span, text)
-import Html.Attributes exposing (class, disabled, value)
-import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (User)
+import Html exposing (Html, button, div, h2, h3, input, label, p, span, text)
+import Grpc
+import Html.Attributes exposing (checked, class, disabled, type_, value)
+import Html.Events exposing (onCheck, onClick, onInput)
+import Proto.Rellm exposing (MarketSubscription, SubdomainSettings, User)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.MarkdownPanel as MarkdownPanel
+import Task
 
 
 
@@ -35,6 +38,11 @@ import Shared.MarkdownPanel as MarkdownPanel
 type alias Model =
     { renameStatus : RenameStatus
     , shortNameStatus : RenameStatus
+
+    -- Rellm Subdomains only: the settings as last saved from here (the cached `ServerConfiguration` isn't refreshed
+    -- by a save), and where the save stands.
+    , subdomainSettings : Maybe SubdomainSettings
+    , subdomainStatus : AccountsPanel.FormStatus
     }
 
 
@@ -50,6 +58,8 @@ type Msg
     | EditDescriptionClicked RellmServer
     | EditPrivacyPolicyClicked RellmServer
     | EditMediaPolicyClicked RellmServer
+    | SubdomainSettingsChanged SubdomainSettings
+    | GotSubdomainSaved (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
 
 
 {-| Live only while the server's name (or, via `Model.shortNameStatus`, its short name) is being
@@ -78,7 +88,7 @@ type VersionStatus
 
 init : Model
 init =
-    { renameStatus = NotRenaming, shortNameStatus = NotRenaming }
+    { renameStatus = NotRenaming, shortNameStatus = NotRenaming, subdomainSettings = Nothing, subdomainStatus = AccountsPanel.Idle }
 
 
 
@@ -152,6 +162,31 @@ update shared targetHost msg model =
         EditPrivacyPolicyClicked server ->
             ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.ServerPrivacyPolicy server) targetHost)) )
 
+        -- A "Share Content From ..." toggle: on a Rellm Subdomain the owner's settings live in their `PURCHASE_TYPE_SUBDOMAIN`
+        -- subscription, so the save is `SaveMarketSubscription` (empty id = "my subdomain subscription"), not `ConfigureServer`.
+        SubdomainSettingsChanged settings ->
+            case Common.subdomainOwnerAccountFor shared targetHost of
+                Just account ->
+                    ( { model | subdomainSettings = Just settings, subdomainStatus = AccountsPanel.Submitting }
+                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, targetHost ) "" False { settings | customCssConfiguration = Nothing }
+                        |> Task.attempt GotSubdomainSaved
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotSubdomainSaved (Ok ( maybeAccountsPanelMsg, subscription )) ->
+            ( { model
+                | subdomainSettings = Market.subdomainSettingsOf subscription |> Maybe.map (\s -> { s | customCssConfiguration = Nothing })
+                , subdomainStatus = AccountsPanel.Idle
+              }
+            , Common.accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotSubdomainSaved (Err err) ->
+            ( { model | subdomainStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }, Effect.none )
+
         EditMediaPolicyClicked server ->
             ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.ServerMediaPolicy server) targetHost)) )
 
@@ -203,6 +238,72 @@ applySharedMsg subMsg model =
 
 view : Shared.Model -> RellmServer -> Maybe RellmAccount -> AdminsStatus -> VersionStatus -> Model -> Html Msg
 view shared server maybeAdminAccount adminsStatus versionStatus model =
+    case Common.subdomainSettingsFor shared server.frontendHost of
+        Just configured ->
+            subdomainView shared server configured model
+
+        Nothing ->
+            serverView shared server maybeAdminAccount adminsStatus versionStatus model
+
+
+{-| A Rellm Subdomain's About tab: the owner's profile first (the virtual `ServerInfo` carries their name, username
+and bio -- `SubdomainContext::virtual_server_configuration`), then the "Share Content From ..." toggles (the owner's
+to change, read-only for everyone else). No version, policies or admin list: those describe the parent server.
+-}
+subdomainView : Shared.Model -> RellmServer -> SubdomainSettings -> Model -> Html Msg
+subdomainView shared server configured model =
+    let
+        info : Proto.Rellm.ServerInfo
+        info =
+            RellmServers.rellmServerInfoOf server
+
+        settings : SubdomainSettings
+        settings =
+            Maybe.withDefault configured model.subdomainSettings
+
+        isOwner : Bool
+        isOwner =
+            Common.subdomainOwnerAccountFor shared server.frontendHost /= Nothing
+
+        toggle : String -> Bool -> (Bool -> SubdomainSettings) -> Html Msg
+        toggle labelText isOn update_ =
+            label [ class "profile-subdomain-toggle" ]
+                [ input
+                    [ type_ "checkbox"
+                    , checked isOn
+                    , disabled (not isOwner || model.subdomainStatus == AccountsPanel.Submitting)
+                    , onCheck (\on -> SubdomainSettingsChanged (update_ on))
+                    ]
+                    []
+                , text labelText
+                ]
+    in
+    div [ class "server-details-tab-content server-details-about server-details-subdomain-about" ]
+        [ h2 [ class "server-details-name" ] [ text (Maybe.withDefault server.frontendHost info.name) ]
+        , case info.shortName of
+            Just username ->
+                p [ class "server-details-short-name" ] [ text ("@" ++ username) ]
+
+            Nothing ->
+                text ""
+        , case info.description of
+            Just bio ->
+                Markdown.view [] bio
+
+            Nothing ->
+                text ""
+        , div [ class "server-details-setting" ]
+            [ h3 [] [ text "Share Content" ]
+            , toggle "Share Content From Followers" settings.shareContentFromFollowers (\on -> { settings | shareContentFromFollowers = on })
+            , toggle "Share Content From Following" settings.shareContentFromFollowing (\on -> { settings | shareContentFromFollowing = on })
+            , toggle "Share Content From Friends" settings.shareContentFromFriends (\on -> { settings | shareContentFromFriends = on })
+            , Common.editErrorView model.subdomainStatus
+            ]
+        ]
+
+
+serverView : Shared.Model -> RellmServer -> Maybe RellmAccount -> AdminsStatus -> VersionStatus -> Model -> Html Msg
+serverView shared server maybeAdminAccount adminsStatus versionStatus model =
     let
         info : Proto.Rellm.ServerInfo
         info =

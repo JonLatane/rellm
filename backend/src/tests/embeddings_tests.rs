@@ -385,7 +385,7 @@ fn rows_embedded_by_another_model_are_redone_when_the_model_changes() {
 
 /// A deterministic stand-in for the model, so the sync and hybrid-search paths are tested in CI without
 /// downloading anything. Each word maps to a "concept" (a tiny synonym table), concepts are hashed into
-/// a 384-dimension bag-of-concepts vector, and that is normalized: texts about the same concepts are
+/// a bag-of-concepts vector as long as the default model's (so storage and the index see the real size), and that is normalized: texts about the same concepts are
 /// close, texts about different ones are not -- enough to exercise everything around the model.
 struct FakeEmbedder;
 
@@ -401,13 +401,13 @@ impl FakeEmbedder {
     }
 
     fn slot(word: &str) -> usize {
-        word.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % 384
+        word.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % (embeddings::default_model().dimensions as usize)
     }
 
     /// Concept words weigh a lot, filler (titles' other words, usernames, "Test content") barely --
     /// roughly how a real model attends to a document's topic.
     fn vector(text: &str) -> Vec<f32> {
-        let mut v = vec![0f32; 384];
+        let mut v = vec![0f32; embeddings::default_model().dimensions as usize];
         for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 2) {
             match Self::concept(word) {
                 Some(concept) => v[Self::slot(concept)] += 3.0,
@@ -453,7 +453,7 @@ fn sync_embeds_and_re_embeds_only_what_changed_through_the_embedder_seam() {
                 .unwrap()
         };
         let (hash, bytes) = stored(conn);
-        assert_eq!(bytes, 384 * 4);
+        assert_eq!(bytes, embeddings::default_model().dimensions as i32 * 4);
 
         assert_eq!(embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?.embedded, 0, "unchanged");
 
@@ -989,7 +989,7 @@ mod with_model {
                     .unwrap()
             };
             let (hash, bytes) = hash_of(conn);
-            assert_eq!(bytes, 384 * 4);
+            assert_eq!(bytes, embeddings::default_model().dimensions as usize * 4);
 
             // Nothing changed: nothing re-embedded.
             let second = embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;

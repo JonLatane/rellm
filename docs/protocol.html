@@ -459,6 +459,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-StripeConfig">StripeConfig</a></p>
           </li>
           <li>
+            <p><a href="#rellm-SubdomainSettings">SubdomainSettings</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-TelnyxConfig">TelnyxConfig</a></p>
           </li>
           <li>
@@ -674,6 +677,15 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-RellmHostingSubscriptionDetails">RellmHostingSubscriptionDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-SaveMarketSubscriptionRequest">SaveMarketSubscriptionRequest</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-SubdomainPurchaseDetails">SubdomainPurchaseDetails</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-SubdomainSubscriptionDetails">SubdomainSubscriptionDetails</a></p>
           </li>
           <li>
             <p><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></p>
@@ -2456,6 +2468,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>Appends to a MarketSubscription's own <code>fulfillment_notes</code> (any <code>PurchaseType</code> -- see <code>MediaStorageSubscriptionDetails.fulfillment_notes</code>; the request's <code>details</code> must be the variant matching the subscription's type; nothing else -- every other field, including <code>additional_information</code>, is immutable after purchase and silently ignored if changed) -- backs <code>/market/fulfillment</code>. A new entry must be appended (not inserted/reordered/removed) after whatever's already stored, and its <code>user_id</code> must match the caller's own -- the server stamps <code>created_at</code> itself, ignoring whatever the client sent. Its <code>note</code> text is required unless the entry also changes <code>fulfillment_status</code> from the previous entry's own value (see <code>FulfillmentNote.note</code>'s own doc). <code>fulfillment_status</code> on the returned <code>RellmHostingSubscriptionDetails</code> is always the last appended entry's own value -- there's no way to set it independently of a note. <em>Authenticated</em>, requires Admin (for now -- see that field's own doc on why this may loosen to "buyer, or Admin" later).</td>
+        </tr>
+        <tr>
+          <td>SaveMarketSubscription</td>
+          <td><a href="#rellm-SaveMarketSubscriptionRequest">SaveMarketSubscriptionRequest</a></td>
+          <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
+          <td>Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only <code>PURCHASE_TYPE_SUBDOMAIN</code> ones: its <a href="#rellm-SubdomainSettings"><code>SubdomainSettings</code></a> (custom CSS and the <code>share_content_from_*</code> toggles). Validated like <code>ConfigureCustomCSS</code> (at most 64 KiB of CSS, 32 <code>GLOBAL_PUBLIC</code> <code>media_ids</code>, not both forced themes). An unset <code>custom_css</code> keeps the stored stylesheet. <em>Authenticated</em> -- the subscription's own buyer only (<code>PermissionDenied</code> otherwise, even for an Admin), and the subscription must still be in force (not <code>SUBSCRIPTION_CANCELED</code>). Returns the updated subscription. On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs call this.</td>
         </tr>
         <tr>
           <td>MarkFulfillmentNotesRead</td>
@@ -8191,6 +8209,7 @@ directory</a> is (<code>{name}</code> denotes a
     <p>
       This could be extended in the future to allow sending mail with Stalwart, but that's TBD. |
       | custom_css_configuration | <a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a> | optional | The server's <a href="#rellm-CustomCSSConfiguration"><code>CustomCSSConfiguration</code></a>: which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. <code>custom_css</code> itself is always unset here -- fetch it with <a href="#grpc-api-GetCustomCSS"><code>GetCustomCSS</code></a>, which is the only way to read the (potentially large) stylesheet text. Ignored by <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>; write it with <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a>. |
+      | subdomain_settings | <a href="#rellm-SubdomainSettings">SubdomainSettings</a> | optional | Set <em>only</em> on the virtual configuration a server returns to requests addressed to a user's Rellm Subdomain (<code>jon.bullcity.social</code> for <code>bullcity.social/jon</code> -- see <a href="#rellm-SubdomainSettings"><code>SubdomainSettings</code></a>). Never stored on a real <code>ServerConfiguration</code> and ignored by <a href="#grpc-api-ConfigureServer"><code>ConfigureServer</code></a>: it is derived from the owner's <code>PURCHASE_TYPE_SUBDOMAIN</code> <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>, and edited through <a href="#grpc-api-SaveMarketSubscription"><code>SaveMarketSubscription</code></a>. Clients tell a subdomain from a full server by checking <code>subdomain_settings?.subdomain_of</code>. |
     </p>
     <p><a name="rellm-ServerInfo"></a></p>
     <h3 id="serverinfo"><a class="anchor" aria-hidden="true" tabindex="-1" href="#serverinfo"><span class="octicon octicon-link"></span></a>ServerInfo</h3>
@@ -8364,6 +8383,65 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td></td>
           <td>Signing secret (starts with <code>whsec_</code>) for the <code>/webhooks/stripe</code> endpoint, used to verify the <code>Stripe-Signature</code> header on incoming webhook deliveries. Never serialized once written -- same write-only treatment as <code>stripe_secret_key</code> above.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-SubdomainSettings"></a></p>
+    <h3 id="subdomainsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#subdomainsettings"><span class="octicon octicon-link"></span></a>SubdomainSettings</h3>
+    <p>
+      A user's Rellm Subdomain -- the settings of a <code>PURCHASE_TYPE_SUBDOMAIN</code> <a href="#rellm-MarketSubscription"><code>MarketSubscription</code></a>.
+      A server answers requests whose <code>Host</code> is <code>&#x26;lt;subdomain&#x26;gt;.&#x26;lt;its frontend_host&#x26;gt;</code> (<code>ExternalCDNConfig.frontend_host</code>) over
+      both gRPC and HTTP, as a "virtual server" that shares everything with its parent (CDN configuration, contact
+      integrations, media, login) except that it is scoped to one user: <code>GetPosts</code>/<code>GetEvents</code> only return that user's
+      content (plus whatever the <code>share_content_from_*</code> toggles add), and <code>GetServerConfiguration</code> describes the user
+      (see <code>subdomain_of</code>) rather than the whole server. The subscription's <code>details</code> hold these settings; the
+      subscriber edits them with <a href="#grpc-api-SaveMarketSubscription"><code>SaveMarketSubscription</code></a>.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>subdomain_of</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The user ID of the subdomain's owner -- the user whose profile the subdomain's About tab shows and whose content it is scoped to. Server-assigned; ignored on <code>SaveMarketSubscription</code>.</td>
+        </tr>
+        <tr>
+          <td>subdomain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The subdomain's DNS label (<code>jon</code> for <code>jon.bullcity.social</code>), lower case. Set to the owner's username when the subscription is fulfilled. Server-assigned; ignored on <code>SaveMarketSubscription</code>.</td>
+        </tr>
+        <tr>
+          <td>share_content_from_followers</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Also show posts/events by users who <em>follow</em> the owner (an accepted <code>Follow</code> of the owner).</td>
+        </tr>
+        <tr>
+          <td>share_content_from_following</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Also show posts/events by users the owner <em>follows</em> (an accepted <code>Follow</code> by the owner).</td>
+        </tr>
+        <tr>
+          <td>share_content_from_friends</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Also show posts/events by the owner's <em>friends</em> -- users who follow the owner and whom the owner follows back.</td>
+        </tr>
+        <tr>
+          <td>custom_css_configuration</td>
+          <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
+          <td>optional</td>
+          <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is only included in the subscription's own copy (<code>GetMarketSubscriptions</code>), never in <code>GetServerConfiguration</code>'s, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveMarketSubscription</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
         </tr>
       </tbody>
     </table>
@@ -10817,6 +10895,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td></td>
         </tr>
         <tr>
+          <td>subdomain_subscription_details</td>
+          <td><a href="#rellm-SubdomainSubscriptionDetails">SubdomainSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
           <td>created_at</td>
           <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
           <td></td>
@@ -10914,6 +10998,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>permissions_access_purchase_details</td>
           <td><a href="#rellm-PermissionsAccessPurchaseDetails">PermissionsAccessPurchaseDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>subdomain_purchase_details</td>
+          <td><a href="#rellm-SubdomainPurchaseDetails">SubdomainPurchaseDetails</a></td>
           <td></td>
           <td></td>
         </tr>
@@ -11112,6 +11202,12 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         <tr>
           <td>permissions_access_subscription_details</td>
           <td><a href="#rellm-PermissionsAccessSubscriptionDetails">PermissionsAccessSubscriptionDetails</a></td>
+          <td></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>subdomain_subscription_details</td>
+          <td><a href="#rellm-SubdomainSubscriptionDetails">SubdomainSubscriptionDetails</a></td>
           <td></td>
           <td></td>
         </tr>
@@ -11445,6 +11541,104 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-SaveMarketSubscriptionRequest"></a></p>
+    <h3 id="savemarketsubscriptionrequest"><a class="anchor" aria-hidden="true" tabindex="-1" href="#savemarketsubscriptionrequest"><span class="octicon octicon-link"></span></a>SaveMarketSubscriptionRequest</h3>
+    <p>Request for <a href="#grpc-api-SaveMarketSubscription"><code>SaveMarketSubscription</code></a>.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>market_subscription_id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The ID of the buyer's own <code>PURCHASE_TYPE_SUBDOMAIN</code> subscription. May be empty, meaning "my active subdomain subscription" (a subdomain's own pages don't know the ID -- see <code>ServerConfiguration.subdomain_settings</code>).</td>
+        </tr>
+        <tr>
+          <td>subdomain_settings</td>
+          <td><a href="#rellm-SubdomainSettings">SubdomainSettings</a></td>
+          <td></td>
+          <td>The new settings. Only <code>share_content_from_followers</code>/<code>_following</code>/<code>_friends</code> and <code>custom_css_configuration</code> are read -- <code>subdomain_of</code>/<code>subdomain</code> are server-assigned and ignored.</td>
+        </tr>
+        <tr>
+          <td>keep_sharing_settings</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>When true, <code>subdomain_settings.share_content_from_*</code> are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-SubdomainPurchaseDetails"></a></p>
+    <h3 id="subdomainpurchasedetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#subdomainpurchasedetails"><span class="octicon octicon-link"></span></a>SubdomainPurchaseDetails</h3>
+    <p><code>MarketPurchase.details</code>' <code>PURCHASE_TYPE_SUBDOMAIN</code> variant: which subdomain this purchase paid for.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>subdomain</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>The DNS label that was (or, on renewal, is being kept) reserved, e.g. <code>jon</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-SubdomainSubscriptionDetails"></a></p>
+    <h3 id="subdomainsubscriptiondetails"><a class="anchor" aria-hidden="true" tabindex="-1" href="#subdomainsubscriptiondetails"><span class="octicon octicon-link"></span></a>SubdomainSubscriptionDetails</h3>
+    <p>
+      <code>MarketProduct.details</code>/<code>MarketSubscription.details</code>' <code>PURCHASE_TYPE_SUBDOMAIN</code> variant. On a
+      <code>MarketProduct</code> it carries nothing (a subdomain product has no parameters -- the label comes from the buyer's
+      username); on a <code>MarketSubscription</code> it holds the live, buyer-editable <a href="#rellm-SubdomainSettings"><code>SubdomainSettings</code></a>
+      (unlike every other details type, these are <em>not</em> frozen at purchase -- <code>SaveMarketSubscription</code> changes them).
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>settings</td>
+          <td><a href="#rellm-SubdomainSettings">SubdomainSettings</a></td>
+          <td>optional</td>
+          <td>The subdomain's settings; <code>settings.subdomain_of</code>/<code>settings.subdomain</code> are filled in by the server at fulfillment. Unset on a product.</td>
+        </tr>
+        <tr>
+          <td>fulfillment_status</td>
+          <td><a href="#rellm-FulfillmentStatus">FulfillmentStatus</a></td>
+          <td></td>
+          <td>The fulfillment chat -- see <code>MediaStorageSubscriptionDetails.fulfillment_status</code>. Always <code>FULFILLMENT_STATUS_FULFILLED</code> (the system fulfills this type automatically).</td>
+        </tr>
+        <tr>
+          <td>fulfillment_notes</td>
+          <td><a href="#rellm-FulfillmentNote">FulfillmentNote</a></td>
+          <td>repeated</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>notes_last_read</td>
+          <td><a href="#google-protobuf-Timestamp">google.protobuf.Timestamp</a></td>
+          <td>optional</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
     <p><a name="rellm-FulfillmentStatus"></a></p>
     <h3 id="fulfillmentstatus"><a class="anchor" aria-hidden="true" tabindex="-1" href="#fulfillmentstatus"><span class="octicon octicon-link"></span></a>FulfillmentStatus</h3>
     <p>
@@ -11618,6 +11812,11 @@ Instagram account</strong>. Unlike <a href="#rellm-FacebookPage"><code>FacebookP
           <td>PURCHASE_TYPE_PERMISSIONS_ACCESS</td>
           <td>3</td>
           <td>A bundle of <code>Permission</code>s (e.g. <code>SYNC_EVENTS_TO_FACEBOOK</code>) granted directly to the buyer's own <code>User.permissions</code>, union-style -- fulfillment only ever adds permissions the buyer doesn't already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see <code>MarketSubscription.canceled_at</code>/<code>service_terminated_at</code>), <code>logic::market::market_fulfillment:: terminate_entitlement</code> removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold).</td>
+        </tr>
+        <tr>
+          <td>PURCHASE_TYPE_SUBDOMAIN</td>
+          <td>4</td>
+          <td>A Rellm Subdomain for the buyer's own profile: <code>bullcity.social/jon</code> becomes reachable as <code>jon.bullcity.social</code> (see <code>SubdomainSettings</code>). Fulfillment records the buyer's lower-cased username as the subscription's <code>SubdomainSettings.subdomain</code> (failing if another active subscription already holds it); there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force. The buyer then edits their <code>SubdomainSettings</code> with <code>SaveMarketSubscription</code>. Revoked (the subdomain stops resolving) as soon as the subscription's <code>service_terminated_at</code> is set.</td>
         </tr>
       </tbody>
     </table>

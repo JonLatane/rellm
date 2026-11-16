@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_market_subscriptions_subdomain_label;

@@ -1,4 +1,4 @@
-module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, videoDownloadSizes, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
+module Components.MediaRenderer exposing (MediaSize(..), Model, Msg(..), ResolutionTier(..), SizeConstraint(..), contentTypeOf, init, naturalVideo, posterFrame, videoDownloadSizes, videoPosterUrl, update, view, viewAutoplay, viewWithResolution, authorizedUrl, coverArtUrl, thumbnailUrl, url)
 
 {-| Renders a single `Proto.Rellm.MediaReference` -- an image, a video, or
 (for anything else, e.g. a PDF) a browser-native `<object>` embed with a
@@ -67,7 +67,7 @@ rendered.
 
 -}
 
-import Html exposing (Html, a, audio, button, div, img, input, node, object, text, video)
+import Html exposing (Html, a, audio, button, div, img, input, node, object, span, text, video)
 import Html.Attributes exposing (alt, attribute, class, controls, href, property, src, style, target, type_)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
@@ -78,6 +78,7 @@ import Set exposing (Set)
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Shared.Conversions exposing (int64ToInt)
+import Shared.Federation.VideoPoster as VideoPoster
 import UI.Glyph as Glyph
 
 
@@ -309,7 +310,7 @@ viewHelper forceAutoplay tierOverride mediaSize sizeConstraint server maybeAccou
                             -- Always inline: without it iOS Safari takes any video that is played (rather than autoplayed) to
                             -- fullscreen, though `<rellm-video>` has its own fullscreen button.
                             , Just (attribute "playsinline" "true")
-                            , Maybe.map (attribute "poster") (posterUrl mediaUrl)
+                            , Maybe.map (attribute "poster") (VideoPoster.posterUrl mediaUrl)
                             , aspectRatioStyle media
                             ]
                             ++ (if autoplay then
@@ -597,6 +598,46 @@ videoDownloadSizes media =
         |> (\stored -> stored ++ [ "original" ])
 
 
+{-| The still a card (the Video page's, My Media's) shows for a video: a Rellm video's generated
+`VIDEO_PREVIEW_THUMBNAIL_MEDIUM` (if the server has made one -- without it `size=` would just serve the whole video),
+or, for a Mastodon/Bluesky video (it has an external `url`), the poster `Shared.Federation.VideoPoster` finds from that
+URL. `Nothing` when there's neither, and the card shows a placeholder (see `posterFrame`).
+-}
+videoPosterUrl : Maybe RellmServer -> Maybe RellmAccount -> MediaReference -> Maybe String
+videoPosterUrl maybeServer maybeAccount media =
+    case media.url of
+        Just externalUrl ->
+            VideoPoster.posterUrl externalUrl
+
+        Nothing ->
+            case maybeServer of
+                Just server ->
+                    if List.any (\size -> size.conversion == VIDEOPREVIEWTHUMBNAILMEDIUM) media.sizes then
+                        Just (thumbnailUrl "video" TierMedium server maybeAccount media)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+
+{-| The contents of a video card's thumbnail button: its `poster` still -- or `placeholder` (a glyph) while it has
+none -- with the play glyph overlaid. Every video card (Rellm, Mastodon, Bluesky; the Video page, My Media) draws
+its thumbnail this way, from `videoPosterUrl`.
+-}
+posterFrame : String -> Maybe String -> List (Html msg)
+posterFrame placeholder poster =
+    [ case poster of
+        Just posterSrc ->
+            img [ src posterSrc, attribute "alt" "", attribute "loading" "lazy" ] []
+
+        Nothing ->
+            span [ class "media-card-thumb-placeholder" ] [ text placeholder ]
+    , span [ class "media-card-play" ] [ text Glyph.play ]
+    ]
+
+
 {-| What the media viewer plays a video from (`Shared.VideoPlayerPanel`'s player): its URL at the `Natural` size, the poster
 (an HLS rendition has one), and its shape.
 -}
@@ -608,89 +649,9 @@ naturalVideo server maybeAccount media =
             url (imageTier Nothing Natural) server maybeAccount media
     in
     { src = src
-    , poster = posterUrl src
+    , poster = VideoPoster.posterUrl src
     , aspectRatio = Maybe.withDefault (16 / 9) (aspectRatioOf media)
     }
-
-
-{-| The poster frame a video shows before it is played, if its URL tells where one is: a Bluesky video's (`hlsPosterUrl`) or a
-Mastodon video's (`mastodonPosterUrl`).
--}
-posterUrl : String -> Maybe String
-posterUrl videoUrl =
-    case hlsPosterUrl videoUrl of
-        Just poster ->
-            Just poster
-
-        Nothing ->
-            mastodonPosterUrl videoUrl
-
-
-{-| The poster frame of a Mastodon video (or gifv), if `videoUrl` is where Mastodon keeps the file. Mastodon stores a video as
-`.../media_attachments/files/<id>/original/<name>.mp4` and its thumbnail -- the `preview_url` its API gives -- next to it as
-`.../small/<name>.png`, on the same host and with the same query string, whichever server cached it. `MediaReference` has no field
-to carry that `preview_url`, so (like `hlsPosterUrl`) it is re-derived from the path. A server that lays its files out some other
-way just gets no poster, which is how every Mastodon video looked before.
--}
-mastodonPosterUrl : String -> Maybe String
-mastodonPosterUrl videoUrl =
-    let
-        ( path, query ) =
-            case String.split "?" videoUrl of
-                head :: rest ->
-                    ( head, rest |> String.join "?" |> (\q -> if q == "" then "" else "?" ++ q) )
-
-                [] ->
-                    ( videoUrl, "" )
-
-        videoExtensions : List String
-        videoExtensions =
-            [ ".mp4", ".webm", ".mov", ".m4v", ".mkv", ".ogv" ]
-
-        extensionOf : String -> Maybe String
-        extensionOf name =
-            videoExtensions |> List.filter (\extension -> String.endsWith extension (String.toLower name)) |> List.head
-    in
-    if String.contains "/media_attachments/files/" path && String.contains "/original/" path then
-        case ( String.split "/original/" path |> List.reverse, extensionOf path ) of
-            ( name :: before :: more, Just extension ) ->
-                Just
-                    (String.join "/original/" (List.reverse (before :: more))
-                        ++ "/small/"
-                        ++ String.dropRight (String.length extension) name
-                        ++ ".png"
-                        ++ query
-                    )
-
-            _ ->
-                Nothing
-
-    else
-        Nothing
-
-
-{-| The poster frame of a Bluesky video, if `videoUrl` is one of its HLS playlists
-(`.../{did}/{cid}/playlist.m3u8`) -- Bluesky's video CDN serves the thumbnail alongside it at
-`.../thumbnail.jpg`, which is also what `app.bsky.embed.video#view.thumbnail` says. `MediaReference`
-has no field to carry that decoded thumbnail, so it's re-derived from the playlist's path (any
-host, any query string) rather than adding one to the proto. Such a video has no
-`VIDEO_PREVIEW_THUMBNAIL_*` conversions to show instead (see `viewHelper`), so a live `<video>`
-renders right away with this as its `poster`. (Playback itself is hls.js's job, see
-`public/index.html`.)
--}
-hlsPosterUrl : String -> Maybe String
-hlsPosterUrl videoUrl =
-    let
-        path : String
-        path =
-            videoUrl |> String.split "?" |> List.head |> Maybe.withDefault videoUrl
-    in
-    if String.endsWith "/playlist.m3u8" path then
-        -- 13 = length of "playlist.m3u8"
-        Just (String.dropRight 13 path ++ "thumbnail.jpg")
-
-    else
-        Nothing
 
 
 {-| Authorized URL for `media`, mirroring `Components.Users.mediaReferenceUrl`

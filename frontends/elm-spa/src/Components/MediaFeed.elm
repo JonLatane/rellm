@@ -9,6 +9,7 @@ module Components.MediaFeed exposing
     , replaceMedia
     , requestFor
     , retryFetch
+    , singleReference
     , syncMsg
     , clearMsg
     , update
@@ -43,6 +44,7 @@ Mounted by `Components.Pages.MediaPage`, which `Pages.Video`/`Pages.Audio`/`Page
 -}
 
 import Components.Authors as Authors
+import Components.MediaRenderer as MediaRenderer
 import Components.Posts as Posts
 import Components.Users as Users
 import Dict exposing (Dict)
@@ -195,7 +197,7 @@ fedKey source =
 
 {-| Every Mastodon instance (connected, or browsed and enabled) and Bluesky account/AppView in use, for the
 Video and Audio feeds -- never for Images (neither network has a media library, and a photo feed isn't
-asked for).
+asked for), and Bluesky only for Videos (it has no audio).
 -}
 federatedSources : Shared.Model -> Kind -> List FedSource
 federatedSources shared kind =
@@ -209,8 +211,14 @@ federatedSources shared kind =
             |> Set.toList
             |> List.map FedMastodon
         )
-            ++ List.map FedBlueskyAccount (List.filter .enabled shared.accounts.blueskyAccounts)
-            ++ List.map (.host >> FedBlueskyAppView) (List.filter .enabled shared.accounts.blueskyAppViews)
+            ++ (if kind == Videos then
+                    -- (Bluesky has video but no audio, so the Audio page has nothing to look for there.)
+                    List.map FedBlueskyAccount (List.filter .enabled shared.accounts.blueskyAccounts)
+                        ++ List.map (.host >> FedBlueskyAppView) (List.filter .enabled shared.accounts.blueskyAppViews)
+
+                else
+                    []
+               )
 
 
 type Msg
@@ -221,6 +229,8 @@ type Msg
     | MediaClicked String String
     | GotFederated String Int Bool (Result Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String ))
     | FedMediaClicked String String
+      -- A video card's "Add To Queue": the video (see `rellmQueueVideo`/`fedQueueVideo`) and its title.
+    | QueueVideo AudioPlayerPanel.VideoItem String
     | FedQueuePicked String String String
       -- host, media id, picked `<option>` value ("next" or "last")
     | QueuePicked String String String
@@ -440,13 +450,16 @@ fetchFederated model source requestId cursor append =
         search =
             String.trim model.searchText
 
-        blueskyPage : BlueskyAuth -> Maybe String -> Task.Task Http.Error ( List Post, Maybe String )
-        blueskyPage auth page =
+        -- Without a search it reads Bluesky's "What's Hot" feed: about one post in ten there has a video, where the
+        -- newest posts (`Bluesky.fetchLatestPosts`) have one in fifty or fewer, so a few pages of those often held
+        -- none at all. With a search it's the network-wide search, which needs its own host for an AppView.
+        blueskyPage : { feedAuth : BlueskyAuth, searchAuth : BlueskyAuth } -> Maybe String -> Task.Task Http.Error ( List Post, Maybe String )
+        blueskyPage { feedAuth, searchAuth } page =
             if String.isEmpty search then
-                Bluesky.fetchLatestPosts Nothing auth page
+                Bluesky.fetchWhatsHot feedAuth page
 
             else
-                Bluesky.searchPosts Bluesky.SearchTop Nothing auth search page
+                Bluesky.searchPosts Bluesky.SearchTop Nothing searchAuth search page
 
         task : Task.Task Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String )
         task =
@@ -456,11 +469,11 @@ fetchFederated model source requestId cursor append =
                         |> Task.map (\( items, next ) -> ( Nothing, items, next ))
 
                 FedBlueskyAccount account ->
-                    BlueskyAccounts.performWithBlueskyAccount account (\auth -> FedMedia.collect kind key (blueskyPage auth) cursor)
+                    BlueskyAccounts.performWithBlueskyAccount account (\auth -> FedMedia.collect kind key (blueskyPage { feedAuth = auth, searchAuth = auth }) cursor)
                         |> Task.map (\( refreshed, ( items, next ) ) -> ( Actions.rotatedBluesky account refreshed, items, next ))
 
                 FedBlueskyAppView host ->
-                    FedMedia.collect kind key (blueskyPage (blueskyAuthFor (anonymousSearchHost host))) cursor
+                    FedMedia.collect kind key (blueskyPage { feedAuth = blueskyAuthFor host, searchAuth = blueskyAuthFor (anonymousSearchHost host) }) cursor
                         |> Task.map (\( items, next ) -> ( Nothing, items, next ))
     in
     task
@@ -597,7 +610,16 @@ update shared msg model =
                     )
 
               else
-                Effect.fromShared (Shared.MediaViewerPanelMsg (MediaViewerPanel.OpenWithPostLinks references postLinks mediaId key))
+                -- A video opens alone, not paging through every video listed from this source.
+                Effect.fromShared
+                    (Shared.MediaViewerPanelMsg
+                        (MediaViewerPanel.OpenWithPostLinks
+                            (singleReference mediaId references)
+                            (Dict.filter (\id _ -> id == mediaId) postLinks)
+                            mediaId
+                            key
+                        )
+                    )
             )
 
         FedQueuePicked key mediaId choice ->
@@ -740,7 +762,10 @@ update shared msg model =
                             (Dict.get host model.feeds
                                 |> Maybe.map .media
                                 |> Maybe.withDefault []
+                                -- A video opens alone (the viewer would otherwise page through every video listed from
+                                -- this server); images are a gallery, so they page.
                                 |> List.map MediaViewerPanel.mediaToReference
+                                |> (\references -> if model.kind == Videos then singleReference mediaId references else references)
                             )
                             Nothing
                             mediaId
@@ -749,6 +774,19 @@ update shared msg model =
                 )
             )
 
+        QueueVideo video title ->
+            ( model
+            , Effect.fromShared (Shared.AudioPlayerPanelMsg (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast video (Just title)))
+            )
+
+
+
+{-| Just the reference with `mediaId` -- exactly one, even when several entries share it (two Bluesky posts can carry the same
+video, whose URL is its id) -- so the viewer opening on a video has nothing to page to. Pure so it's unit-testable.
+-}
+singleReference : String -> List MediaReference -> List MediaReference
+singleReference mediaId references =
+    references |> List.filter (\reference -> reference.id == mediaId) |> List.take 1
 
 
 {-| Restarts every already-started federated feed from its first page for the current search, keeping what's
@@ -1099,7 +1137,8 @@ thumbnailUrl kind maybeServer media =
     in
     case kind of
         Videos ->
-            ifGenerated VIDEOPREVIEWTHUMBNAILMEDIUM "video_preview_medium"
+            -- (Video cards draw theirs with `MediaRenderer.videoPosterUrl`/`posterFrame`.)
+            Nothing
 
         Audio ->
             -- The cover art picked for the track, else what's embedded in the file, else the waveform.
@@ -1250,15 +1289,16 @@ videoCard shared showHost host maybeServer media =
             creditsLine Videos (Maybe.withDefault defaultMediaMetadata media.metadata)
     in
     div [ class "media-card video-card" ]
-        [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
-            [ case thumbnailUrl Videos maybeServer media of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
-            , licensedBadge media
+        [ div [ class "video-card-thumb-wrap" ]
+            [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
+                (MediaRenderer.posterFrame "🎬"
+                    (MediaRenderer.videoPosterUrl maybeServer
+                        (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host)
+                        (MediaViewerPanel.mediaToReference media)
+                    )
+                    ++ [ licensedBadge media ]
+                )
+            , queueVideoButton (rellmQueueVideo shared host maybeServer media) (mediaTitle media)
             ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]
@@ -1274,6 +1314,84 @@ videoCard shared showHost host maybeServer media =
                 div [ class "media-card-credits" ] [ text credits ]
             ]
         ]
+
+
+{-| What a Rellm video card queues: the video as the miniplayer plays it (`MediaRenderer.naturalVideo`, the same URL the media
+viewer plays), with the link data and download sizes only a video on one of our servers has. `Nothing` while its server isn't
+resolved. `returnUrl` is left blank: `Shared.update` fills in the page it was queued from.
+-}
+rellmQueueVideo : Shared.Model -> String -> Maybe RellmServer -> Media -> Maybe AudioPlayerPanel.VideoItem
+rellmQueueVideo shared host maybeServer media =
+    maybeServer
+        |> Maybe.map
+            (\server ->
+                let
+                    reference : MediaReference
+                    reference =
+                        MediaViewerPanel.mediaToReference media
+
+                    account : Maybe RellmAccounts.RellmAccount
+                    account =
+                        RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host
+
+                    natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                    natural =
+                        MediaRenderer.naturalVideo server account reference
+                in
+                { src = natural.src
+                , poster = MediaRenderer.videoPosterUrl maybeServer account reference
+                , aspectRatio = natural.aspectRatio
+                , returnUrl = ""
+                , mediaId = Just media.id
+                , host = host
+                , downloads = MediaRenderer.videoDownloadSizes reference
+                , postUrl = Nothing
+                }
+            )
+
+
+{-| The same for a Mastodon/Bluesky video: it plays from its own URL, is on no server of ours, and links back to its post.
+-}
+fedQueueVideo : Shared.Model -> FedMedia.Item -> Maybe AudioPlayerPanel.VideoItem
+fedQueueVideo shared item =
+    Posts.mediaServer Nothing item.host
+        |> Maybe.map
+            (\server ->
+                let
+                    natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                    natural =
+                        MediaRenderer.naturalVideo server Nothing item.media
+                in
+                { src = natural.src
+                , poster = natural.poster
+                , aspectRatio = natural.aspectRatio
+                , returnUrl = ""
+                , mediaId = Nothing
+                , host = ""
+                , downloads = []
+                , postUrl = Just (Posts.postHref shared.basePath shared.accounts.mainFrontendHost item.host item.post)
+                }
+            )
+
+
+{-| A video card's "Add To Queue" button, over the bottom-right of its thumbnail: it appears when the card is hovered or
+focused (always on touch screens, which have no hover -- see `.video-card-queue` in media\_pages.css). Nothing while the
+video can't be queued yet.
+-}
+queueVideoButton : Maybe AudioPlayerPanel.VideoItem -> String -> Html Msg
+queueVideoButton maybeVideo title =
+    case maybeVideo of
+        Just video ->
+            button
+                [ class "video-card-queue"
+                , attribute "title" "Add To Queue"
+                , attribute "aria-label" ("Add " ++ title ++ " to queue")
+                , onClick (QueueVideo video title)
+                ]
+                [ AudioPlayerPanel.queueIcon, span [] [ text "Add To Queue" ] ]
+
+        Nothing ->
+            text ""
 
 
 audioRow : Shared.Model -> Int -> Bool -> String -> Maybe RellmServer -> Media -> Html Msg
@@ -1472,14 +1590,10 @@ fedDateLabel shared item =
 fedVideoCard : Shared.Model -> Bool -> FedMedia.Item -> Html Msg
 fedVideoCard shared showHost item =
     div [ class "media-card video-card" ]
-        [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
-            [ case item.thumbnailUrl of
-                Just url ->
-                    img [ src url, attribute "alt" "", attribute "loading" "lazy" ] []
-
-                Nothing ->
-                    span [ class "media-card-thumb-placeholder" ] [ text "🎬" ]
-            , span [ class "media-card-play" ] [ text Glyph.play ]
+        [ div [ class "video-card-thumb-wrap" ]
+            [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
+                (MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media))
+            , queueVideoButton (fedQueueVideo shared item) (fedTitle item)
             ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]

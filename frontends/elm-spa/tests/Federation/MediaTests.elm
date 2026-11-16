@@ -1,7 +1,7 @@
 module Federation.MediaTests exposing (suite)
 
-{-| `Shared.Federation.Media`'s pure parts: picking the video/audio attachments out of posts, deriving a
-Bluesky video's still, and shortening a post's text into a card title.
+{-| `Shared.Federation.Media`'s pure parts: picking the video/audio attachments out of posts, and shortening a post's
+text into a card title.
 -}
 
 import Expect
@@ -43,16 +43,6 @@ suite =
                     [ post "p1" [], post "p2" [ reference "m1" "image/*" Nothing ] ]
                         |> Media.itemsOf VideoKind "bluesky:bsky.app"
                         |> Expect.equal []
-            ]
-        , describe "thumbnailFor"
-            [ test "a Bluesky playlist has a thumbnail next to it" <|
-                \_ ->
-                    Media.thumbnailFor "bluesky:bsky.app" (reference "x" "video/*" (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/playlist.m3u8"))
-                        |> Expect.equal (Just "https://video.bsky.app/watch/did:plc:abc/bafy123/thumbnail.jpg")
-            , test "a Mastodon video has none" <|
-                \_ ->
-                    Media.thumbnailFor "mastodon:example.social" (reference "x" "video/*" (Just "https://example.social/video.mp4"))
-                        |> Expect.equal Nothing
             ]
         , describe "plainTitle"
             [ test "drops HTML tags and collapses whitespace" <|

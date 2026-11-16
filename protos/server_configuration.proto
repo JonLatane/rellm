@@ -160,6 +160,42 @@ message ServerConfiguration {
   // text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
   // [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
   optional CustomCSSConfiguration custom_css_configuration = 127;
+
+  // Set *only* on the virtual configuration a server returns to requests addressed to a user's
+  // Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
+  // Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is
+  // derived from the owner's `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through
+  // [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by
+  // checking `subdomain_settings?.subdomain_of`.
+  optional SubdomainSettings subdomain_settings = 130;
+}
+
+// A user's Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
+// A server answers requests whose `Host` is `<subdomain>.<its frontend_host>` (`ExternalCDNConfig.frontend_host`) over
+// both gRPC and HTTP, as a "virtual server" that shares everything with its parent (CDN configuration, contact
+// integrations, media, login) except that it is scoped to one user: `GetPosts`/`GetEvents` only return that user's
+// content (plus whatever the `share_content_from_*` toggles add), and `GetServerConfiguration` describes the user
+// (see `subdomain_of`) rather than the whole server. The subscription's `details` hold these settings; the
+// subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+message SubdomainSettings {
+  // The user ID of the subdomain's owner -- the user whose profile the subdomain's About tab shows and whose content it
+  // is scoped to. Server-assigned; ignored on `SaveMarketSubscription`.
+  string subdomain_of = 1;
+  // The subdomain's DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner's username when the
+  // subscription is fulfilled. Server-assigned; ignored on `SaveMarketSubscription`.
+  string subdomain = 2;
+  // Also show posts/events by users who *follow* the owner (an accepted `Follow` of the owner).
+  bool share_content_from_followers = 3;
+  // Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner).
+  bool share_content_from_following = 4;
+  // Also show posts/events by the owner's *friends* -- users who follow the owner and whom the owner follows back.
+  bool share_content_from_friends = 5;
+  // The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
+  // Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
+  // `custom_css` is only included in the subscription's own copy (`GetMarketSubscriptions`), never in
+  // `GetServerConfiguration`'s, same as `ServerConfiguration.custom_css_configuration`. On
+  // `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet.
+  optional CustomCSSConfiguration custom_css_configuration = 6;
 }
 
 // Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm

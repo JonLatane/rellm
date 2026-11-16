@@ -711,17 +711,23 @@ tabBar : Shared.Model -> Model -> Html Msg
 tabBar shared model =
     div [ class "server-details-tab-bar" ]
         (List.map (tabButton model)
-            ([ ( TabAbout, "About" )
-             , ( TabTheme, "Theme" )
-             , ( TabSettings, "Settings" )
-             , ( TabFederation, "Federation" )
-             ]
-                ++ (if Common.adminAccountFor shared model.targetHost /= Nothing then
-                        [ ( TabMarket, "Market" ), ( TabContactIntegrations, "Contact Integrations" ), ( TabCdn, "CDN" ), ( TabCluster, "Cluster" ) ]
+            (if Common.subdomainSettingsFor shared model.targetHost /= Nothing then
+                -- A Rellm Subdomain: only the tabs relevant to one user's site. Settings/Federation/Market/Cluster are the
+                -- parent server's business; Contact Integrations and CDN are shared with the parent (read-only here).
+                [ ( TabAbout, "About" ), ( TabTheme, "Theme" ), ( TabContactIntegrations, "Contact Integrations" ), ( TabCdn, "CDN" ) ]
 
-                    else
-                        [ ( TabCdn, "CDN" ) ]
-                   )
+             else
+                [ ( TabAbout, "About" )
+                , ( TabTheme, "Theme" )
+                , ( TabSettings, "Settings" )
+                , ( TabFederation, "Federation" )
+                ]
+                    ++ (if Common.adminAccountFor shared model.targetHost /= Nothing then
+                            [ ( TabMarket, "Market" ), ( TabContactIntegrations, "Contact Integrations" ), ( TabCdn, "CDN" ), ( TabCluster, "Cluster" ) ]
+
+                        else
+                            [ ( TabCdn, "CDN" ) ]
+                       )
             )
         )
 

@@ -14,7 +14,7 @@ mod unstar_post;
 pub use unstar_post::unstar_post;
 
 mod get_posts;
-pub use get_posts::get_posts;
+pub use get_posts::{get_posts, get_posts_scoped};
 // How many posts one `GetPosts` page holds -- re-exported so specs can build a page boundary.
 pub use get_posts::PAGE_SIZE as GET_POSTS_PAGE_SIZE;
 
