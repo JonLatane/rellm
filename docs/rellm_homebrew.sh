@@ -249,6 +249,15 @@ Commands:
                                                               tmux (always follows; ignores --tail)
                              --tail follows a log (like `tail -f`) instead of returning.
 
+                             Semantic search (see "Semantic search" in deploys/README.md): random
+                             secrets are generated for you.
+                               rellm deploy create_central_embedding             Once per cluster: the
+                                                              embedding model service
+                               rellm deploy create_backend_embedding -n my_namespace
+                                                              Point a namespace at it
+                               rellm deploy create_backend_vector -n my_namespace
+                                                              Optional per-namespace vector index
+
                              `rellm help deploys` shows the full deployment guide in your $PAGER
                              (less, more, ...). It's just a local copy of
                              @@RELLM_DEPLOYS_README_URL@@
