@@ -149,6 +149,39 @@ fn find_url_start(text: &str) -> Option<usize> {
     }
 }
 
+/// Free-form error text (the `Display` of an error in a `source()` chain) made safe to log:
+/// URLs lose their path/query ([`scrub_urls`]), Postgres `Key (column)=(value)` details, anything
+/// containing `@` (email addresses) and long digit runs (phone numbers) become `<redacted>`.
+pub fn scrub_text(text: &str) -> Safe {
+    let text = scrub_urls(text).0;
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(pos) = rest.find("Key (") {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos..];
+        // `Key (a, b)=(x, y)` -- drop through the closing paren of the value group.
+        let end = after
+            .find(")=(")
+            .and_then(|i| after[i + 3..].find(')').map(|j| i + 3 + j + 1))
+            .unwrap_or(after.len());
+        out.push_str("Key <redacted>");
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    let words: Vec<String> = out
+        .split(' ')
+        .map(|w| {
+            let digits = w.chars().filter(|c| c.is_ascii_digit()).count();
+            if w.contains('@') || digits >= 7 {
+                "<redacted>".to_string()
+            } else {
+                w.to_string()
+            }
+        })
+        .collect();
+    Safe(words.join(" "))
+}
+
 /// `{:?}` of an error that is safe to log: Diesel `DatabaseError`s keep only their kind (their
 /// payload can contain the offending row's values, e.g. `Key (username)=(...) already exists`), and
 /// URLs embedded in HTTP client errors lose their path/query. Use for every `e` in a log call.
@@ -220,6 +253,19 @@ mod tests {
         let s = safe_error(&e).0;
         assert_eq!(s, "DatabaseError(\"UniqueViolation\")");
         assert!(!s.contains("jonlatane"));
+    }
+
+    #[test]
+    fn scrub_text_drops_row_values_emails_and_phone_numbers() {
+        let s = scrub_text(
+            "duplicate key value violates unique constraint \"users_username_key\" Key (username)=(jonlatane) already exists. mail jon@example.com or +15551234567 at https://x.example.com/a?t=secret",
+        )
+        .0;
+        for leaked in ["jonlatane", "jon@", "5551234567", "secret"] {
+            assert!(!s.contains(leaked), "{leaked} leaked in {s}");
+        }
+        assert!(s.contains("violates unique constraint") && s.contains("https://x.example.com"), "{s}");
+        assert_eq!(scrub_text("connection refused (os error 111)").0, "connection refused (os error 111)");
     }
 
     #[test]
