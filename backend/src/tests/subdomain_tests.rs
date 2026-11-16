@@ -516,3 +516,60 @@ fn feed_links_use_the_subdomains_own_domain() {
         Ok(())
     });
 }
+
+#[test]
+fn a_feed_domain_that_is_already_the_subdomain_is_not_prefixed_twice() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd11_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd11owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd11owner.bullcity.test");
+        // With `cdn_grpc` on, the configured domain is the request's own host -- already the subdomain.
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain("sd11owner.bullcity.test".to_string(), &context),
+            "sd11owner.bullcity.test"
+        );
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain("bullcity.test".to_string(), &context),
+            "sd11owner.bullcity.test"
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn a_refunded_checkout_is_recorded_so_a_redelivery_cannot_grant_it() {
+    use crate::schema::{market_payments, market_purchases};
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd12_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let holder = create_user(conn, "sd12holder");
+        let subscription = subscribe(conn, &admin, &holder, SubdomainSettings::default());
+        let product = models::get_market_product(subscription.product_id, conn)?;
+        let loser = create_user(conn, "SD12HOLDER");
+
+        crate::web::stripe_webhook::record_refunded_checkout(conn, &loser, &product, "cs_test_1", Some("pi_1"), "re_1")?;
+
+        // The "already processed" lookup `process_checkout_session_completed` starts with finds it...
+        let purchase = market_purchases::table
+            .filter(market_purchases::stripe_checkout_session_id.eq("cs_test_1"))
+            .first::<models::MarketPurchase>(conn)
+            .expect("the refunded checkout is recorded");
+        assert_eq!(purchase.subscription_id, None, "no subscription was granted");
+        assert_eq!(purchase.buyer_id, loser.id);
+        // ...and it carries the payment and the refund of it.
+        let mut payments: Vec<(i32, Option<String>)> = market_payments::table
+            .filter(market_payments::purchase_id.eq(purchase.id))
+            .select((market_payments::amount, market_payments::stripe_refund_id))
+            .load(conn)
+            .unwrap();
+        payments.sort();
+        assert_eq!(payments, vec![(-300, Some("re_1".to_string())), (300, None)]);
+        Ok(())
+    });
+}

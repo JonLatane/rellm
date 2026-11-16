@@ -145,7 +145,75 @@ fn decode_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// Records a checkout that was refunded instead of fulfilled: a purchase (with no subscription) against the Checkout
+/// Session, its payment, and the refund of it. Its existence is what makes a redelivery of the same session a no-op
+/// (`process_checkout_session_completed`'s "already processed" check), so it can never grant the product later.
+pub(crate) fn record_refunded_checkout(
+    conn: &mut PgPooledConnection,
+    buyer: &models::User,
+    product: &models::MarketProduct,
+    session_id: &str,
+    payment_intent_id: Option<&str>,
+    refund_id: &str,
+) -> Result<(), tonic::Status> {
+    let purchase = models::insert_market_purchase(
+        &models::NewMarketPurchase {
+            buyer_id: buyer.id,
+            product_id: product.id,
+            subscription_id: None,
+            product_type: product.product_type.clone(),
+            details: crate::logic::subdomains::subdomain_purchase_details_json_for_label(
+                &crate::logic::subdomains::label_for_username(&buyer.username),
+            ),
+            stripe_checkout_session_id: Some(session_id.to_string()),
+            stripe_payment_intent_id: payment_intent_id.map(str::to_string),
+        },
+        conn,
+    )?;
+    for (amount, stripe_refund_id) in [(product.amount, None), (-product.amount, Some(refund_id.to_string()))] {
+        models::insert_market_payment(
+            &models::NewMarketPayment {
+                purchase_id: purchase.id,
+                amount,
+                currency: product.currency,
+                stripe_payment_intent_id: payment_intent_id.map(str::to_string),
+                stripe_refund_id,
+                method: None,
+            },
+            conn,
+        )?;
+    }
+    Ok(())
+}
+
+/// One delivery at a time per Checkout Session: a transaction-scoped Postgres advisory lock on the session id is held for
+/// the whole of `process_checkout_session_completed`, so a concurrent redelivery waits, then sees the purchase the first
+/// one recorded (fulfilled *or* refunded -- see the subdomain conflict branch) and does nothing.
 fn handle_checkout_session_completed(
+    session: &Value,
+    stripe_config: &crate::protos::StripeConfig,
+    conn: &mut PgPooledConnection,
+) -> Result<(), tonic::Status> {
+    let session_id = session
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| tonic::Status::new(tonic::Code::InvalidArgument, "missing_session_id"))?
+        .to_string();
+    conn.transaction::<(), WebhookTxError, _>(|conn| {
+        diesel::sql_query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind::<diesel::sql_types::Text, _>(session_id.clone())
+            .execute(conn)?;
+        process_checkout_session_completed(session, stripe_config, conn)?;
+        Ok(())
+    })
+    .map_err(|e| e.0)?;
+    // A new (or released) subdomain subscription changes what its host resolves to -- forgotten only *after* the commit,
+    // or a request in between could cache the old answer again.
+    crate::logic::subdomains::invalidate_cache();
+    Ok(())
+}
+
+fn process_checkout_session_completed(
     session: &Value,
     stripe_config: &crate::protos::StripeConfig,
     conn: &mut PgPooledConnection,
@@ -242,7 +310,18 @@ fn handle_checkout_session_completed(
                 // The checkout session id and the label (from the username) are identifiers, so neither is logged; the
                 // user and product ids identify the order.
                 return match refund {
-                    Ok(_) => {
+                    Ok(refund_id) => {
+                        // Record the outcome -- a purchase (no subscription) with its payment and the refund of it --
+                        // before acknowledging, so a redelivery finds this checkout already processed and can never
+                        // grant the subdomain later, even if the conflict has since gone away.
+                        record_refunded_checkout(
+                            conn,
+                            &buyer,
+                            &product,
+                            session_id,
+                            payment_intent_id,
+                            &refund_id,
+                        )?;
                         log::warn!(
                             "Refunded a paid subdomain checkout for user {} on product {}: {}",
                             buyer_id,
@@ -358,8 +437,6 @@ fn handle_checkout_session_completed(
         Ok(())
     })
     .map_err(|e| e.0)?;
-    // A new subdomain subscription changes what its host resolves to.
-    crate::logic::subdomains::invalidate_cache();
     Ok(())
 }
 

@@ -30,7 +30,10 @@ async fn rss_subscription(
 ) -> CacheResponse<RssResponse> {
     let mut conn = state.pool.get().unwrap();
     // On a Rellm Subdomain the feed is the owner's (plus whatever they share) and is named after them.
-    let subdomain = crate::web::subdomain_web::request_subdomain(&mut conn, host);
+    let subdomain = match crate::web::subdomain_web::request_subdomain(&mut conn, host) {
+        Ok(subdomain) => subdomain,
+        Err(e) => return CacheResponse::no_store(RssResponse(format!("Error resolving subdomain: {e}"))),
+    };
     let server_configuration = match &subdomain {
         Some(subdomain) => subdomain
             .virtual_server_configuration(get_server_configuration_proto(&mut conn).unwrap(), &None),

@@ -8,9 +8,14 @@ use crate::logic::subdomains::{resolve_subdomain, SubdomainContext};
 use crate::protos::ServerConfiguration;
 use crate::rpcs::get_server_configuration_proto;
 
-/// The subdomain `host` addresses, if any (anonymous viewer -- these are public pages and feeds).
-pub fn request_subdomain(conn: &mut PgPooledConnection, host: &Host<'_>) -> Option<SubdomainContext> {
-    resolve_subdomain(Some(&host.to_string()), conn).ok().flatten()
+/// The subdomain `host` addresses, if any (anonymous viewer -- these are public pages and feeds). A failed lookup is
+/// an error, never `None`: `None` means "the parent server", and a feed that quietly fell back to it would publish the
+/// parent's content on someone's subdomain.
+pub fn request_subdomain(
+    conn: &mut PgPooledConnection,
+    host: &Host<'_>,
+) -> Result<Option<SubdomainContext>, tonic::Status> {
+    resolve_subdomain(Some(&host.to_string()), conn)
 }
 
 /// The `ServerConfiguration` a public page for `host` is built from: the server's own, or -- on a subdomain -- the
@@ -18,17 +23,25 @@ pub fn request_subdomain(conn: &mut PgPooledConnection, host: &Host<'_>) -> Opti
 /// describe the subdomain rather than the parent server.
 pub fn request_configuration(conn: &mut PgPooledConnection, host: &Host<'_>) -> ServerConfiguration {
     let configuration = get_server_configuration_proto(conn).unwrap();
-    match request_subdomain(conn, host) {
+    // Like the configuration load above, a database failure fails the page (a 500) rather than quietly describing the
+    // parent server on a subdomain.
+    match request_subdomain(conn, host).expect("failed to look up the request's subdomain") {
         Some(subdomain) => subdomain.virtual_server_configuration(configuration, &None),
         None => configuration,
     }
 }
 
 /// The public frontend domain for links in a feed served at `host`: the subdomain itself on a subdomain.
+/// `configured_frontend_domain` is the parent's configured host -- or, with `cdn_grpc` on (or no CDN configuration),
+/// the request's own host, which already *is* the subdomain: that one is left as it is, never prefixed twice.
 pub fn feed_frontend_domain(configured_frontend_domain: String, subdomain: &Option<SubdomainContext>) -> String {
     match subdomain {
         Some(subdomain) if !subdomain.settings.subdomain.is_empty() => {
-            format!("{}.{}", subdomain.settings.subdomain, configured_frontend_domain)
+            if configured_frontend_domain.starts_with(&format!("{}.", subdomain.settings.subdomain)) {
+                configured_frontend_domain
+            } else {
+                format!("{}.{}", subdomain.settings.subdomain, configured_frontend_domain)
+            }
         }
         _ => configured_frontend_domain,
     }
