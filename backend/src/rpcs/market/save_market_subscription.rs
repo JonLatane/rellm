@@ -107,5 +107,6 @@ pub fn save_market_subscription(
             Status::new(Code::Internal, "failed_to_update_subscription")
         })?;
 
+    subdomains::invalidate_cache();
     build_subscription(existing.id, conn)
 }

@@ -262,7 +262,10 @@ fn only_the_buyer_saves_and_a_missing_stylesheet_is_kept() {
             .unwrap();
         assert_eq!(settings.subdomain, "sd4owner");
         assert!(settings.share_content_from_friends);
-        assert_eq!(settings.custom_css_configuration.unwrap().custom_css.as_deref(), Some("body { color: red }"));
+        // The stylesheet text is stored but never carried back in subscription payloads (`GetCustomCSS` serves it).
+        assert_eq!(settings.custom_css_configuration.unwrap().custom_css, None);
+        let stored = scope(conn, "sd4owner.bullcity.test").unwrap();
+        assert_eq!(stored.custom_css_configuration().custom_css.as_deref(), Some("body { color: red }"));
 
         // An empty id means "my subdomain subscription"; no CSS in the request keeps the stored text.
         let mut keep = request(None);

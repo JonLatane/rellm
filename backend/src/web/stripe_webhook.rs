@@ -323,7 +323,10 @@ fn handle_checkout_session_completed(
         fulfill_purchase(purchase_type, buyer_id, &purchase.details, conn)?;
         Ok(())
     })
-    .map_err(|e| e.0)
+    .map_err(|e| e.0)?;
+    // A new subdomain subscription changes what its host resolves to.
+    crate::logic::subdomains::invalidate_cache();
+    Ok(())
 }
 
 /// `conn.transaction`'s error type must absorb Diesel's own errors (it rolls back through them) while carrying the

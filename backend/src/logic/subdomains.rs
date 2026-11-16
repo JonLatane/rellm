@@ -19,6 +19,65 @@ use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
 use crate::schema::{follows, market_subscriptions};
 
+/// A tiny TTL map for the two things every subdomain-aware request would otherwise ask the database for: the
+/// parent's `frontend_host`/`backend_host`, and which subscription (if any) a host resolves to. Entries expire
+/// after `ttl`, and the map is bounded (`MAX_ENTRIES`; cleared when full -- the keys are request-controlled, so it
+/// must never grow without limit). Pure -- the caller passes `now` -- so it is unit-testable.
+pub struct TtlCache<V> {
+    entries: std::collections::HashMap<String, (V, std::time::Instant)>,
+    ttl: std::time::Duration,
+}
+
+impl<V: Clone> TtlCache<V> {
+    pub const MAX_ENTRIES: usize = 1024;
+
+    pub fn new(ttl: std::time::Duration) -> Self {
+        TtlCache { entries: std::collections::HashMap::new(), ttl }
+    }
+
+    pub fn get(&self, key: &str, now: std::time::Instant) -> Option<V> {
+        self.entries
+            .get(key)
+            .filter(|(_, stored_at)| now.saturating_duration_since(*stored_at) < self.ttl)
+            .map(|(value, _)| value.clone())
+    }
+
+    pub fn put(&mut self, key: String, value: V, now: std::time::Instant) {
+        if self.entries.len() >= Self::MAX_ENTRIES {
+            self.entries.clear();
+        }
+        self.entries.insert(key, (value, now));
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+lazy_static::lazy_static! {
+    /// `(frontend_host, backend_host)` of the parent's `ExternalCDNConfig` -- changes only when an admin edits it.
+    static ref CDN_HOSTS: std::sync::Mutex<TtlCache<(String, String)>> =
+        std::sync::Mutex::new(TtlCache::new(std::time::Duration::from_secs(30)));
+    /// Host -> resolved subdomain (`None` = a well-formed label nobody holds). Settings edited through *this*
+    /// process invalidate it at once (`invalidate_cache`); another replica's edits show up within the TTL.
+    static ref RESOLVED: std::sync::Mutex<TtlCache<Option<SubdomainContext>>> =
+        std::sync::Mutex::new(TtlCache::new(std::time::Duration::from_secs(15)));
+}
+
+/// Forgets every cached resolution -- called wherever a subscription's settings, state or label change in this
+/// process (save, cancel, checkout, lapse). Other processes catch up within the cache's TTL.
+pub fn invalidate_cache() {
+    if let Ok(mut resolved) = RESOLVED.lock() {
+        resolved.clear();
+    }
+}
+
+/// Specs share one process and each rewrites subscriptions and server configuration inside a rolled-back
+/// transaction, so a process-wide cache would leak state between them: it is simply off under `cargo test`.
+const fn cache_enabled() -> bool {
+    !cfg!(test)
+}
+
 /// A request's host, as the Tonic layer saw it (`:authority`/`Host`) -- an extension on every Tonic
 /// `Request` (see `servers::tonic::RequestHostLayer`).
 #[derive(Clone, Debug)]
@@ -141,7 +200,7 @@ pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnectio
     )
     .set(market_subscriptions::service_terminated_at.eq(Some(SystemTime::now())))
     .execute(conn)
-    .map(|_| ())
+    .map(|_| invalidate_cache())
     .map_err(|e| {
         log::error!("Failed to release a lapsed subdomain label: {:?}", e);
         Status::new(Code::Internal, "failed_to_release_subdomain")
@@ -196,21 +255,49 @@ pub fn resolve_subdomain(
     let Some(host) = host else {
         return Ok(None);
     };
-    let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+    let now = std::time::Instant::now();
+    let cached_hosts = cache_enabled().then(|| CDN_HOSTS.lock().ok().and_then(|c| c.get("", now))).flatten();
+    let (frontend_host, backend_host) = match cached_hosts {
+        Some(hosts) => hosts,
+        None => {
+            let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+            let hosts = (cdn.frontend_host, cdn.backend_host);
+            if cache_enabled() {
+                if let Ok(mut cache) = CDN_HOSTS.lock() {
+                    cache.put(String::new(), hosts.clone(), now);
+                }
+            }
+            hosts
+        }
+    };
     // A subdomain is reached at `<label>.<frontend_host>` (pages) and, for gRPC when the backend is a separate host,
     // at `<label>.<backend_host>` (what `/backend_host` returns on a subdomain) -- so every request carries which
     // server it is for, and the parent and a subdomain are never confused even though they share a backend.
-    let Some(label) = subdomain_label_for_host(host, &cdn.frontend_host)
-        .or_else(|| subdomain_label_for_host(host, &cdn.backend_host))
+    let Some(label) = subdomain_label_for_host(host, &frontend_host)
+        .or_else(|| subdomain_label_for_host(host, &backend_host))
     else {
+        // The parent itself, or a host that isn't one label beneath it: no database work at all.
         return Ok(None);
     };
-    let Some(subscription) = find_active_subdomain_subscription(&label, conn)? else {
-        return Ok(None);
+    if cache_enabled() {
+        if let Some(cached) = RESOLVED.lock().ok().and_then(|c| c.get(&label, now)) {
+            return Ok(cached);
+        }
+    }
+    let resolved = match find_active_subdomain_subscription(&label, conn)? {
+        Some(subscription) => {
+            let owner = models::get_user(subscription.buyer_id, conn)?;
+            let settings = settings_of(&subscription);
+            Some(SubdomainContext { subscription, owner, settings })
+        }
+        None => None,
     };
-    let owner = models::get_user(subscription.buyer_id, conn)?;
-    let settings = settings_of(&subscription);
-    Ok(Some(SubdomainContext { subscription, owner, settings }))
+    if cache_enabled() {
+        if let Ok(mut cache) = RESOLVED.lock() {
+            cache.put(label, resolved.clone(), now);
+        }
+    }
+    Ok(resolved)
 }
 
 impl SubdomainContext {
@@ -402,6 +489,25 @@ mod tests {
         };
         assert!(has(NavigationTab::EventsTab) && has(NavigationTab::PostsTab) && has(NavigationTab::AboutTab));
         assert!(!has(NavigationTab::PeopleTab) && !has(NavigationTab::MarketTab));
+    }
+
+    #[test]
+    fn ttl_cache_expires_is_bounded_and_clears() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let mut cache = TtlCache::new(Duration::from_secs(10));
+        cache.put("jon".to_string(), 1, start);
+        assert_eq!(cache.get("jon", start + Duration::from_secs(9)), Some(1));
+        assert_eq!(cache.get("jon", start + Duration::from_secs(10)), None, "expired");
+        assert_eq!(cache.get("other", start), None);
+        cache.put("jon".to_string(), 2, start);
+        cache.clear();
+        assert_eq!(cache.get("jon", start), None, "cleared");
+        // Bounded: request-controlled keys can't grow it without limit.
+        for i in 0..(TtlCache::<i32>::MAX_ENTRIES + 5) {
+            cache.put(format!("k{i}"), 0, start);
+        }
+        assert!(cache.entries.len() <= TtlCache::<i32>::MAX_ENTRIES);
     }
 
     #[test]
