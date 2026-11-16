@@ -6,7 +6,9 @@
 # - replicas stays 1 (a second pod would just hold a second copy of the index); strategy Recreate. While it is
 #   down or still building its index, searches silently use the Postgres scan (the service is optional).
 # - Cluster-internal only (ClusterIP). Callers authenticate with `vector-service-secret` from this namespace's
-#   rellm-data-credentials Secret, sent as `x-rellm-internal-secret`.
+#   `rellm-embedding` Secret, sent as `x-rellm-internal-secret`.
+# - This file is for namespaces with their own Postgres; vector_search_service_central_data.yaml is its twin for
+#   namespaces on central storage. `rellm deploy create_backend_vector` picks the right one and creates the Secret.
 # - It indexes whatever model the cluster's shared embedding service runs (RELLM_EMBEDDING_SERVICE_URL).
 # - Image: rellm_embeddings (the same image as the model service); it never loads a model itself.
 # - Memory is about 400 bytes per vector (int8 + graph); 100k rows ~ 40MB, 1M ~ 400MB -- size the limit to the data.
@@ -61,14 +63,17 @@ spec:
             - name: RELLM_VECTOR_SERVICE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
+                  name: rellm-embedding
                   key: vector-service-secret
             - name: RELLM_EMBEDDING_SERVICE_URL
-              value: http://rellm-central-embedding.rellm-storage:8090
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-url
             - name: RELLM_EMBEDDING_SERVICE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: rellm-data-credentials
+                  name: rellm-embedding
                   key: embedding-service-secret
             - name: RUST_BACKTRACE
               value: full
