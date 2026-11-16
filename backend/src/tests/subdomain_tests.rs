@@ -737,9 +737,61 @@ fn a_subdomains_sitemap_lists_its_own_pages_and_no_people_page() {
         assert!(urls.contains(&"https://sd16owner.bullcity.test/posts".to_string()));
         assert!(urls.contains(&"https://sd16owner.bullcity.test/events".to_string()));
         assert!(urls.contains(&"https://sd16owner.bullcity.test/about".to_string()));
+        // All six of the subdomain's navigation tabs, `media`/`video`/`audio` included.
+        for tab in ["events", "posts", "media", "video", "audio", "about"] {
+            assert!(
+                urls.contains(&format!("https://sd16owner.bullcity.test/{tab}")),
+                "the sitemap lists the {tab} tab"
+            );
+        }
         assert!(!urls.iter().any(|u| u.ends_with("/people")), "a subdomain has no People page");
         // Every URL is on the subdomain's own host, never the parent's.
         assert!(urls.iter().all(|u| u.starts_with("https://sd16owner.bullcity.test/")));
         Ok(())
     });
+}
+
+#[test]
+fn a_subdomains_manifest_is_valid_json_named_after_its_owner() {
+    use crate::web::robots_sitemap::build_manifest;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd17_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        // A name with a backslash, a quote and a newline -- all of which the owner is free to choose.
+        let owner = create_user_with_profile(conn, "sd17owner", "Alex\\Jones \"AJ\"\nLine2", "bio");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd17owner.bullcity.test").unwrap();
+        // A subdomain's virtual configuration has no colors: the fallback must not panic (it used to, slicing a
+        // five-digit hex string) and must still give a six-digit colour.
+        let configuration = context.virtual_server_configuration(ServerConfiguration::default(), &None);
+        let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration)).expect("valid JSON");
+        assert_eq!(manifest["name"], "Alex\\Jones \"AJ\"\nLine2");
+        assert_eq!(manifest["short_name"], "sd17owner");
+        assert_eq!(manifest["background_color"], "#424242");
+        assert_eq!(manifest["theme_color"], "#424242CC");
+        Ok(())
+    });
+}
+
+#[test]
+fn the_manifest_uses_a_configured_primary_color_and_pads_small_ones() {
+    use crate::web::robots_sitemap::build_manifest;
+    let configuration = |primary: u32| ServerConfiguration {
+        server_info: Some(ServerInfo {
+            colors: Some(ServerColors { primary: Some(primary), ..Default::default() }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    // `ServerColors.primary` is ARGB: only the low 24 bits are the colour.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration(0xFF12_34AB))).unwrap();
+    assert_eq!(manifest["background_color"], "#1234ab");
+    // A small value (a dark colour) is zero-padded to six digits.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration(0xFF00_00FF))).unwrap();
+    assert_eq!(manifest["background_color"], "#0000ff");
+    // No server info at all: Rellm's defaults.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&ServerConfiguration::default())).unwrap();
+    assert_eq!(manifest["name"], "Rellm");
 }

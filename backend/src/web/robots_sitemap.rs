@@ -12,10 +12,6 @@ use crate::marshaling::ToProtoTime;
 use crate::protos::{GetEventsRequest, GetPostsRequest, TimeFilter};
 use crate::rpcs::{get_events_for, get_posts_for, get_server_configuration_proto};
 
-// `/posts`, `/events`, `/people`, and `/about` are always real pages -- per
-// `CustomNavigationTabSet.tabs`'s own doc comment, those paths can't be claimed by a custom tab --
-// so they're listed unconditionally rather than depending on server configuration.
-const RESERVED_TAB_PATHS: [&str; 8] = ["posts", "events", "people", "about", "media", "video", "audio", "images"];
 // Mirrors `calendarLookbackDaysDefault` in the Elm SPA's `EventsPage.elm`, used when
 // `EventSettings.calendar_lookback_days` is unset.
 const DEFAULT_CALENDAR_LOOKBACK_DAYS: u32 = 14;
@@ -50,11 +46,49 @@ pub fn base_sitemap_urls(
         .map(|set| set.tabs.as_slice())
         .unwrap_or_default()
     {
-        if !RESERVED_TAB_PATHS.contains(&tab.path.as_str()) {
+        // Every tab's page is listed -- the reserved paths too (`media`/`video`/`audio`/... are real pages that were
+        // never in the fixed list above); repeats are removed when the sitemap is assembled.
+        if !tab.path.is_empty() {
             urls.push(format!("https://{}/{}", domain, tab.path));
         }
     }
     urls
+}
+
+/// The web app manifest for `configuration`'s server (or a subdomain's virtual one). Serialized with `serde_json`, so
+/// names an owner chose themselves (backslashes, quotes, newlines) can never make it invalid JSON. The theme colour is
+/// the primary colour's low 24 bits as exactly six hex digits -- the server's configured `ServerColors.primary` is an
+/// ARGB `uint32`, and a configuration with no colour (every subdomain) falls back to the neutral `0x424242`.
+pub fn build_manifest(configuration: &crate::protos::ServerConfiguration) -> String {
+    let server_name = configuration
+        .server_info
+        .as_ref()
+        .and_then(|i| i.name.clone())
+        .unwrap_or_else(|| "Rellm".to_string());
+    let server_short_name = configuration
+        .server_info
+        .as_ref()
+        .and_then(|i| i.short_name.clone())
+        .unwrap_or_else(|| server_name.clone());
+    let primary_color_int = configuration
+        .server_info
+        .as_ref()
+        .and_then(|i| i.colors.as_ref())
+        .and_then(|c| c.primary)
+        .unwrap_or(crate::logic::DEFAULT_PRIMARY_COLOR);
+    let primary_color = format!("{:06x}", primary_color_int & 0x00FF_FFFF);
+
+    let manifest = serde_json::json!({
+        "name": server_name,
+        "short_name": server_short_name,
+        "theme_color": format!("#{primary_color}CC"),
+        "background_color": format!("#{primary_color}"),
+        "start_url": "/",
+        "display": "standalone",
+        "orientation": "portrait-primary",
+        "icons": [{ "src": "/favicon.ico", "sizes": "any", "type": "image/x-icon" }]
+    });
+    format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap_or_default())
 }
 
 lazy_static! {
@@ -150,66 +184,10 @@ async fn sitemap(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<R
 
 #[rocket::get("/manifest.json")]
 async fn manifest(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<RawJson<String>> {
-    // let domain = host.domain();
     let mut conn = state.pool.get().unwrap();
     // The installed app of a Rellm Subdomain is named after its owner, not the parent server.
     let configuration = crate::web::subdomain_web::request_configuration(&mut conn, host);
-
-    let server_name = configuration
-        .clone()
-        .server_info
-        .map(|i| i.name)
-        .flatten()
-        .unwrap_or("Rellm".to_string());
-    let server_short_name = configuration
-        .clone()
-        .server_info
-        .map(|i| i.short_name)
-        .flatten()
-        .unwrap_or(server_name.clone());
-    // let server_logo_id = configuration
-    //     .server_info
-    //     .as_ref()
-    //     .map(|i| i.logo.as_ref())
-    //     .flatten()
-    //     .map(|l| l.square_media_id.clone())
-    //     .flatten();
-    // let server_logo = server_logo_id.map(|id| format!("/media/{}", id));
-    let primary_color_int = configuration
-        .server_info
-        .map(|i| i.colors)
-        .flatten()
-        .map(|c| c.primary)
-        .flatten()
-        .unwrap_or(424242);
-    let primary_color = &format!("{:x}", primary_color_int)[2..8];
-
-    let response = RawJson(
-        format!(
-            "{{
-  \"name\": \"{}\",
-  \"short_name\": \"{}\",
-  \"theme_color\": \"#{}CC\",
-  \"background_color\": \"#{}\",
-  \"start_url\": \"/\",
-  \"display\": \"standalone\",
-  \"orientation\": \"portrait-primary\",
-  \"icons\": [
-    {{
-      \"src\": \"/favicon.ico\",
-      \"sizes\": \"any\",
-      \"type\": \"image/x-icon\"
-    }}
-  ]
-}}
-",
-            server_name.replace("\"", "\\\""),
-            server_short_name.replace("\"", "\\\""),
-            primary_color,
-            primary_color,
-        )
-        .to_string(),
-    );
+    let response = RawJson(build_manifest(&configuration));
 
     CacheResponse::public(response, 3600)
 }
