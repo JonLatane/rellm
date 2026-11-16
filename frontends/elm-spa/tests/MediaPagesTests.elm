@@ -4,7 +4,7 @@ import Components.MediaFeed as MediaFeed
 import Components.Pages.MediaPage as MediaPage
 import Dict
 import Expect
-import Proto.Rellm exposing (GetMediaRequest, Media, MediaMetadata, defaultMedia, defaultMediaMetadata, defaultMediaReference)
+import Proto.Rellm exposing (GetMediaRequest, Media, MediaMetadata, MediaReference, defaultMedia, defaultMediaMetadata, defaultMediaReference)
 import Proto.Rellm.NavigationTab exposing (NavigationTab(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Protobuf.Types.Int64 as Int64
@@ -56,6 +56,23 @@ suite =
                     MediaFeed.replaceMedia { defaultMedia | id = "z", name = Just "Z" } [ { defaultMedia | id = "a" } ]
                         |> List.map .id
                         |> Expect.equal [ "a" ]
+            ]
+        , describe "MediaFeed.singleReference"
+            [ test "keeps exactly the one reference, even when two entries share its id (two posts with the same video)" <|
+                \_ ->
+                    let
+                        reference : String -> String -> MediaReference
+                        reference id name =
+                            { defaultMediaReference | id = id, name = Just name }
+                    in
+                    [ reference "a" "first", reference "v" "post 1's", reference "b" "second", reference "v" "post 2's" ]
+                        |> MediaFeed.singleReference "v"
+                        |> List.map .name
+                        |> Expect.equal [ Just "post 1's" ]
+            , test "nothing matching leaves nothing to open" <|
+                \_ ->
+                    MediaFeed.singleReference "missing" [ { defaultMediaReference | id = "a" } ]
+                        |> Expect.equal []
             ]
         , describe "MediaFeed.mergeByRecency"
             [ test "merges servers newest-first, keeping each item's host" <|
