@@ -7,66 +7,13 @@ use crate::{
     marshaling::*, models, protos, rpcs::get_server_configuration_model, rpcs::validations::*,
 };
 
-/// A copy of `config` with every write-only secret blanked, for logging (`ConfigureServer`'s request
-/// still carries real secrets on the way in, and a log line must never contain them). Keep in sync
-/// with every secret field in `server_configuration.proto` -- `redact_secrets_blanks_every_secret`
-/// (`email_providers_tests`) sets each one and fails if a new one is missed there.
-pub fn redact_secrets(config: &protos::ServerConfiguration) -> protos::ServerConfiguration {
-    let mut c = config.clone();
-    if let Some(f) = c.federation_info.as_mut() {
-        if let Some(fb) = f.facebook_auth_config.as_mut() {
-            fb.app_secret.clear();
-        }
-        if let Some(x) = f.x_twitter_auth_config.as_mut() {
-            x.client_secret.clear();
-        }
-    }
-    if let Some(w) = c.web_push_config.as_mut() {
-        w.private_vapid_key.clear();
-    }
-    if let Some(r) = c.cluster_resources.as_mut() {
-        r.cluster_shared_secret.clear();
-    }
-    if let Some(t) = c.twilio_config.as_mut() {
-        t.twilio_api_key_secret.clear();
-        t.twilio_webhook_signing_key.clear();
-    }
-    if let Some(b) = c.bird_config.as_mut() {
-        b.bird_access_key.clear();
-        b.bird_webhook_signing_key.clear();
-    }
-    if let Some(t) = c.telnyx_config.as_mut() {
-        t.telnyx_api_key.clear();
-        t.telnyx_webhook_signing_key.clear();
-    }
-    if let Some(s) = c.stripe_config.as_mut() {
-        s.stripe_secret_key.clear();
-        s.stripe_webhook_signing_secret.clear();
-    }
-    if let Some(p) = c.postmark_config.as_mut() {
-        p.postmark_server_token.clear();
-        p.postmark_account_token.clear();
-    }
-    if let Some(s) = c.sendgrid_config.as_mut() {
-        s.sendgrid_api_key.clear();
-    }
-    if let Some(m) = c.mailgun_config.as_mut() {
-        m.mailgun_api_key.clear();
-    }
-    if let Some(s) = c.stalwart_config.as_mut() {
-        s.stalwart_smtp_password.clear();
-        s.stalwart_management_token.clear();
-    }
-    c
-}
-
 pub fn configure_server(
     request: protos::ServerConfiguration,
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::ServerConfiguration, Status> {
     // The configuration holds contact details (sender addresses, phone numbers, SMTP usernames, ...),
-    // so it is never logged -- not even through `redact_secrets`.
+    // so it is never logged.
     log::info!("ConfigureServer called by user_id={}", user.id);
     validate_permission(&Some(user), Permission::Admin)?;
     validate_configuration(&request)?;

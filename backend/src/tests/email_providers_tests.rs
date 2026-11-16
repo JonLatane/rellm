@@ -21,7 +21,7 @@ use crate::logic::{
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::{
-    configure_server, get_server_configuration, get_server_configuration_proto, redact_secrets,
+    configure_server, get_server_configuration, get_server_configuration_proto,
 };
 use crate::schema::server_configurations;
 use crate::tests::factories::*;
@@ -777,63 +777,4 @@ mod configure_server_email {
             Ok(())
         });
     }
-}
-
-#[test]
-fn redact_secrets_blanks_every_secret() {
-    let s = |v: &str| v.to_string();
-    let config = ServerConfiguration {
-        federation_info: Some(FederationInfo {
-            facebook_auth_config: Some(FacebookAuthConfig { app_id: s("fb-id"), app_secret: s("SECRET") }),
-            x_twitter_auth_config: Some(XTwitterAuthConfig { client_id: s("x-id"), client_secret: s("SECRET") }),
-            ..Default::default()
-        }),
-        web_push_config: Some(WebPushConfig { public_vapid_key: s("pub"), private_vapid_key: s("SECRET") }),
-        cluster_resources: Some(ClusterResources { cluster_shared_secret: s("SECRET"), ..Default::default() }),
-        twilio_config: Some(TwilioConfig {
-            twilio_api_key_secret: s("SECRET"),
-            twilio_webhook_signing_key: s("SECRET"),
-            twilio_account_sid: s("AC123"),
-            ..Default::default()
-        }),
-        bird_config: Some(BirdConfig {
-            bird_access_key: s("SECRET"),
-            bird_webhook_signing_key: s("SECRET"),
-            ..Default::default()
-        }),
-        telnyx_config: Some(TelnyxConfig {
-            telnyx_api_key: s("SECRET"),
-            telnyx_webhook_signing_key: s("SECRET"),
-            ..Default::default()
-        }),
-        stripe_config: Some(StripeConfig {
-            stripe_secret_key: s("SECRET"),
-            stripe_webhook_signing_secret: s("SECRET"),
-            stripe_publishable_key: s("pk_public"),
-            ..Default::default()
-        }),
-        postmark_config: Some(PostmarkConfig {
-            postmark_server_token: s("SECRET"),
-            postmark_account_token: s("SECRET"),
-            ..Default::default()
-        }),
-        sendgrid_config: Some(SendgridConfig { sendgrid_api_key: s("SECRET"), ..Default::default() }),
-        mailgun_config: Some(MailgunConfig { mailgun_api_key: s("SECRET"), ..Default::default() }),
-        stalwart_config: Some(StalwartConfig {
-            stalwart_smtp_password: s("SECRET"),
-            stalwart_management_token: s("SECRET"),
-            stalwart_smtp_host: s("stalwart.local"),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let redacted = redact_secrets(&config);
-    let dump = format!("{:?}", redacted);
-    assert!(!dump.contains("SECRET"), "a secret survived redaction: {dump}");
-    // Non-secret identifiers are kept (the log stays useful).
-    for kept in ["fb-id", "x-id", "AC123", "pk_public", "stalwart.local"] {
-        assert!(dump.contains(kept), "{kept} should not be redacted");
-    }
-    // The input is untouched.
-    assert!(format!("{:?}", config).contains("SECRET"));
 }
