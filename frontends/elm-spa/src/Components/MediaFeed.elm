@@ -228,6 +228,8 @@ type Msg
     | MediaClicked String String
     | GotFederated String Int Bool (Result Http.Error ( Maybe AccountsPanel.Msg, List FedMedia.Item, Maybe String ))
     | FedMediaClicked String String
+      -- A video card's "Add To Queue": the video (see `rellmQueueVideo`/`fedQueueVideo`) and its title.
+    | QueueVideo AudioPlayerPanel.VideoItem String
     | FedQueuePicked String String String
       -- host, media id, picked `<option>` value ("next" or "last")
     | QueuePicked String String String
@@ -607,7 +609,16 @@ update shared msg model =
                     )
 
               else
-                Effect.fromShared (Shared.MediaViewerPanelMsg (MediaViewerPanel.OpenWithPostLinks references postLinks mediaId key))
+                -- A video opens alone, not paging through every video listed from this source.
+                Effect.fromShared
+                    (Shared.MediaViewerPanelMsg
+                        (MediaViewerPanel.OpenWithPostLinks
+                            (List.filter (\reference -> reference.id == mediaId) references)
+                            (Dict.filter (\id _ -> id == mediaId) postLinks)
+                            mediaId
+                            key
+                        )
+                    )
             )
 
         FedQueuePicked key mediaId choice ->
@@ -750,6 +761,9 @@ update shared msg model =
                             (Dict.get host model.feeds
                                 |> Maybe.map .media
                                 |> Maybe.withDefault []
+                                -- A video opens alone (the viewer would otherwise page through every video listed from
+                                -- this server); images are a gallery, so they page.
+                                |> List.filter (\media -> model.kind /= Videos || media.id == mediaId)
                                 |> List.map MediaViewerPanel.mediaToReference
                             )
                             Nothing
@@ -757,6 +771,11 @@ update shared msg model =
                             host
                         )
                 )
+            )
+
+        QueueVideo video title ->
+            ( model
+            , Effect.fromShared (Shared.AudioPlayerPanelMsg (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast video (Just title)))
             )
 
 
@@ -1261,14 +1280,17 @@ videoCard shared showHost host maybeServer media =
             creditsLine Videos (Maybe.withDefault defaultMediaMetadata media.metadata)
     in
     div [ class "media-card video-card" ]
-        [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
-            (MediaRenderer.posterFrame "🎬"
-                (MediaRenderer.videoPosterUrl maybeServer
-                    (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host)
-                    (MediaViewerPanel.mediaToReference media)
+        [ div [ class "video-card-thumb-wrap" ]
+            [ button [ class "media-card-thumb", onClick (MediaClicked host media.id), attribute "aria-label" ("Play " ++ mediaTitle media) ]
+                (MediaRenderer.posterFrame "🎬"
+                    (MediaRenderer.videoPosterUrl maybeServer
+                        (RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host)
+                        (MediaViewerPanel.mediaToReference media)
+                    )
+                    ++ [ licensedBadge media ]
                 )
-                ++ [ licensedBadge media ]
-            )
+            , queueVideoButton (rellmQueueVideo shared host maybeServer media) (mediaTitle media)
+            ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (MediaClicked host media.id) ] [ text (mediaTitle media) ]
             , div [ class "media-card-sub" ]
@@ -1283,6 +1305,84 @@ videoCard shared showHost host maybeServer media =
                 div [ class "media-card-credits" ] [ text credits ]
             ]
         ]
+
+
+{-| What a Rellm video card queues: the video as the miniplayer plays it (`MediaRenderer.naturalVideo`, the same URL the media
+viewer plays), with the link data and download sizes only a video on one of our servers has. `Nothing` while its server isn't
+resolved. `returnUrl` is left blank: `Shared.update` fills in the page it was queued from.
+-}
+rellmQueueVideo : Shared.Model -> String -> Maybe RellmServer -> Media -> Maybe AudioPlayerPanel.VideoItem
+rellmQueueVideo shared host maybeServer media =
+    maybeServer
+        |> Maybe.map
+            (\server ->
+                let
+                    reference : MediaReference
+                    reference =
+                        MediaViewerPanel.mediaToReference media
+
+                    account : Maybe RellmAccounts.RellmAccount
+                    account =
+                        RellmAccounts.enabledRellmAccountForServer shared.accounts.accounts host
+
+                    natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                    natural =
+                        MediaRenderer.naturalVideo server account reference
+                in
+                { src = natural.src
+                , poster = MediaRenderer.videoPosterUrl maybeServer account reference
+                , aspectRatio = natural.aspectRatio
+                , returnUrl = ""
+                , mediaId = Just media.id
+                , host = host
+                , downloads = MediaRenderer.videoDownloadSizes reference
+                , postUrl = Nothing
+                }
+            )
+
+
+{-| The same for a Mastodon/Bluesky video: it plays from its own URL, is on no server of ours, and links back to its post.
+-}
+fedQueueVideo : Shared.Model -> FedMedia.Item -> Maybe AudioPlayerPanel.VideoItem
+fedQueueVideo shared item =
+    Posts.mediaServer Nothing item.host
+        |> Maybe.map
+            (\server ->
+                let
+                    natural : { src : String, poster : Maybe String, aspectRatio : Float }
+                    natural =
+                        MediaRenderer.naturalVideo server Nothing item.media
+                in
+                { src = natural.src
+                , poster = natural.poster
+                , aspectRatio = natural.aspectRatio
+                , returnUrl = ""
+                , mediaId = Nothing
+                , host = ""
+                , downloads = []
+                , postUrl = Just (Posts.postHref shared.basePath shared.accounts.mainFrontendHost item.host item.post)
+                }
+            )
+
+
+{-| A video card's "Add To Queue" button, over the bottom-right of its thumbnail: it appears when the card is hovered or
+focused (always on touch screens, which have no hover -- see `.video-card-queue` in media\_pages.css). Nothing while the
+video can't be queued yet.
+-}
+queueVideoButton : Maybe AudioPlayerPanel.VideoItem -> String -> Html Msg
+queueVideoButton maybeVideo title =
+    case maybeVideo of
+        Just video ->
+            button
+                [ class "video-card-queue"
+                , attribute "title" "Add To Queue"
+                , attribute "aria-label" ("Add " ++ title ++ " to queue")
+                , onClick (QueueVideo video title)
+                ]
+                [ AudioPlayerPanel.queueIcon, span [] [ text "Add To Queue" ] ]
+
+        Nothing ->
+            text ""
 
 
 audioRow : Shared.Model -> Int -> Bool -> String -> Maybe RellmServer -> Media -> Html Msg
@@ -1481,8 +1581,11 @@ fedDateLabel shared item =
 fedVideoCard : Shared.Model -> Bool -> FedMedia.Item -> Html Msg
 fedVideoCard shared showHost item =
     div [ class "media-card video-card" ]
-        [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
-            (MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media))
+        [ div [ class "video-card-thumb-wrap" ]
+            [ button [ class "media-card-thumb", onClick (FedMediaClicked item.host item.media.id), attribute "aria-label" ("Play " ++ fedTitle item) ]
+                (MediaRenderer.posterFrame "🎬" (MediaRenderer.videoPosterUrl Nothing Nothing item.media))
+            , queueVideoButton (fedQueueVideo shared item) (fedTitle item)
+            ]
         , div [ class "media-card-meta" ]
             [ button [ class "media-card-title", onClick (FedMediaClicked item.host item.media.id) ] [ text (fedTitle item) ]
             , div [ class "media-card-sub" ]

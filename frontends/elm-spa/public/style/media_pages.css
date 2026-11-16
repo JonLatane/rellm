@@ -565,3 +565,43 @@
 .federated-my-media-delete {
   color: var(--danger);
 }
+
+/* The Video page's cards: the thumbnail with an "Add To Queue" button over its bottom-right corner (`queueVideoButton`),
+   which appears when the card is hovered or focused -- always on touch screens, which have no hover. */
+.video-card-thumb-wrap {
+  position: relative;
+}
+
+.video-card-thumb-wrap .media-card-thumb {
+  width: 100%;
+}
+
+.video-card-queue {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.video-card:hover .video-card-queue,
+.video-card:focus-within .video-card-queue,
+.video-card-queue:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .video-card-queue {
+    opacity: 0.9;
+  }
+}

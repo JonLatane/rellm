@@ -1816,8 +1816,25 @@ sharedUpdate req msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
-        AudioPlayerPanelMsg subMsg ->
+        AudioPlayerPanelMsg rawSubMsg ->
             let
+                -- A video queued from a list (`EnqueueVideo`) doesn't know its page: it came from this one.
+                subMsg : AudioPlayerPanel.Msg
+                subMsg =
+                    case rawSubMsg of
+                        AudioPlayerPanel.EnqueueVideo placement video title ->
+                            AudioPlayerPanel.EnqueueVideo placement
+                                (if video.returnUrl == "" then
+                                    { video | returnUrl = Url.toString req.url }
+
+                                 else
+                                    video
+                                )
+                                title
+
+                        _ ->
+                            rawSubMsg
+
                 panels : Panels
                 panels =
                     model.panels

@@ -49,7 +49,28 @@ current model =
 suite : Test
 suite =
     describe "Shared.AudioPlayerPanel (the shared queue)"
-        [ describe "starting something puts the existing queue after it"
+        [ describe "queueing a video from a list"
+            [ test "joins the end of the queue while something plays, and doesn't start" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast (clip "https://x/v1.mp4") (Just "V1"))
+                        |> (\model -> ( queued model, current model ))
+                        |> Expect.equal ( [ "a", "b", "c", "https://x/v1.mp4" ], Just "a" )
+            , test "starts playing when nothing is loaded" <|
+                \_ ->
+                    AudioPlayerPanel.init
+                        |> play (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast (clip "https://x/v1.mp4") Nothing)
+                        |> current
+                        |> Expect.equal (Just "https://x/v1.mp4")
+            , test "queueing the same video twice keeps one entry" <|
+                \_ ->
+                    withTracks
+                        |> play (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast (clip "https://x/v1.mp4") Nothing)
+                        |> play (AudioPlayerPanel.EnqueueVideo AudioPlayerPanel.PlayLast (clip "https://x/v1.mp4") Nothing)
+                        |> queued
+                        |> Expect.equal [ "a", "b", "c", "https://x/v1.mp4" ]
+            ]
+        , describe "starting something puts the existing queue after it"
             [ test "a track chosen from a list plays, then the rest of that list, then what was already queued" <|
                 \_ ->
                     withTracks
