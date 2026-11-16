@@ -46,7 +46,7 @@ type EventLoadData = (
 #[derive(Clone, Debug, Default)]
 pub struct AuthorScope {
     pub excluded: Vec<i64>,
-    pub only: Option<Vec<i64>>,
+    pub only: Option<crate::logic::subdomains::AuthorSet>,
 }
 
 fn excluded_author_db_ids(request: &GetEventsRequest) -> Result<Vec<i64>, Status> {
@@ -68,11 +68,13 @@ macro_rules! exclude_authors {
             .or($column.ne_all($excluded.excluded.to_vec()))
             // A subdomain's feed only ever shows its `only` authors (see `AuthorScope`) -- `true` otherwise.
             .and(
-                $excluded
-                    .only
-                    .is_none()
-                    .into_sql::<diesel::sql_types::Bool>()
-                    .or($column.eq_any($excluded.only.clone().unwrap_or_default())),
+                // SQL *text*, not a bind parameter: with no subdomain scope (every normal request) it is the literal
+                // `TRUE`, which Postgres folds away at plan time, so ordinary feeds plan exactly as they did before.
+                // On a subdomain it is the owner-and-sharers condition; `only` is always about the *event's* author,
+                // `posts.user_id` (callers pass it only with `$column == posts::user_id`).
+                diesel::dsl::sql::<diesel::sql_types::Bool>(
+                    &$excluded.only.as_ref().map_or("TRUE".to_string(), |set| set.sql_condition("posts.user_id")),
+                ),
             )
     };
 }
@@ -89,7 +91,7 @@ pub fn get_events(
 pub fn get_events_scoped(
     request: GetEventsRequest,
     user: &Option<&models::User>,
-    only: &Option<Vec<i64>>,
+    only: &Option<crate::logic::subdomains::AuthorSet>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetEventsResponse, Status> {
     let excluded = AuthorScope { excluded: excluded_author_db_ids(&request)?, only: only.clone() };

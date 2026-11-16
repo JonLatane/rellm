@@ -683,9 +683,10 @@ class SubdomainSettings extends $pb.GeneratedMessage {
 
   /// The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
   /// Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
-  /// `custom_css` is only included in the subscription's own copy (`GetMarketSubscriptions`), never in
-  /// `GetServerConfiguration`'s, same as `ServerConfiguration.custom_css_configuration`. On
-  /// `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet.
+  /// `custom_css` is never carried in subscription listings (`GetMarketSubscriptions`, `User.market_subscriptions`) or in
+  /// `GetServerConfiguration`'s copy -- read the text with `GetCustomCSS` on the subdomain's host, same as
+  /// `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the
+  /// stored stylesheet.
   @$pb.TagNumber(6)
   CustomCSSConfiguration get customCssConfiguration => $_getN(5);
   @$pb.TagNumber(6)

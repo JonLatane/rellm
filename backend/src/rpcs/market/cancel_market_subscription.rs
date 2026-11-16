@@ -42,6 +42,8 @@ pub fn cancel_market_subscription(
     // canceled, whether still `SUBSCRIPTION_ACTIVE_BUT_CANCELED` or fully `SUBSCRIPTION_CANCELED`) is the
     // idempotent no-op success described above.
     models::cancel_market_subscription_and_release_slot(existing.id, existing.product_id, conn)?;
+    // A canceled subdomain stops resolving as soon as its paid period is over -- never serve a cached resolution.
+    crate::logic::subdomains::invalidate_cache();
 
     let mut by_buyer = build_subscriptions_for_buyers(&[existing.buyer_id], conn)?;
     by_buyer

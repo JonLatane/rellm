@@ -262,7 +262,10 @@ fn only_the_buyer_saves_and_a_missing_stylesheet_is_kept() {
             .unwrap();
         assert_eq!(settings.subdomain, "sd4owner");
         assert!(settings.share_content_from_friends);
-        assert_eq!(settings.custom_css_configuration.unwrap().custom_css.as_deref(), Some("body { color: red }"));
+        // The stylesheet text is stored but never carried back in subscription payloads (`GetCustomCSS` serves it).
+        assert_eq!(settings.custom_css_configuration.unwrap().custom_css, None);
+        let stored = scope(conn, "sd4owner.bullcity.test").unwrap();
+        assert_eq!(stored.custom_css_configuration().custom_css.as_deref(), Some("body { color: red }"));
 
         // An empty id means "my subdomain subscription"; no CSS in the request keeps the stored text.
         let mut keep = request(None);
@@ -490,4 +493,305 @@ fn a_private_profile_stays_private_on_the_subdomain() {
         assert_eq!(as_owner.server_info.unwrap().description.as_deref(), Some("secret bio"));
         Ok(())
     });
+}
+
+#[test]
+fn feed_links_use_the_subdomains_own_domain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd10_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd10owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd10owner.bullcity.test");
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(
+                FRONTEND_HOST.to_string(),
+                "sd10owner.bullcity.test",
+                &context
+            ),
+            "sd10owner.bullcity.test"
+        );
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), FRONTEND_HOST, &None),
+            FRONTEND_HOST
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn a_feed_domain_that_is_already_the_subdomain_is_not_prefixed_twice() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd11_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd11owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd11owner.bullcity.test");
+        // With `cdn_grpc` on, the configured domain is the request's own host -- already the subdomain.
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(
+                "sd11owner.bullcity.test".to_string(),
+                "sd11owner.bullcity.test",
+                &context
+            ),
+            "sd11owner.bullcity.test"
+        );
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(
+                "bullcity.test".to_string(),
+                "sd11owner.bullcity.test",
+                &context
+            ),
+            "sd11owner.bullcity.test"
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn a_refunded_checkout_is_recorded_so_a_redelivery_cannot_grant_it() {
+    use crate::schema::{market_payments, market_purchases};
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd12_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let holder = create_user(conn, "sd12holder");
+        let subscription = subscribe(conn, &admin, &holder, SubdomainSettings::default());
+        let product = models::get_market_product(subscription.product_id, conn)?;
+        let loser = create_user(conn, "SD12HOLDER");
+
+        // The buyer paid 250 (the price when they started checkout); the product has since been re-priced to 300.
+        crate::web::stripe_webhook::record_refunded_checkout(
+            conn, &loser, &product, "cs_test_1", Some("pi_1"), "re_1", 250, 978,
+        )?;
+
+        // The "already processed" lookup `process_checkout_session_completed` starts with finds it...
+        let purchase = market_purchases::table
+            .filter(market_purchases::stripe_checkout_session_id.eq("cs_test_1"))
+            .first::<models::MarketPurchase>(conn)
+            .expect("the refunded checkout is recorded");
+        assert_eq!(purchase.subscription_id, None, "no subscription was granted");
+        assert_eq!(purchase.buyer_id, loser.id);
+        // ...and it carries the payment and the refund of it.
+        let mut payments: Vec<(i32, Option<String>)> = market_payments::table
+            .filter(market_payments::purchase_id.eq(purchase.id))
+            .select((market_payments::amount, market_payments::stripe_refund_id))
+            .load(conn)
+            .unwrap();
+        payments.sort();
+        // The records carry what was actually charged, not the product's current price.
+        assert_eq!(payments, vec![(-250, Some("re_1".to_string())), (250, None)]);
+        Ok(())
+    });
+}
+
+#[test]
+fn an_owner_named_like_the_parents_first_label_still_gets_a_prefixed_feed_domain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd13_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "bullcity");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "bullcity.bullcity.test");
+        assert!(context.is_some());
+        // `cdn_grpc` off: the configured domain is the parent's, "bullcity.test" -- which *starts with* the owner's label.
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(
+                "bullcity.test".to_string(),
+                "bullcity.bullcity.test",
+                &context
+            ),
+            "bullcity.bullcity.test"
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn event_listings_use_the_same_author_subqueries() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd14_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd14owner");
+        let friend = create_user(conn, "sd14friend"); // follows the owner and is followed back
+        let follower = create_user(conn, "sd14follower"); // follows the owner only
+        let stranger = create_user(conn, "sd14stranger");
+        create_follow(conn, &friend, &owner);
+        create_follow(conn, &owner, &friend);
+        create_follow(conn, &follower, &owner);
+
+        let event_of = |conn: &mut crate::db_connection::PgPooledConnection, author: &models::User| {
+            let (_event, post) = create_event(
+                conn,
+                author,
+                EventOpts {
+                    visibility: Visibility::GlobalPublic,
+                    // An anonymous viewer needs the occasion itself to be globally public too.
+                    default_occasion: Some(OccasionOpts { visibility: Visibility::GlobalPublic, ..Default::default() }),
+                    ..Default::default()
+                },
+            );
+            post.id
+        };
+        let own = event_of(conn, &owner);
+        let friends = event_of(conn, &friend);
+        let followers = event_of(conn, &follower);
+        let _strangers = event_of(conn, &stranger);
+
+        let subscription = subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let host = "sd14owner.bullcity.test";
+        let event_post_ids = |conn: &mut crate::db_connection::PgPooledConnection| {
+            let context = scope(conn, host);
+            let mut ids: Vec<i64> = crate::rpcs::get_events_for(GetEventsRequest::default(), &None, &context, conn)
+                .expect("get_events_for failed")
+                .events
+                .into_iter()
+                .filter_map(|e| e.post.map(|p| p.id.to_db_id().unwrap()))
+                .collect();
+            ids.sort();
+            ids
+        };
+        let sorted_ids = |mut ids: Vec<i64>| {
+            ids.sort();
+            ids
+        };
+        // Sanity: unscoped, all four events are listed (so an empty scoped result is the filter's doing).
+        let unscoped = crate::rpcs::get_events_for(GetEventsRequest::default(), &None, &None, conn).unwrap().events.len();
+        assert_eq!(unscoped, 4, "unscoped listing");
+        assert_eq!(event_post_ids(conn), vec![own], "nothing shared: only the owner's events");
+
+        let set = |conn: &mut crate::db_connection::PgPooledConnection, followers_on, friends_on| {
+            diesel::update(crate::schema::market_subscriptions::table.find(subscription.id))
+                .set(crate::schema::market_subscriptions::details.eq(
+                    serde_json::to_value(SubdomainSubscriptionDetails {
+                        settings: Some(SubdomainSettings {
+                            subdomain_of: owner.id.to_proto_id(),
+                            subdomain: "sd14owner".to_string(),
+                            share_content_from_followers: followers_on,
+                            share_content_from_friends: friends_on,
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .unwrap(),
+                ))
+                .execute(conn)
+                .unwrap();
+        };
+        set(conn, true, false);
+        assert_eq!(event_post_ids(conn), sorted_ids(vec![own, friends, followers]));
+        set(conn, false, true);
+        assert_eq!(event_post_ids(conn), sorted_ids(vec![own, friends]));
+        Ok(())
+    });
+}
+
+#[test]
+fn only_accepted_follows_are_shared() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd15_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd15owner");
+        let accepted = create_user(conn, "sd15accepted");
+        let pending = create_user(conn, "sd15pending");
+        create_follow(conn, &accepted, &owner);
+        create_follow_with_moderation(conn, &pending, &owner, Moderation::Pending);
+        let accepted_post = public_post(conn, &accepted);
+        let _pending_post = public_post(conn, &pending);
+        let own = public_post(conn, &owner);
+        subscribe(conn, &admin, &owner, SubdomainSettings { share_content_from_followers: true, ..Default::default() });
+        let context = scope(conn, "sd15owner.bullcity.test");
+        assert_eq!(feed(conn, &context), sorted(vec![own, accepted_post]), "a pending follow shares nothing");
+        Ok(())
+    });
+}
+
+#[test]
+fn a_subdomains_sitemap_lists_its_own_pages_and_no_people_page() {
+    use crate::web::robots_sitemap::base_sitemap_urls;
+    let parent = ServerConfiguration::default();
+    let parent_urls = base_sitemap_urls("bullcity.test", &parent, false);
+    assert!(parent_urls.contains(&"https://bullcity.test/people".to_string()));
+
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd16_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd16owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd16owner.bullcity.test").unwrap();
+        let virtual_configuration = context.virtual_server_configuration(ServerConfiguration::default(), &None);
+        let urls = base_sitemap_urls("sd16owner.bullcity.test", &virtual_configuration, true);
+        assert!(urls.contains(&"https://sd16owner.bullcity.test/posts".to_string()));
+        assert!(urls.contains(&"https://sd16owner.bullcity.test/events".to_string()));
+        assert!(urls.contains(&"https://sd16owner.bullcity.test/about".to_string()));
+        // All six of the subdomain's navigation tabs, `media`/`video`/`audio` included.
+        for tab in ["events", "posts", "media", "video", "audio", "about"] {
+            assert!(
+                urls.contains(&format!("https://sd16owner.bullcity.test/{tab}")),
+                "the sitemap lists the {tab} tab"
+            );
+        }
+        assert!(!urls.iter().any(|u| u.ends_with("/people")), "a subdomain has no People page");
+        // Every URL is on the subdomain's own host, never the parent's.
+        assert!(urls.iter().all(|u| u.starts_with("https://sd16owner.bullcity.test/")));
+        Ok(())
+    });
+}
+
+#[test]
+fn a_subdomains_manifest_is_valid_json_named_after_its_owner() {
+    use crate::web::robots_sitemap::build_manifest;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd17_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        // A name with a backslash, a quote and a newline -- all of which the owner is free to choose.
+        let owner = create_user_with_profile(conn, "sd17owner", "Alex\\Jones \"AJ\"\nLine2", "bio");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd17owner.bullcity.test").unwrap();
+        // A subdomain's virtual configuration has no colors: the fallback must not panic (it used to, slicing a
+        // five-digit hex string) and must still give a six-digit colour.
+        let configuration = context.virtual_server_configuration(ServerConfiguration::default(), &None);
+        let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration)).expect("valid JSON");
+        assert_eq!(manifest["name"], "Alex\\Jones \"AJ\"\nLine2");
+        assert_eq!(manifest["short_name"], "sd17owner");
+        assert_eq!(manifest["background_color"], "#424242");
+        assert_eq!(manifest["theme_color"], "#424242CC");
+        Ok(())
+    });
+}
+
+#[test]
+fn the_manifest_uses_a_configured_primary_color_and_pads_small_ones() {
+    use crate::web::robots_sitemap::build_manifest;
+    let configuration = |primary: u32| ServerConfiguration {
+        server_info: Some(ServerInfo {
+            colors: Some(ServerColors { primary: Some(primary), ..Default::default() }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    // `ServerColors.primary` is ARGB: only the low 24 bits are the colour.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration(0xFF12_34AB))).unwrap();
+    assert_eq!(manifest["background_color"], "#1234ab");
+    // A small value (a dark colour) is zero-padded to six digits.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&configuration(0xFF00_00FF))).unwrap();
+    assert_eq!(manifest["background_color"], "#0000ff");
+    // No server info at all: Rellm's defaults.
+    let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&ServerConfiguration::default())).unwrap();
+    assert_eq!(manifest["name"], "Rellm");
 }

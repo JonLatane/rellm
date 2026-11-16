@@ -227,8 +227,11 @@ updateInner shared targetHost msg model =
                                 |> Task.map
                                     (Tuple.mapSecond
                                         (\subscription ->
+                                            -- Subscriptions never carry the stylesheet text (it is read through `GetCustomCSS`), so
+                                            -- the text that was just saved is the request's own.
                                             Market.subdomainSettingsOf subscription
                                                 |> Maybe.andThen .customCssConfiguration
+                                                |> Maybe.map (\saved -> { saved | customCss = request.customCss })
                                                 |> Maybe.withDefault request
                                         )
                                     )
