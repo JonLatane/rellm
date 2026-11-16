@@ -400,18 +400,22 @@ impl FakeEmbedder {
         }
     }
 
-    fn slot(word: &str) -> usize {
-        word.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % (embeddings::default_model().dimensions as usize)
+    fn slot(word: &str, dims: usize) -> usize {
+        word.bytes().fold(7usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize)) % dims
     }
 
     /// Concept words weigh a lot, filler (titles' other words, usernames, "Test content") barely --
     /// roughly how a real model attends to a document's topic.
     fn vector(text: &str) -> Vec<f32> {
-        let mut v = vec![0f32; embeddings::default_model().dimensions as usize];
+        Self::vector_dims(text, embeddings::default_model().dimensions as usize)
+    }
+
+    fn vector_dims(text: &str, dims: usize) -> Vec<f32> {
+        let mut v = vec![0f32; dims];
         for word in text.split(|c: char| !c.is_alphanumeric()).filter(|w| w.len() > 2) {
             match Self::concept(word) {
-                Some(concept) => v[Self::slot(concept)] += 3.0,
-                None => v[Self::slot(&word.to_lowercase())] += 0.1,
+                Some(concept) => v[Self::slot(concept, dims)] += 3.0,
+                None => v[Self::slot(&word.to_lowercase(), dims)] += 0.1,
             }
         }
         let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -892,6 +896,130 @@ fn the_model_service_embeds_for_a_remote_client_and_reports_its_model() {
     assert_eq!(remote.embed_documents(&many).unwrap().len(), 150);
 }
 
+/// A fake model whose identity can be changed while it is being served: stands in for the cluster's model service being
+/// restarted with a different model. Vectors are as long as the *current* model's.
+#[derive(Clone)]
+struct SwitchableFake(std::sync::Arc<std::sync::Mutex<&'static embeddings::ModelSpec>>);
+
+impl SwitchableFake {
+    fn new(spec: &'static embeddings::ModelSpec) -> Self {
+        SwitchableFake(std::sync::Arc::new(std::sync::Mutex::new(spec)))
+    }
+    fn switch_to(&self, spec: &'static embeddings::ModelSpec) {
+        *self.0.lock().unwrap() = spec;
+    }
+}
+
+impl TextEmbedder for SwitchableFake {
+    fn spec(&self) -> &'static embeddings::ModelSpec {
+        *self.0.lock().unwrap()
+    }
+    fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let dims = self.spec().dimensions as usize;
+        Ok(texts.iter().map(|t| FakeEmbedder::vector_dims(t, dims)).collect())
+    }
+    fn embed_query(&mut self, text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(FakeEmbedder::vector_dims(text, self.spec().dimensions as usize))
+    }
+}
+
+fn start_switchable_model_service(fake: SwitchableFake) -> String {
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(embeddings::model_service::serve(
+                format!("127.0.0.1:{}", port).parse().unwrap(),
+                Box::new(fake),
+                None,
+            ))
+            .unwrap();
+    });
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return format!("http://127.0.0.1:{}", port);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("the model service didn't start");
+}
+
+fn gemma() -> &'static embeddings::ModelSpec {
+    embeddings::model_spec("embeddinggemma-300m-int8").unwrap()
+}
+
+#[test]
+fn the_cluster_model_is_followed_when_the_service_switches_models() {
+    let e5 = embeddings::default_model();
+    let service = SwitchableFake::new(e5);
+    let url = start_switchable_model_service(service.clone());
+    // A tracker of its own (the process-wide one reads the environment), re-checking as often as it is asked.
+    let tracker: &'static embeddings::ClusterModelTracker = Box::leak(Box::new(
+        embeddings::ClusterModelTracker::new(std::time::Duration::from_secs(3600)).with_min_gap(std::time::Duration::ZERO),
+    ));
+    assert!(tracker.known().is_none());
+    assert_eq!(tracker.refresh_blocking(&url, None).map(|m| m.id), Some(e5.id));
+
+    // The operator restarts the service with another model. Until it is asked again the last known model stays in force
+    // (so nothing flips to "unknown" and reloads), then the new one is adopted.
+    service.switch_to(gemma());
+    assert_eq!(tracker.known().map(|m| m.id), Some(e5.id));
+    assert_eq!(tracker.refresh_blocking(&url, None).map(|m| m.id), Some(gemma().id));
+
+    // A service that can't be reached doesn't make it forget.
+    assert_eq!(tracker.refresh_blocking("http://127.0.0.1:9", None).map(|m| m.id), Some(gemma().id));
+    assert_eq!(tracker.known().map(|m| m.id), Some(gemma().id));
+}
+
+#[test]
+fn an_invalidated_cluster_model_is_re_checked_on_the_next_ask_without_blocking_it() {
+    let service = SwitchableFake::new(embeddings::default_model());
+    let url = start_switchable_model_service(service.clone());
+    let tracker: &'static embeddings::ClusterModelTracker = Box::leak(Box::new(
+        embeddings::ClusterModelTracker::new(std::time::Duration::from_secs(3600)).with_min_gap(std::time::Duration::ZERO),
+    ));
+    tracker.refresh_blocking(&url, None);
+    service.switch_to(gemma());
+
+    // Fresh answer, long refresh interval, nothing invalidated: no re-check, so it still says the old model.
+    assert_eq!(tracker.current(&url, None).map(|m| m.id), Some(embeddings::default_model().id));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(tracker.known().map(|m| m.id), Some(embeddings::default_model().id), "no needless asking");
+
+    // A refusal invalidates it: the next ask returns immediately with the old answer and re-checks in the background.
+    tracker.invalidate();
+    let answered_with = tracker.current(&url, None).map(|m| m.id);
+    assert_eq!(answered_with, Some(embeddings::default_model().id), "never blocks on the re-check");
+    let started = std::time::Instant::now();
+    while tracker.known().map(|m| m.id) != Some(gemma().id) {
+        assert!(started.elapsed().as_secs() < 10, "the re-check should have adopted the new model");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn a_client_for_the_old_model_is_refused_cleanly_and_a_new_one_works_after_the_service_switches() {
+    let e5 = embeddings::default_model();
+    let service = SwitchableFake::new(e5);
+    let url = start_switchable_model_service(service.clone());
+    let mut old_client = embeddings::RemoteEmbedder::connect(&url, None).unwrap();
+    assert_eq!(old_client.embed_query("canine").unwrap().len(), e5.dimensions as usize);
+
+    service.switch_to(gemma());
+    // The old client still believes it talks to e5: the service refuses rather than return vectors from the wrong
+    // model (which would be silently incomparable with everything stored).
+    let refused = old_client.embed_query("canine").unwrap_err();
+    assert!(format!("{:#}", refused).contains("model_mismatch"), "{:#}", refused);
+    assert!(old_client.embed_documents(&["a puppy".to_string()]).is_err());
+
+    // A client connected afterwards learns the new model and its vector size.
+    let mut new_client = embeddings::RemoteEmbedder::connect(&url, None).unwrap();
+    assert_eq!(new_client.spec().id, gemma().id);
+    assert_eq!(new_client.embed_query("canine").unwrap().len(), gemma().dimensions as usize);
+}
+
 #[test]
 fn a_required_model_service_means_servers_and_jobs_never_load_a_model_themselves() {
     // Required but not configured: refused outright, without ever touching the model (so no download, no RAM).
@@ -1353,6 +1481,52 @@ mod vector_service_tests {
             let status = indexes.status();
             let post_status = status.kinds.iter().find(|k| k.kind == "post").unwrap();
             assert!(post_status.ready && post_status.vectors >= 3 && post_status.memory_bytes > 0, "{:?}", post_status);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn the_index_follows_the_cluster_to_a_new_model_without_ever_answering_for_the_wrong_one() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+            let e5 = embeddings::default_model();
+            let fake = SwitchableFake::new(e5);
+            let author = create_user(conn, "vector_switch_author");
+            let dog = title_post(conn, &author, "Adopting a puppy");
+
+            // Embedded and indexed under the first model.
+            let mut ctx = SyncContext::unrestricted();
+            ctx.spec = e5;
+            ctx.embedder = Some(Box::new(fake.clone()));
+            embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+            let indexes = VectorIndexes::new(e5);
+            indexes.sync_all(conn);
+            let query_e5 = FakeEmbedder::vector_dims("canine puppy", e5.dimensions as usize);
+            let found = indexes.search(EmbeddingKind::Post, e5.id, &query_e5, 10, 0.5).expect("ready");
+            assert_eq!(found.first().map(|m| m.0), Some(dog.id));
+
+            // The cluster moves to another model (different vector size). The index follows: the old model's vectors can
+            // no longer be asked for, and nothing answers until the index has been rebuilt for the new model.
+            indexes.switch_model(gemma());
+            assert_eq!(indexes.spec().id, gemma().id);
+            assert_eq!(indexes.search(EmbeddingKind::Post, e5.id, &query_e5, 10, 0.5), None, "old model refused");
+            let query_gemma = FakeEmbedder::vector_dims("canine puppy", gemma().dimensions as usize);
+            assert_eq!(indexes.search(EmbeddingKind::Post, gemma().id, &query_gemma, 10, 0.5), None, "not built yet");
+            assert!(!indexes.status().kinds.iter().any(|k| k.ready), "every kind starts over");
+
+            // Until the embedding job has redone the rows, the new index is built but holds only what the new model embedded.
+            indexes.sync_all(conn);
+            assert_eq!(indexes.search(EmbeddingKind::Post, gemma().id, &query_gemma, 10, 0.5), Some(vec![]));
+
+            // The job re-embeds with the new model (rows from the old one count as missing); the index picks them up.
+            fake.switch_to(gemma());
+            let mut ctx = SyncContext::unrestricted();
+            ctx.spec = gemma();
+            ctx.embedder = Some(Box::new(fake.clone()));
+            embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+            indexes.sync_all(conn);
+            let found = indexes.search(EmbeddingKind::Post, gemma().id, &query_gemma, 10, 0.5).expect("ready");
+            assert_eq!(found.first().map(|m| m.0), Some(dog.id), "{:?}", found);
             Ok(())
         });
     }

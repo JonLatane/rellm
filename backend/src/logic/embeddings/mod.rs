@@ -39,7 +39,8 @@ pub mod vector_service;
 pub use embedder::{load_embedder, load_embedder_local, load_embedder_with, BoxedEmbedder, LocalEmbedder, TextEmbedder};
 pub use model_service::{
     cluster_model, cluster_model_blocking, embedding_service_config, embedding_service_configured,
-    embedding_service_required, RemoteEmbedder,
+    embedding_service_required, invalidate_cluster_model, refresh_cluster_model_blocking, ClusterModelTracker,
+    RemoteEmbedder,
 };
 pub use index::{install_semantic_index, reset_semantic_index, semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
 pub use vector_client::{vector_service_config, RemoteIndex};

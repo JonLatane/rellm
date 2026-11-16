@@ -21,6 +21,9 @@ async fn main() {
     init_crypto();
     init_bin_logging();
 
+    // An explicit model pins the index to it; otherwise it indexes -- and keeps following -- whatever the cluster's model
+    // service runs, so the operator can change the cluster's model without touching this service.
+    let pinned = std::env::var("RELLM_VECTOR_SERVICE_MODEL").ok().filter(|id| !id.is_empty()).is_some();
     let spec = match std::env::var("RELLM_VECTOR_SERVICE_MODEL") {
         Ok(id) if !id.is_empty() => model_spec(&id).unwrap_or_else(|| panic!("RELLM_VECTOR_SERVICE_MODEL `{}` isn't a known model", id)),
         _ if embedding_service_configured() => loop {
@@ -44,6 +47,7 @@ async fn main() {
         panic!("Set RELLM_VECTOR_SERVICE_SECRET (or RELLM_VECTOR_SERVICE_INSECURE=1 for a trusted network)");
     }
 
+    let follow_cluster_model = !pinned && embedding_service_configured();
     let pool = db_connection::establish_job_pool();
     let conn = pool.get().expect("Failed to get DB connection");
     let indexes = VectorIndexes::new(spec);
@@ -52,7 +56,7 @@ async fn main() {
         let indexes = indexes.clone();
         std::thread::Builder::new()
             .name("vector-indexer".to_string())
-            .spawn(move || run_indexer(indexes, conn))
+            .spawn(move || run_indexer(indexes, conn, follow_cluster_model))
             .expect("failed to start the indexer thread");
     }
     serve(addr, indexes, secret).await.expect("vector search service failed");

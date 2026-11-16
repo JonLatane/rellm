@@ -55,6 +55,25 @@ With the model service configured the model is **chosen by the cluster** (Settin
 `generate_embeddings` job loads no model and takes no per-namespace lock, and servers don't load one either. Changing the
 cluster's model (`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's content in the background.
 
+## Changing the cluster's model
+
+The model service hosts one model, chosen by `RELLM_EMBEDDING_SERVICE_MODEL`. To change it, restart that Deployment with a
+different value. Nothing else needs to be touched or restarted; each part follows the change on its own:
+
+- **Servers** re-check which model the service runs every minute, and immediately after the service refuses a call for a
+  model it no longer runs. Until they notice, searches fall back (full-text, or the Postgres scan) rather than compare
+  vectors from two different models; once they do, they switch their query embedder to the new model.
+- **`generate_embeddings`** picks the new model up on its next run (it starts a fresh process each time) and re-embeds every
+  row the old model made, newest first, over several runs. A run that straddles the switch is refused by the service,
+  logs the error, and carries on next time; it can never store a vector from the wrong model.
+- **`vector_search_service`** (unless pinned with `RELLM_VECTOR_SERVICE_MODEL`) checks each cycle, drops its indexes
+  (freeing the memory) and rebuilds them from the rows the new model has embedded so far. Until a kind is rebuilt its
+  searches say "not ready" and servers scan Postgres instead.
+
+While the backfill runs, semantic matches come only from rows the new model has embedded (full-text search is
+unaffected), so quality dips and then recovers as the job catches up. A different vector size (e.g. 384 to 768
+dimensions) needs no migration: vectors are stored per row with the model that made them.
+
 ## Trade-offs
 
 - Private post/profile text is sent to the shared model service. It stores and logs nothing, but only point namespaces

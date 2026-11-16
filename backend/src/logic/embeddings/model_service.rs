@@ -139,9 +139,19 @@ impl RemoteEmbedder {
         self.jobs
             .send(Job::Embed(purpose, texts, reply_tx))
             .map_err(|_| anyhow::anyhow!("the embedding client thread is gone"))?;
-        reply_rx
+        let result = reply_rx
             .recv_timeout(CALL_TIMEOUT + Duration::from_secs(5))
-            .map_err(|_| anyhow::anyhow!("the model service didn't answer in time"))?
+            .map_err(|_| anyhow::anyhow!("the model service didn't answer in time"))?;
+        // The service runs a different model than the one this embedder was told about (it was restarted with another
+        // one): it refuses rather than hand back vectors from the wrong model. Re-check what it runs, so everything
+        // following `cluster_model()` -- including a fresh embedder for this process -- moves to the new model.
+        if let Err(e) = &result {
+            if format!("{:#}", e).contains("model_mismatch") {
+                log::warn!("The embedding model service no longer runs {}; re-checking which model it runs.", self.spec.id);
+                invalidate_cluster_model();
+            }
+        }
+        result
     }
 }
 
@@ -170,58 +180,131 @@ impl TextEmbedder for RemoteEmbedder {
     }
 }
 
-// The model the cluster's service runs, once known. `None` until a probe succeeds (service not configured,
-// unreachable, or not yet asked).
-static CLUSTER_MODEL: Mutex<Option<&'static ModelSpec>> = Mutex::new(None);
-static LAST_PROBE: Mutex<Option<Instant>> = Mutex::new(None);
-const PROBE_EVERY: Duration = Duration::from_secs(30);
+/// What this process believes the cluster-shared model service runs, and when it last asked. The service hosts ONE
+/// model, but an operator can restart it with a different one at any time, so the answer is never final:
+///   * it is re-checked every `refresh_every` (the new model is adopted the next time anything asks);
+///   * a `model_mismatch` refusal (we sent the old model id) invalidates it, so the very next ask re-checks at once;
+///   * until a re-check answers, the last known model stays in force -- a service that is briefly down, or a check
+///     that is still in flight, never makes the answer flip to "unknown" and reload everything.
+/// Everything that depends on the model (the server's query embedder, the vector service's index) follows
+/// `current()` and rebuilds itself when it changes; rows embedded by the old model are simply re-embedded by the job.
+pub struct ClusterModelTracker {
+    known: Mutex<Option<&'static ModelSpec>>,
+    last_asked: Mutex<Option<Instant>>,
+    refresh_every: Duration,
+    min_gap: Duration,
+    invalidated: std::sync::atomic::AtomicBool,
+    asking: std::sync::atomic::AtomicBool,
+}
 
-/// The model the cluster-shared service runs, when one is configured and has answered. Never blocks: if the answer
-/// isn't known yet it starts a background probe (at most one every 30 seconds) and returns `None` for now -- so a
-/// service that is down costs a request nothing, and searches are full-text until it has been reached once. Once
-/// known, the answer is remembered for the life of the process.
+/// Even when invalidated, don't ask the service more often than this.
+const MIN_GAP_BETWEEN_ASKS: Duration = Duration::from_secs(5);
+
+impl ClusterModelTracker {
+    pub const fn new(refresh_every: Duration) -> Self {
+        ClusterModelTracker {
+            known: Mutex::new(None),
+            last_asked: Mutex::new(None),
+            refresh_every,
+            min_gap: MIN_GAP_BETWEEN_ASKS,
+            invalidated: std::sync::atomic::AtomicBool::new(false),
+            asking: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// Overrides the minimum gap between asks (tests use none).
+    pub const fn with_min_gap(mut self, min_gap: Duration) -> Self {
+        self.min_gap = min_gap;
+        self
+    }
+
+    /// The model last learned from the service, if any. Never asks.
+    pub fn known(&self) -> Option<&'static ModelSpec> {
+        *self.known.lock().unwrap()
+    }
+
+    /// Forget that the answer is current: the next `current` asks again right away (subject to the minimum gap).
+    pub fn invalidate(&self) {
+        self.invalidated.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn due(&self) -> bool {
+        let asked = *self.last_asked.lock().unwrap();
+        let since = asked.map(|at| at.elapsed());
+        if since.map_or(false, |d| d < self.min_gap) {
+            return false;
+        }
+        self.known().is_none()
+            || self.invalidated.load(std::sync::atomic::Ordering::SeqCst)
+            || since.map_or(true, |d| d >= self.refresh_every)
+    }
+
+    /// The model to use now: the last known one. Never blocks -- if a re-check is due it starts one on a background
+    /// thread (at most one at a time) and the answer it finds is adopted by the next call.
+    pub fn current(&'static self, url: &str, secret: Option<String>) -> Option<&'static ModelSpec> {
+        if self.due() && !self.asking.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let url = url.to_string();
+            let spawned = std::thread::Builder::new().name("embedding-service-probe".to_string()).spawn(move || {
+                self.refresh_blocking(&url, secret);
+                self.asking.store(false, std::sync::atomic::Ordering::SeqCst);
+            });
+            if spawned.is_err() {
+                self.asking.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        self.known()
+    }
+
+    /// Asks the service now (a few seconds at most) and records its answer. If it can't be reached the last known
+    /// model is kept. Returns what is known afterwards.
+    pub fn refresh_blocking(&self, url: &str, secret: Option<String>) -> Option<&'static ModelSpec> {
+        *self.last_asked.lock().unwrap() = Some(Instant::now());
+        match RemoteEmbedder::connect(url, secret) {
+            Ok(embedder) => {
+                let mut known = self.known.lock().unwrap();
+                match *known {
+                    Some(old) if old.id != embedder.spec.id => log::warn!(
+                        "The cluster's embedding model service now runs {} (was {}); following it.",
+                        embedder.spec.id,
+                        old.id
+                    ),
+                    _ => {}
+                }
+                *known = Some(embedder.spec);
+                self.invalidated.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+            Err(e) => log::warn!("The embedding model service isn't available: {:?}", e),
+        }
+        self.known()
+    }
+}
+
+static CLUSTER: ClusterModelTracker = ClusterModelTracker::new(Duration::from_secs(60));
+
+/// The model the cluster-shared service runs, when one is configured and has answered: the last known one, re-checked
+/// in the background (see `ClusterModelTracker`). Never blocks; `None` until the service has answered once.
 pub fn cluster_model() -> Option<&'static ModelSpec> {
     let (url, secret) = embedding_service_config()?;
-    if let Some(spec) = *CLUSTER_MODEL.lock().unwrap() {
-        return Some(spec);
-    }
-    {
-        let mut last = LAST_PROBE.lock().unwrap();
-        if last.map_or(false, |at| at.elapsed() < PROBE_EVERY) {
-            return None;
-        }
-        *last = Some(Instant::now());
-    }
-    std::thread::Builder::new()
-        .name("embedding-service-probe".to_string())
-        .spawn(move || {
-            probe(&url, secret);
-        })
-        .ok();
-    None
+    CLUSTER.current(&url, secret)
 }
 
-/// Like `cluster_model` but waits for the answer (a few seconds at most) and asks every time it isn't known: for
-/// callers that can't proceed without it (the vector service at startup, tests).
+/// Like `cluster_model` but, until a model is known, waits for the service to answer (a few seconds at most): for
+/// callers that can't proceed without one (the vector service at startup, tests).
 pub fn cluster_model_blocking() -> Option<&'static ModelSpec> {
     let (url, secret) = embedding_service_config()?;
-    if let Some(spec) = *CLUSTER_MODEL.lock().unwrap() {
-        return Some(spec);
-    }
-    probe(&url, secret)
+    CLUSTER.known().or_else(|| CLUSTER.refresh_blocking(&url, secret))
 }
 
-fn probe(url: &str, secret: Option<String>) -> Option<&'static ModelSpec> {
-    match RemoteEmbedder::connect(url, secret) {
-        Ok(embedder) => {
-            *CLUSTER_MODEL.lock().unwrap() = Some(embedder.spec);
-            Some(embedder.spec)
-        }
-        Err(e) => {
-            log::warn!("The embedding model service isn't available: {:?}", e);
-            None
-        }
-    }
+/// Asks the service right now and returns what it runs (the last known model if it can't be reached): for loops that
+/// must notice a model change promptly (the vector service's indexer).
+pub fn refresh_cluster_model_blocking() -> Option<&'static ModelSpec> {
+    let (url, secret) = embedding_service_config()?;
+    CLUSTER.refresh_blocking(&url, secret)
+}
+
+/// The service refused us for sending a model id it no longer runs: re-check it at the next opportunity.
+pub fn invalidate_cluster_model() {
+    CLUSTER.invalidate();
 }
 
 // ---------------------------------------------------------------------------------------------

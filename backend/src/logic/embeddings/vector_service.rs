@@ -43,6 +43,9 @@ const MAX_LIMIT: usize = 5_000;
 
 struct KindState {
     index: Option<Index>,
+    /// The model this index was built for. An index answers only for that model and is rebuilt when the model changes,
+    /// so a stale one can never serve vectors of the wrong model (or the wrong size).
+    model: &'static str,
     ready: bool,
     /// `(embedded_at, id)` of the last row applied.
     position: (SystemTime, i64),
@@ -52,13 +55,15 @@ struct KindState {
 
 impl KindState {
     fn empty() -> Self {
-        KindState { index: None, ready: false, position: (SystemTime::UNIX_EPOCH, 0), vectors: 0, built_at: Instant::now() }
+        KindState { index: None, model: "", ready: false, position: (SystemTime::UNIX_EPOCH, 0), vectors: 0, built_at: Instant::now() }
     }
 }
 
 /// The indexes of one namespace: one USearch index per `EmbeddingKind`, all for one model.
 pub struct VectorIndexes {
-    spec: &'static ModelSpec,
+    /// The model being indexed. Switchable: when the cluster's model service moves to another model, `switch_model`
+    /// points this at it and every kind is rebuilt from the rows that model has embedded so far.
+    spec: RwLock<&'static ModelSpec>,
     kinds: Vec<(EmbeddingKind, RwLock<KindState>)>,
 }
 
@@ -75,18 +80,35 @@ struct Row {
 impl VectorIndexes {
     pub fn new(spec: &'static ModelSpec) -> Arc<VectorIndexes> {
         Arc::new(VectorIndexes {
-            spec,
+            spec: RwLock::new(spec),
             kinds: EmbeddingKind::ALL.iter().map(|k| (*k, RwLock::new(KindState::empty()))).collect(),
         })
     }
 
     pub fn spec(&self) -> &'static ModelSpec {
-        self.spec
+        *self.spec.read().unwrap()
     }
 
-    fn new_index(&self) -> anyhow::Result<Index> {
+    /// Follows the cluster to a different model: drops every index (freeing their memory; until a kind is rebuilt its
+    /// searches answer "not ready", so clients scan Postgres meanwhile) and indexes the new model's rows from now on.
+    /// Rows the new model hasn't embedded yet simply aren't there until the embedding job gets to them.
+    pub fn switch_model(&self, new: &'static ModelSpec) {
+        {
+            let mut spec = self.spec.write().unwrap();
+            if spec.id == new.id {
+                return;
+            }
+            log::warn!("Switching the vector index from model {} to {}; rebuilding.", spec.id, new.id);
+            *spec = new;
+        }
+        for (_, lock) in &self.kinds {
+            *lock.write().unwrap() = KindState::empty();
+        }
+    }
+
+    fn new_index(&self, spec: &'static ModelSpec) -> anyhow::Result<Index> {
         let options = IndexOptions {
-            dimensions: self.spec.dimensions as usize,
+            dimensions: spec.dimensions as usize,
             metric: MetricKind::Cos,
             // int8 quarters the memory of f32 for a small, measured-by-the-tests loss in accuracy.
             quantization: ScalarKind::I8,
@@ -98,7 +120,7 @@ impl VectorIndexes {
         Ok(new_index(&options)?)
     }
 
-    fn fetch(&self, conn: &mut PgPooledConnection, kind: EmbeddingKind, after: (SystemTime, i64)) -> anyhow::Result<Vec<Row>> {
+    fn fetch(&self, conn: &mut PgPooledConnection, kind: EmbeddingKind, spec: &'static ModelSpec, after: (SystemTime, i64)) -> anyhow::Result<Vec<Row>> {
         Ok(sql_query(format!(
             "SELECT {id} AS id, embedding, embedded_at FROM {table} \
              WHERE model = $1 AND embedding IS NOT NULL AND (embedded_at, {id}) > ($2, $3) \
@@ -106,15 +128,15 @@ impl VectorIndexes {
             id = kind.embeddings_id_column(),
             table = kind.embeddings_table(),
         ))
-        .bind::<Text, _>(self.spec.id)
+        .bind::<Text, _>(spec.id)
         .bind::<Timestamp, _>(after.0)
         .bind::<BigInt, _>(after.1)
         .bind::<BigInt, _>(PAGE)
         .load::<Row>(conn)?)
     }
 
-    fn add_rows(&self, index: &Index, rows: &[Row]) -> anyhow::Result<u64> {
-        let dims = self.spec.dimensions as usize;
+    fn add_rows(&self, spec: &'static ModelSpec, index: &Index, rows: &[Row]) -> anyhow::Result<u64> {
+        let dims = spec.dimensions as usize;
         let needed = index.size() + rows.len();
         if needed > index.capacity() {
             index.reserve(needed.max(index.capacity() * 2).max(1024))?;
@@ -137,40 +159,45 @@ impl VectorIndexes {
 
     /// One pass over `kind`: a full (re)build if it has none yet or is due, otherwise catch up with new rows.
     pub fn sync_kind(&self, conn: &mut PgPooledConnection, kind: EmbeddingKind) -> anyhow::Result<()> {
+        let spec = self.spec(); // one model for this whole pass, even if the cluster switches meanwhile
         let lock = &self.kinds.iter().find(|(k, _)| *k == kind).expect("every kind has a slot").1;
         let rebuild = {
             let state = lock.read().unwrap();
-            !state.ready || state.built_at.elapsed() >= REBUILD_EVERY
+            !state.ready || state.model != spec.id || state.built_at.elapsed() >= REBUILD_EVERY
         };
         if rebuild {
             // Build off to the side, then swap in: searches keep using the old index meanwhile.
-            let index = self.new_index()?;
+            let index = self.new_index(spec)?;
             let mut position = (SystemTime::UNIX_EPOCH, 0);
             let mut vectors = 0;
             loop {
-                let rows = self.fetch(conn, kind, position)?;
+                let rows = self.fetch(conn, kind, spec, position)?;
                 let Some(last) = rows.last() else { break };
                 position = (last.embedded_at, last.id);
-                vectors += self.add_rows(&index, &rows)?;
+                vectors += self.add_rows(spec, &index, &rows)?;
                 if (rows.len() as i64) < PAGE {
                     break;
                 }
             }
             let size = index.size() as u64;
-            log::info!("Built the {} index: {} vectors ({} MB).", kind.name(), size, index.memory_usage() / (1024 * 1024));
-            *lock.write().unwrap() = KindState { index: Some(index), ready: true, position, vectors: size.max(vectors.min(size)), built_at: Instant::now() };
+            log::info!("Built the {} index for {}: {} vectors ({} MB).", kind.name(), spec.id, size, index.memory_usage() / (1024 * 1024));
+            // If the model switched while this was building, the next pass sees the mismatch and rebuilds again.
+            *lock.write().unwrap() = KindState { index: Some(index), model: spec.id, ready: true, position, vectors: size.max(vectors.min(size)), built_at: Instant::now() };
             return Ok(());
         }
         // The first read looks back by `OVERLAP`; later pages of this pass continue from the exact position.
         let start = lock.read().unwrap().position;
         let mut after = (start.0.checked_sub(OVERLAP).unwrap_or(SystemTime::UNIX_EPOCH), 0);
         loop {
-            let rows = self.fetch(conn, kind, after)?;
+            let rows = self.fetch(conn, kind, spec, after)?;
             let Some(last) = rows.last() else { break };
             after = (last.embedded_at, last.id);
             let mut state = lock.write().unwrap();
+            if state.model != spec.id {
+                break; // switched models under us: the next pass rebuilds
+            }
             let index = state.index.as_ref().expect("a ready state has an index");
-            self.add_rows(index, &rows)?;
+            self.add_rows(spec, index, &rows)?;
             let size = index.size() as u64;
             state.vectors = size;
             if after > state.position {
@@ -195,11 +222,12 @@ impl VectorIndexes {
     /// Nearest `limit` ids to `vector` at least `min_similarity` cosine-similar. `None` if this kind isn't built
     /// yet, the model isn't the one indexed, or the vector is the wrong size.
     pub fn search(&self, kind: EmbeddingKind, model_id: &str, vector: &[f32], limit: usize, min_similarity: f32) -> Option<Vec<(i64, f32)>> {
-        if model_id != self.spec.id || vector.len() != self.spec.dimensions as usize {
+        let spec = self.spec();
+        if model_id != spec.id || vector.len() != spec.dimensions as usize {
             return None;
         }
         let state = self.kinds.iter().find(|(k, _)| *k == kind)?.1.read().unwrap();
-        if !state.ready {
+        if !state.ready || state.model != spec.id {
             return None;
         }
         let matches = state.index.as_ref()?.search(vector, limit.clamp(1, MAX_LIMIT)).ok()?;
@@ -216,7 +244,7 @@ impl VectorIndexes {
 
     pub fn status(&self) -> StatusResponse {
         StatusResponse {
-            model_id: self.spec.id.to_string(),
+            model_id: self.spec().id.to_string(),
             kinds: self
                 .kinds
                 .iter()
@@ -235,8 +263,17 @@ impl VectorIndexes {
 }
 
 /// Keeps `indexes` in step with Postgres, forever: `sync_all` every `POLL_EVERY`. Run on its own thread.
-pub fn run_indexer(indexes: Arc<VectorIndexes>, mut conn: PgPooledConnection) {
+///
+/// With `follow_cluster_model` it also asks the cluster's model service which model it runs each cycle and switches the
+/// index to it when that changes (see `VectorIndexes::switch_model`); a service that can't be reached just means "keep
+/// the model we have".
+pub fn run_indexer(indexes: Arc<VectorIndexes>, mut conn: PgPooledConnection, follow_cluster_model: bool) {
     loop {
+        if follow_cluster_model {
+            if let Some(model) = super::refresh_cluster_model_blocking() {
+                indexes.switch_model(model);
+            }
+        }
         indexes.sync_all(&mut conn);
         std::thread::sleep(POLL_EVERY);
     }
