@@ -10,7 +10,7 @@ The image holds two binaries, run as two services:
 
 | service | binary | scope | what it holds | RAM |
 |---|---|---|---|---|
-| `rellm-central-embedding` | `/opt/embedding_service` | one per **cluster** — **required** for semantic search | ONE embedding model, shared by every namespace | the model (~1GB for the default `multilingual-e5-small`) |
+| `rellm-central-embedding` | `/opt/embedding_service` | one per **cluster** — **required** for semantic search | ONE embedding model, shared by every namespace | the model (~330MB for the default `embeddinggemma-300m-int8-384`) |
 | `rellm-vector` | `/opt/vector_search_service` | one per **namespace** — **optional** | a USearch index of that namespace's embeddings, shared by its servers | ~400 bytes per row |
 
 Both are single-pod, cluster-internal (ClusterIP) and authenticated with a shared secret. The model service is needed for

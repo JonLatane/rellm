@@ -1,9 +1,9 @@
 # The cluster-shared embedding model service (backend `embedding_service`): ONE pod per cluster that holds ONE text
 # embedding model in memory and embeds text for every namespace's Rellm servers and `generate_embeddings` jobs,
-# so the model's RAM (~1GB for the default multilingual-e5-small) is paid once instead of once per namespace
+# so the model's RAM (~330MB for the default embeddinggemma-300m-int8-384) is paid once instead of once per namespace
 # server/job. Opt-in: see ../../k8s/SEMANTIC_SEARCH.md for how a namespace starts using it.
 #
-# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default multilingual-e5-small); every namespace that
+# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default embeddinggemma-300m-int8-384); every namespace that
 #   uses it uses that model, whatever model its admin picked.
 # - It stores nothing and never logs text. Callers authenticate with the shared secret in the
 #   rellm-central-embedding-credentials Secret (key `secret`), sent as `x-rellm-internal-secret`.
@@ -26,7 +26,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      # Holds the downloaded model so a restart doesn't download it again (~0.5GB for e5-small).
+      # Holds the downloaded model so a restart doesn't download it again (~0.3GB).
       storage: 2Gi
 ---
 apiVersion: v1
@@ -73,7 +73,7 @@ spec:
           command: ["/opt/embedding_service"]
           env:
             - name: RELLM_EMBEDDING_SERVICE_MODEL
-              value: multilingual-e5-small
+              value: embeddinggemma-300m-int8-384
             - name: RELLM_EMBEDDING_SERVICE_ADDR
               value: 0.0.0.0:8090
             - name: RELLM_EMBEDDING_THREADS
@@ -91,14 +91,14 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /models
-          # multilingual-e5-small measured ~980MB resident (see the PR / compare_models); the first start also
-          # downloads ~465MB, so give the readiness probe time.
+          # embeddinggemma-300m-int8-384 measured ~330MB resident (see the PR / compare_models; multilingual-e5-small
+          # needs ~980MB); the first start also downloads ~295MB, so give the readiness probe time.
           resources:
             requests:
-              memory: 1200Mi
+              memory: 600Mi
               cpu: 500m
             limits:
-              memory: 1600Mi
+              memory: 900Mi
           readinessProbe:
             tcpSocket:
               port: 8090

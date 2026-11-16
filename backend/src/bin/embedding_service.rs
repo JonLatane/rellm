@@ -4,7 +4,7 @@
 // see `logic::embeddings::model_service` and `internal_protos/rellm_internal.proto`. Required: without it there are no
 // embeddings and search is full-text only.
 //
-//   RELLM_EMBEDDING_SERVICE_MODEL   model id (default: the registry default, multilingual-e5-small)
+//   RELLM_EMBEDDING_SERVICE_MODEL   model id (default: the registry default, embeddinggemma-300m-int8-384)
 //   RELLM_EMBEDDING_SERVICE_ADDR    listen address (default 0.0.0.0:8090)
 //   RELLM_EMBEDDING_SERVICE_SECRET  callers must send it (required unless RELLM_EMBEDDING_SERVICE_INSECURE=1)
 //   RELLM_EMBEDDING_THREADS         CPU threads for the model (default 2)

@@ -90,7 +90,7 @@ pub static MODELS: [ModelSpec; 8] = [
         multilingual: true,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",
-        min_similarity: 0.23,
+        min_similarity: 0.29,
     },
     ModelSpec {
         id: "multilingual-e5-small",
