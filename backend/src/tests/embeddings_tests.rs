@@ -1190,8 +1190,8 @@ mod with_model {
     #[ignore = "downloads every embedding model (~650MB) and takes a few minutes"]
     fn compare_models() {
         let documents: Vec<String> = CORPUS.iter().map(|d| d.to_string()).collect();
-        println!("\n| model | download | RAM after load | ms/doc | R@1 | R@3 | MRR | en R@3 | non-en R@3 | cross R@3 | best min_similarity (kept / rejected) |");
-        println!("|---|---|---|---|---|---|---|---|---|---|---|");
+        println!("\n| model | download | RAM after load | ms/doc | R@1 | R@3 | MRR | en R@3 | non-en R@3 | cross R@3 | best min_similarity (kept / rejected) | worst right answer .. best no-answer |");
+        println!("|---|---|---|---|---|---|---|---|---|---|---|---|");
         // COMPARE_MODEL=<id> runs just that model -- one process per model gives honest RAM numbers.
         let only = std::env::var("COMPARE_MODEL").ok();
         for spec in embeddings::MODELS.iter().filter(|m| only.as_deref().map_or(true, |o| o == m.id)) {
@@ -1241,8 +1241,13 @@ mod with_model {
                     (best_t, best_score, best_kept, best_rejected) = (t, kept + rejected, kept, rejected);
                 }
             }
+            // When the right answers and the no-answer queries don't overlap, every threshold in the gap between
+            // them is "perfect" and the sweep above just reports the lowest -- the *middle* of the gap is the
+            // threshold to configure (the most margin both ways).
+            let worst_right = relevant_similarities.iter().cloned().fold(f32::MAX, f32::min);
+            let best_no_answer = no_match_max.iter().cloned().fold(f32::MIN, f32::max);
             println!(
-                "| {} | {:.0} MB | {:.0} MB | {:.0} | {:.0}% | {:.0}% | {:.2} | {:.0}% | {:.0}% | {:.0}% | {:.2} ({:.0}% / {:.0}%) (configured {:.2}) |",
+                "| {} | {:.0} MB | {:.0} MB | {:.0} | {:.0}% | {:.0}% | {:.2} | {:.0}% | {:.0}% | {:.0}% | {:.2} ({:.0}% / {:.0}%) (configured {:.2}) | {:.3} .. {:.3} (middle {:.2}) |",
                 spec.id,
                 downloaded_mb,
                 ram_mb,
@@ -1257,6 +1262,9 @@ mod with_model {
                 best_kept * 100.0,
                 best_rejected * 100.0,
                 spec.min_similarity,
+                worst_right,
+                best_no_answer,
+                (worst_right + best_no_answer) / 2.0,
             );
         }
     }
