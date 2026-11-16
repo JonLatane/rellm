@@ -74,7 +74,7 @@ pub struct ModelSpec {
 pub const DEFAULT_MODEL_ID: &str = "multilingual-e5-small";
 
 // Download/RAM/threshold figures are measured by `embeddings_tests::with_model::compare_models`.
-pub static MODELS: [ModelSpec; 4] = [
+pub static MODELS: [ModelSpec; 7] = [
     ModelSpec {
         id: DEFAULT_MODEL_ID,
         name: "multilingual-e5-small",
@@ -126,6 +126,48 @@ pub static MODELS: [ModelSpec; 4] = [
         query_prefix: "",
         document_prefix: "",
         min_similarity: 0.33,
+    },
+    // EmbeddingGemma (Google): multilingual, 768 dimensions, search-tuned with documented task prompts. Gemma's
+    // terms of use apply to the weights (not Apache/MIT like the others). Figures below are filled in from
+    // `compare_models`.
+    ModelSpec {
+        id: "embeddinggemma-300m",
+        name: "EmbeddingGemma 300M",
+        description: "TBD",
+        dimensions: 768,
+        download_megabytes: 0,
+        memory_megabytes: 0,
+        multilingual: true,
+        model: EmbeddingModel::EmbeddingGemma300M,
+        query_prefix: "task: search result | query: ",
+        document_prefix: "title: none | text: ",
+        min_similarity: 0.50,
+    },
+    ModelSpec {
+        id: "embeddinggemma-300m-int8",
+        name: "EmbeddingGemma 300M (int8)",
+        description: "TBD",
+        dimensions: 768,
+        download_megabytes: 0,
+        memory_megabytes: 0,
+        multilingual: true,
+        model: EmbeddingModel::EmbeddingGemma300MQ,
+        query_prefix: "task: search result | query: ",
+        document_prefix: "title: none | text: ",
+        min_similarity: 0.50,
+    },
+    ModelSpec {
+        id: "embeddinggemma-300m-q4",
+        name: "EmbeddingGemma 300M (4-bit)",
+        description: "TBD",
+        dimensions: 768,
+        download_megabytes: 0,
+        memory_megabytes: 0,
+        multilingual: true,
+        model: EmbeddingModel::EmbeddingGemma300MQ4,
+        query_prefix: "task: search result | query: ",
+        document_prefix: "title: none | text: ",
+        min_similarity: 0.50,
     },
 ];
 
