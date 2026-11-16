@@ -17,7 +17,7 @@ use crate::marshaling::{ToProtoId, ToProtoPurchaseType, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
-use crate::schema::{follows, market_subscriptions};
+use crate::schema::market_subscriptions;
 
 /// A tiny TTL map for the two things every subdomain-aware request would otherwise ask the database for: the
 /// parent's `frontend_host`/`backend_host`, and which subscription (if any) a host resolves to. Entries expire
@@ -301,41 +301,17 @@ pub fn resolve_subdomain(
 }
 
 impl SubdomainContext {
-    /// The owner's user id plus -- per the `share_content_from_*` toggles -- everyone whose content the
-    /// subdomain also shows (accepted follows only). What `GetPosts`/`GetEvents` are limited to.
-    pub fn visible_author_ids(&self, conn: &mut PgPooledConnection) -> Result<Vec<i64>, Status> {
-        let owner_id = self.owner.id;
-        let passing: Vec<String> = crate::rpcs::PASSING_MODERATIONS.iter().map(|s| s.to_string()).collect();
-        let load = |query: Result<Vec<i64>, diesel::result::Error>| {
-            query.map_err(|e| {
-                log::error!("Failed to load subdomain authors: {:?}", e);
-                Status::new(Code::Internal, "failed_to_load_subdomain_authors")
-            })
-        };
-        // Users who follow the owner / users the owner follows.
-        let followers: Vec<i64> = if self.settings.share_content_from_followers || self.settings.share_content_from_friends {
-            load(
-                follows::table
-                    .filter(follows::target_user_id.eq(owner_id))
-                    .filter(follows::target_user_moderation.eq_any(&passing))
-                    .select(follows::user_id)
-                    .load::<i64>(&mut *conn),
-            )?
-        } else {
-            vec![]
-        };
-        let following: Vec<i64> = if self.settings.share_content_from_following || self.settings.share_content_from_friends {
-            load(
-                follows::table
-                    .filter(follows::user_id.eq(owner_id))
-                    .filter(follows::target_user_moderation.eq_any(&passing))
-                    .select(follows::target_user_id)
-                    .load::<i64>(&mut *conn),
-            )?
-        } else {
-            vec![]
-        };
-        Ok(combine_authors(owner_id, &self.settings, &followers, &following))
+    /// Whose content `GetPosts`/`GetEvents` may show here: the owner plus -- per the `share_content_from_*` toggles --
+    /// followers / people the owner follows / friends. Just a description: it is rendered as SQL subqueries against
+    /// `follows` inside the feed query itself (`AuthorSet::sql_condition`), so a request never loads or ships the id
+    /// lists -- the cost no longer grows with how many followers the owner has.
+    pub fn author_set(&self) -> AuthorSet {
+        AuthorSet {
+            owner_id: self.owner.id,
+            followers: self.settings.share_content_from_followers,
+            following: self.settings.share_content_from_following,
+            friends: self.settings.share_content_from_friends,
+        }
     }
 
     /// The subdomain's own stylesheet configuration, `custom_css` text included (empty if never set) -- what
@@ -442,27 +418,54 @@ fn subdomain_tabs() -> CustomNavigationTabSet {
     }
 }
 
-/// Pure core of `visible_author_ids`: `followers` are users who follow the owner, `following` users the
-/// owner follows. Friends are the intersection. The owner is always first; the result has no duplicates.
-pub fn combine_authors(owner_id: i64, settings: &SubdomainSettings, followers: &[i64], following: &[i64]) -> Vec<i64> {
-    let mut authors = vec![owner_id];
-    let mut add = |ids: &mut dyn Iterator<Item = i64>| {
-        for id in ids {
-            if !authors.contains(&id) {
-                authors.push(id);
-            }
+/// Which authors a subdomain's feeds show -- see `SubdomainContext::author_set`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthorSet {
+    pub owner_id: i64,
+    /// Users with an accepted follow *of* the owner.
+    pub followers: bool,
+    /// Users the owner has an accepted follow of.
+    pub following: bool,
+    /// Users who follow the owner *and* whom the owner follows back.
+    pub friends: bool,
+}
+
+impl AuthorSet {
+    /// A SQL boolean expression, true when `column` (an author id, e.g. `"posts.user_id"`) is in this set. Always
+    /// includes the owner; each enabled toggle adds one `IN (subquery)` over `follows` (accepted follows only --
+    /// `PASSING_MODERATIONS`). The only interpolated values are the owner's integer id and those constant moderation
+    /// names, so there is nothing to inject; the subqueries use their own aliases (`sf`/`sg`) so they never collide
+    /// with the `follows` join the post queries already have.
+    pub fn sql_condition(&self, column: &str) -> String {
+        let owner = self.owner_id;
+        let passing = crate::rpcs::PASSING_MODERATIONS
+            .iter()
+            .map(|m| format!("'{m}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut conditions = vec![format!("{column} = {owner}")];
+        if self.followers {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.user_id FROM follows sf WHERE sf.target_user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}))"
+            ));
         }
-    };
-    if settings.share_content_from_followers {
-        add(&mut followers.iter().copied());
+        if self.following {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.target_user_id FROM follows sf WHERE sf.user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}))"
+            ));
+        }
+        if self.friends {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.user_id FROM follows sf WHERE sf.target_user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}) AND EXISTS (SELECT 1 FROM follows sg \
+                 WHERE sg.user_id = {owner} AND sg.target_user_id = sf.user_id \
+                 AND sg.target_user_moderation IN ({passing})))"
+            ));
+        }
+        format!("({})", conditions.join(" OR "))
     }
-    if settings.share_content_from_following {
-        add(&mut following.iter().copied());
-    }
-    if settings.share_content_from_friends {
-        add(&mut followers.iter().copied().filter(|id| following.contains(id)));
-    }
-    authors
 }
 
 #[cfg(test)]
@@ -522,21 +525,17 @@ mod tests {
     }
 
     #[test]
-    fn authors_follow_the_toggles() {
-        let none = SubdomainSettings::default();
-        assert_eq!(combine_authors(1, &none, &[2, 3], &[3, 4]), vec![1]);
-        let followers = SubdomainSettings { share_content_from_followers: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &followers, &[2, 3], &[3, 4]), vec![1, 2, 3]);
-        let following = SubdomainSettings { share_content_from_following: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &following, &[2, 3], &[3, 4]), vec![1, 3, 4]);
-        let friends = SubdomainSettings { share_content_from_friends: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &friends, &[2, 3], &[3, 4]), vec![1, 3]);
-        let all = SubdomainSettings {
-            share_content_from_followers: true,
-            share_content_from_following: true,
-            share_content_from_friends: true,
-            ..Default::default()
-        };
-        assert_eq!(combine_authors(1, &all, &[2, 3], &[3, 4]), vec![1, 2, 3, 4]);
+    fn author_condition_has_one_subquery_per_enabled_toggle() {
+        let set = |followers, following, friends| AuthorSet { owner_id: 7, followers, following, friends };
+        let none = set(false, false, false).sql_condition("posts.user_id");
+        assert_eq!(none, "(posts.user_id = 7)");
+        assert_eq!(set(true, false, false).sql_condition("posts.user_id").matches("SELECT").count(), 1);
+        assert_eq!(set(true, true, false).sql_condition("posts.user_id").matches("SELECT").count(), 2);
+        let all = set(true, true, true).sql_condition("posts.user_id");
+        assert_eq!(all.matches("IN (SELECT").count(), 3);
+        // Friends are the intersection: a follower the owner follows back.
+        assert!(all.contains("EXISTS (SELECT 1 FROM follows sg"));
+        // Accepted follows only.
+        assert!(all.contains("'UNMODERATED','APPROVED'"));
     }
 }

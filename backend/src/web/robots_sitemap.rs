@@ -10,7 +10,7 @@ use rocket_cache_response::CacheResponse;
 
 use crate::marshaling::ToProtoTime;
 use crate::protos::{GetEventsRequest, GetPostsRequest, TimeFilter};
-use crate::rpcs::{get_events, get_posts, get_server_configuration_proto};
+use crate::rpcs::{get_events_for, get_posts_for, get_server_configuration_proto};
 
 // `/posts`, `/events`, `/people`, and `/about` are always real pages -- per
 // `CustomNavigationTabSet.tabs`'s own doc comment, those paths can't be claimed by a custom tab --
@@ -19,6 +19,43 @@ const RESERVED_TAB_PATHS: [&str; 8] = ["posts", "events", "people", "about", "me
 // Mirrors `calendarLookbackDaysDefault` in the Elm SPA's `EventsPage.elm`, used when
 // `EventSettings.calendar_lookback_days` is unset.
 const DEFAULT_CALENDAR_LOOKBACK_DAYS: u32 = 14;
+
+/// The sitemap's fixed URLs: the home and tab pages, plus any custom tab paths. A Rellm Subdomain (`is_subdomain`) has
+/// no People page, and its tab list comes from its virtual configuration (see
+/// `SubdomainContext::virtual_server_configuration`), so only pages that exist on it are listed.
+pub fn base_sitemap_urls(
+    domain: &str,
+    configuration: &crate::protos::ServerConfiguration,
+    is_subdomain: bool,
+) -> Vec<String> {
+    let mut urls = vec![
+        format!("https://{}/", domain),
+        format!("https://{}/posts", domain),
+        format!("https://{}/events", domain),
+    ];
+    if !is_subdomain {
+        urls.push(format!("https://{}/people", domain));
+    }
+    urls.extend([
+        format!("https://{}/about", domain),
+        format!("https://{}/about_rellm", domain),
+        format!("https://{}/flutter", domain),
+        format!("https://{}/tamagui", domain),
+        format!("https://{}/elm", domain),
+    ]);
+
+    for tab in configuration
+        .custom_tabs
+        .as_ref()
+        .map(|set| set.tabs.as_slice())
+        .unwrap_or_default()
+    {
+        if !RESERVED_TAB_PATHS.contains(&tab.path.as_str()) {
+            urls.push(format!("https://{}/{}", domain, tab.path));
+        }
+    }
+    urls
+}
 
 lazy_static! {
     pub static ref SEO_PAGES: Vec<Route> = routes![robots, sitemap, manifest];
@@ -47,33 +84,21 @@ Sitemap: https://{}/sitemap.xml
 async fn sitemap(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<RawXml<String>> {
     let domain = host.domain();
     let mut conn = state.pool.get().unwrap();
-    let configuration = get_server_configuration_proto(&mut conn).unwrap();
+    // On a Rellm Subdomain the sitemap is the owner's site: their tabs, and the posts/events their feeds show (the
+    // owner plus whatever they share) -- never the parent server's. A failed lookup fails the request rather than
+    // publishing the parent's URLs under the subdomain.
+    let subdomain = crate::web::subdomain_web::request_subdomain(&mut conn, host)
+        .expect("failed to look up the request's subdomain");
+    let parent_configuration = get_server_configuration_proto(&mut conn).unwrap();
+    let configuration = match &subdomain {
+        Some(subdomain) => subdomain.virtual_server_configuration(parent_configuration, &None),
+        None => parent_configuration,
+    };
 
-    let mut urls = vec![
-        format!("https://{}/", domain),
-        format!("https://{}/posts", domain),
-        format!("https://{}/events", domain),
-        format!("https://{}/people", domain),
-        format!("https://{}/about", domain),
-        format!("https://{}/about_rellm", domain),
-        format!("https://{}/flutter", domain),
-        format!("https://{}/tamagui", domain),
-        format!("https://{}/elm", domain),
-    ];
-
-    for tab in configuration
-        .custom_tabs
-        .as_ref()
-        .map(|set| set.tabs.as_slice())
-        .unwrap_or_default()
-    {
-        if !RESERVED_TAB_PATHS.contains(&tab.path.as_str()) {
-            urls.push(format!("https://{}/{}", domain, tab.path));
-        }
-    }
+    let mut urls = base_sitemap_urls(&domain.to_string(), &configuration, subdomain.is_some());
 
     // Unauthenticated `get_posts`: the same "first page" of posts an anonymous visitor sees.
-    if let Ok(posts_response) = get_posts(GetPostsRequest::default(), &None, &mut conn) {
+    if let Ok(posts_response) = get_posts_for(GetPostsRequest::default(), &None, &subdomain, &mut conn) {
         for post in posts_response.posts {
             urls.push(format!("https://{}/post/{}", domain, post.id));
         }
@@ -94,7 +119,7 @@ async fn sitemap(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<R
         }),
         ..Default::default()
     };
-    if let Ok(events_response) = get_events(events_request, &None, &mut conn) {
+    if let Ok(events_response) = get_events_for(events_request, &None, &subdomain, &mut conn) {
         for event in events_response.events {
             for occasion in event.occasions {
                 if let Some(post) = &occasion.post {
@@ -124,10 +149,11 @@ async fn sitemap(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<R
 }
 
 #[rocket::get("/manifest.json")]
-async fn manifest(state: &State<RocketState>, _host: &Host<'_>) -> CacheResponse<RawJson<String>> {
+async fn manifest(state: &State<RocketState>, host: &Host<'_>) -> CacheResponse<RawJson<String>> {
     // let domain = host.domain();
     let mut conn = state.pool.get().unwrap();
-    let configuration = get_server_configuration_proto(&mut conn).unwrap();
+    // The installed app of a Rellm Subdomain is named after its owner, not the parent server.
+    let configuration = crate::web::subdomain_web::request_configuration(&mut conn, host);
 
     let server_name = configuration
         .clone()
