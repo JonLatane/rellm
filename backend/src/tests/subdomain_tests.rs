@@ -491,3 +491,25 @@ fn a_private_profile_stays_private_on_the_subdomain() {
         Ok(())
     });
 }
+
+#[test]
+fn feed_links_use_the_subdomains_own_domain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd10_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd10owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let context = scope(conn, "sd10owner.bullcity.test");
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), &context),
+            "sd10owner.bullcity.test"
+        );
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain(FRONTEND_HOST.to_string(), &None),
+            FRONTEND_HOST
+        );
+        Ok(())
+    });
+}

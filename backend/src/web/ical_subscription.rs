@@ -2,7 +2,7 @@ use super::RocketState;
 use crate::marshaling::ToDbTime;
 use crate::protos::{rsvp, GetEventsRequest, GetUsersRequest, User};
 use crate::rpcs::events::parse_anonymous_auth_tokens;
-use crate::rpcs::{get_events, get_server_configuration_proto, get_users};
+use crate::rpcs::{get_events_for, get_server_configuration_proto, get_users};
 use crate::web::external_cdn::configured_frontend_domain;
 use chrono::{DateTime, Utc};
 use icalendar::{Calendar, Component, Event, EventLike};
@@ -34,7 +34,13 @@ async fn ical_subscription(
     host: &Host<'_>,
 ) -> CacheResponse<ICalResponse> {
     let mut conn = state.pool.get().unwrap();
-    let server_configuration = get_server_configuration_proto(&mut conn).unwrap();
+    // On a Rellm Subdomain the calendar is the owner's (plus whatever they share) and is named after them.
+    let subdomain = crate::web::subdomain_web::request_subdomain(&mut conn, host);
+    let server_configuration = match &subdomain {
+        Some(subdomain) => subdomain
+            .virtual_server_configuration(get_server_configuration_proto(&mut conn).unwrap(), &None),
+        None => get_server_configuration_proto(&mut conn).unwrap(),
+    };
     let server_name = server_configuration
         .clone()
         .server_info
@@ -90,7 +96,7 @@ async fn ical_subscription(
     };
 
     // Call get_events RPC (without user for anonymous access)
-    let events_response = match get_events(request, &None, &mut conn) {
+    let events_response = match get_events_for(request, &None, &subdomain, &mut conn) {
         Ok(response) => response,
         Err(e) => {
             return CacheResponse::no_store(ICalResponse(format!("Error fetching events: {e}")))
@@ -119,7 +125,10 @@ async fn ical_subscription(
     // calendar.description("Events from Rellm");
 
     // Get the frontend domain for event links
-    let frontend_domain = configured_frontend_domain(state, host);
+    let frontend_domain = crate::web::subdomain_web::feed_frontend_domain(
+        configured_frontend_domain(state, host),
+        &subdomain,
+    );
 
     // Process each event and its occasions
     for event in events_response.events {

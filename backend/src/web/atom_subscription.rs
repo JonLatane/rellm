@@ -4,7 +4,7 @@
 use super::RocketState;
 use crate::marshaling::ToDbTime;
 use crate::protos::{GetPostsRequest, GetUsersRequest, PostContext, User};
-use crate::rpcs::{get_posts, get_server_configuration_proto, get_users};
+use crate::rpcs::{get_posts_for, get_server_configuration_proto, get_users};
 use crate::web::external_cdn::configured_frontend_domain;
 use atom_syndication::{Content, Entry, Feed, Link, Text};
 use chrono::{DateTime, Utc};
@@ -27,7 +27,13 @@ async fn atom_subscription(
     host: &Host<'_>,
 ) -> CacheResponse<AtomResponse> {
     let mut conn = state.pool.get().unwrap();
-    let server_configuration = get_server_configuration_proto(&mut conn).unwrap();
+    // On a Rellm Subdomain the feed is the owner's (plus whatever they share) and is named after them.
+    let subdomain = crate::web::subdomain_web::request_subdomain(&mut conn, host);
+    let server_configuration = match &subdomain {
+        Some(subdomain) => subdomain
+            .virtual_server_configuration(get_server_configuration_proto(&mut conn).unwrap(), &None),
+        None => get_server_configuration_proto(&mut conn).unwrap(),
+    };
     let server_name = server_configuration
         .server_info
         .map(|i| i.name)
@@ -61,14 +67,17 @@ async fn atom_subscription(
         ..Default::default()
     };
 
-    let posts_response = match get_posts(request, &None, &mut conn) {
+    let posts_response = match get_posts_for(request, &None, &subdomain, &mut conn) {
         Ok(response) => response,
         Err(e) => {
             return CacheResponse::no_store(AtomResponse(format!("Error fetching posts: {e}")))
         }
     };
 
-    let frontend_domain = configured_frontend_domain(state, host);
+    let frontend_domain = crate::web::subdomain_web::feed_frontend_domain(
+        configured_frontend_domain(state, host),
+        &subdomain,
+    );
     let feed_link = format!("https://{frontend_domain}/");
     let now: DateTime<Utc> = Utc::now();
 
