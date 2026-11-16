@@ -32,7 +32,9 @@ use crate::db_connection::PgPooledConnection;
 
 mod embedder;
 mod index;
-pub use embedder::{load_embedder, BoxedEmbedder, LocalEmbedder, TextEmbedder};
+pub mod model_service;
+pub use embedder::{load_embedder, load_embedder_local, BoxedEmbedder, LocalEmbedder, TextEmbedder};
+pub use model_service::{cluster_model, embedding_service_config, embedding_service_configured, RemoteEmbedder};
 pub use index::{semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
 
 // Longer input is truncated by the tokenizer; documents list their most important text first.
@@ -394,6 +396,9 @@ fn search_configuration(conn: &mut PgPooledConnection) -> (bool, &'static ModelS
         .and_then(|v| v.get("embedding_model").and_then(|m| m.as_str()))
         .and_then(model_spec)
         .unwrap_or_else(default_model);
+    // A cluster-shared model service hosts one model for everyone: it wins over the admin's own choice. (If it's
+    // configured but not answering we keep the configured model; embedding fails and search stays full-text.)
+    let spec = if embedding_service_configured() { cluster_model().unwrap_or(spec) } else { spec };
     LAST_KNOWN_ENABLED.store(enabled, Ordering::SeqCst);
     *LAST_KNOWN_MODEL_ID.lock().unwrap() = spec.id;
     (enabled, spec)

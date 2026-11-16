@@ -4,7 +4,9 @@
 // Built for small hardware:
 //   * Does nothing (and never loads the model) unless `SearchSettings.semantic_search_enabled` is on,
 //     or when no text needs embedding.
-//   * In a cluster (`ClusterResources` configured), takes the `CLUSTER_RESOURCE_EMBEDDINGS` lock
+//   * With a cluster-shared model service (`RELLM_EMBEDDING_SERVICE_URL`) the model runs there, not here: this
+//     job only sends it text, loads nothing, and takes no lock.
+//   * In a cluster (`ClusterResources` configured) without one, takes the `CLUSTER_RESOURCE_EMBEDDINGS` lock
 //     from the conductor right before loading the model, so only as many instances as its
 //     `ClusterResourceLimit` allows (default 1) embed at once. A denied lock just skips this run.
 //   * Stops after `RUN_BUDGET` of work (it runs again every few minutes; a backlog is worked down
@@ -82,6 +84,9 @@ pub fn main() {
         before_model_load: Box::new(|| match cluster_resources.as_ref() {
             // Single-instance servers skip the cluster lock entirely.
             None => true,
+            // With a cluster-shared model service the model isn't loaded here at all, and the service
+            // serializes and bounds the work itself: nothing for the lock to protect.
+            Some(_) if embeddings::embedding_service_configured() => true,
             Some(resources) => {
                 log::info!("Cluster resources configured; acquiring embeddings lock from conductor...");
                 if runtime.block_on(acquire_cluster_lock(resources, &wanted)) {

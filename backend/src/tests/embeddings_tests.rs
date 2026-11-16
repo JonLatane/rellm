@@ -520,6 +520,79 @@ fn hybrid_search_finds_posts_by_meaning_and_never_returns_one_the_viewer_cannot_
     embeddings::unload_server_embedder();
 }
 
+/// Starts the real model service (gRPC, auth and all) in-process on a free port, backed by the fake model, and
+/// returns its URL. Runs on its own thread/runtime for the life of the test process.
+fn start_model_service(secret: Option<&str>) -> String {
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let secret = secret.map(str::to_string);
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(embeddings::model_service::serve(
+                format!("127.0.0.1:{}", port).parse().unwrap(),
+                Box::new(FakeEmbedder),
+                secret,
+            ))
+            .unwrap();
+    });
+    let url = format!("http://127.0.0.1:{}", port);
+    // Wait for it to accept connections.
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return url;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("the model service didn't start");
+}
+
+#[test]
+fn the_model_service_embeds_for_a_remote_client_and_reports_its_model() {
+    let url = start_model_service(Some("s3cret"));
+    let mut remote = embeddings::RemoteEmbedder::connect(&url, Some("s3cret".to_string())).expect("connects");
+    assert_eq!(remote.spec().id, embeddings::default_model().id, "the client learns the service's model");
+
+    // Same vectors as the model run locally -- the client is a drop-in TextEmbedder.
+    let docs = vec!["Adopting a puppy".to_string(), "Corporate tax deadlines".to_string()];
+    assert_eq!(remote.embed_documents(&docs).unwrap(), FakeEmbedder.embed_documents(&docs).unwrap());
+    assert_eq!(remote.embed_query("canine").unwrap(), FakeEmbedder.embed_query("canine").unwrap());
+    // More texts than one request allows are split across calls transparently.
+    let many: Vec<String> = (0..150).map(|i| format!("dog {}", i)).collect();
+    assert_eq!(remote.embed_documents(&many).unwrap().len(), 150);
+}
+
+#[test]
+fn the_model_service_refuses_callers_without_the_secret() {
+    let url = start_model_service(Some("right"));
+    let denied = embeddings::RemoteEmbedder::connect(&url, Some("wrong".to_string()));
+    assert!(denied.is_err(), "a wrong secret must not even learn the model");
+    let anonymous = embeddings::RemoteEmbedder::connect(&url, None);
+    assert!(anonymous.is_err(), "no secret must be refused too");
+}
+
+#[test]
+fn a_server_embeds_search_queries_and_the_job_embeds_documents_through_the_model_service() {
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let url = start_model_service(None);
+    let mut conn = test_conn();
+    embeddings::install_server_embedder(Box::new(embeddings::RemoteEmbedder::connect(&url, None).unwrap()));
+    conn.test_transaction::<_, anyhow::Error, _>(|conn| {
+        let author = create_user(conn, "remote_model_author");
+        let dog = title_post(conn, &author, "Adopting a puppy from the shelter");
+        // The job side: sync with a remote embedder.
+        let mut ctx = SyncContext::unrestricted();
+        ctx.embedder = Some(Box::new(embeddings::RemoteEmbedder::connect(&url, None).unwrap()));
+        embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
+        // The server side: a semantic-only search through the remote query embedder.
+        let ranking = embeddings::semantic_ranking(conn, EmbeddingKind::Post, "getting canine", &[dog.id]).unwrap();
+        assert_eq!(ranking.first().map(|m| m.0), Some(dog.id));
+        Ok(())
+    });
+    embeddings::unload_server_embedder();
+}
+
 #[test]
 fn the_postgres_scan_index_needs_a_scope_and_answers_only_within_it() {
     let mut conn = test_conn();

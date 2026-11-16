@@ -364,6 +364,7 @@ pub fn default_search_settings() -> SearchSettings {
         semantic_search_enabled: true,
         embedding_model: String::new(),
         available_models: vec![],
+        model_chosen_by_cluster: false,
     }
 }
 
@@ -387,5 +388,6 @@ pub fn search_settings_from_json(stored: Option<&serde_json::Value>) -> SearchSe
             .unwrap_or_default()
             .to_string(),
         available_models: vec![],
+        model_chosen_by_cluster: false,
     }
 }

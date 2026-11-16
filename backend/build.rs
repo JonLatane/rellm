@@ -204,4 +204,15 @@ fn main() {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }
+
+    // The internal services (`internal_protos/`) -- deliberately not part of `../protos`, so they never reach
+    // the generated docs or the frontend clients. Generated Rust is committed, like `src/protos`.
+    let _ = fs::create_dir("./src/internal_protos");
+    tonic_prost_build::configure()
+        .build_server(true)
+        .build_client(true)
+        .out_dir("./src/internal_protos")
+        .compile_protos(&["internal_protos/rellm_internal.proto"], &["internal_protos"])
+        .unwrap_or_else(|e| panic!("internal protobuf compile error: {}", e));
+    println!("cargo:rerun-if-changed=internal_protos/rellm_internal.proto");
 }

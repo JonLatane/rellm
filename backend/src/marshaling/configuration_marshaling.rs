@@ -64,6 +64,7 @@ impl ToDbServerConfiguration for ServerConfiguration {
             search_settings: self.search_settings.as_ref().map(|c| {
                 serde_json::to_value(SearchSettings {
                     available_models: vec![],
+                    model_chosen_by_cluster: false,
                     ..c.clone()
                 })
                 .unwrap()
@@ -285,11 +286,13 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         // The effective model (the default when unset/unrecognized) and what can be chosen are facts
         // about the running software, not stored: always the live values.
         let search_settings = SearchSettings {
-            embedding_model: crate::logic::embeddings::model_spec(&search_settings.embedding_model)
+            embedding_model: crate::logic::embeddings::cluster_model()
+                .or_else(|| crate::logic::embeddings::model_spec(&search_settings.embedding_model))
                 .unwrap_or_else(crate::logic::embeddings::default_model)
                 .id
                 .to_string(),
             available_models: crate::logic::embeddings::available_models(),
+            model_chosen_by_cluster: crate::logic::embeddings::embedding_service_configured(),
             ..search_settings
         };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and

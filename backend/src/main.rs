@@ -39,6 +39,7 @@ pub mod logic;
 pub mod marshaling;
 pub mod object_storage_connection;
 pub mod models;
+pub mod internal_protos;
 pub mod protos;
 pub mod rpcs;
 pub mod schema;

@@ -508,6 +508,11 @@ message SearchSettings {
   // The models an admin can choose from. Read-only: always filled in by the server on
   // `GetServerConfiguration` and ignored by `ConfigureServer`.
   repeated EmbeddingModel available_models = 3;
+
+  // True when this server embeds through a cluster-shared model service, which hosts ONE model for every
+  // namespace: `embedding_model` then reports that model and the admin's own choice is ignored (the picker is
+  // read-only). Read-only: derived from the server's deployment, ignored by `ConfigureServer`.
+  bool model_chosen_by_cluster = 4;
 }
 
 // One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.

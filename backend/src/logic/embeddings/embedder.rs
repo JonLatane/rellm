@@ -19,6 +19,17 @@ pub type BoxedEmbedder = Box<dyn TextEmbedder>;
 /// Loads the embedder for `spec`, downloading the model first if it isn't cached. Blocking, and slow
 /// the first time. The one place that decides where the model runs.
 pub fn load_embedder(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<BoxedEmbedder> {
+    // With a cluster-shared model service configured, the model runs there (and is *its* model: `spec` is only
+    // what an in-process load would use -- see `search_configuration`, which resolves the cluster's model).
+    if let Some((url, secret)) = super::embedding_service_config() {
+        return Ok(Box::new(super::RemoteEmbedder::connect(&url, secret)?));
+    }
+    Ok(Box::new(LocalEmbedder::load(spec, threads)?))
+}
+
+/// Like `load_embedder` but always runs the model in this process, ignoring any configured model service:
+/// what the model service itself uses.
+pub fn load_embedder_local(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<BoxedEmbedder> {
     Ok(Box::new(LocalEmbedder::load(spec, threads)?))
 }
 
