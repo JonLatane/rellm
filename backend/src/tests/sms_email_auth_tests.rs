@@ -1938,7 +1938,7 @@ mod sign_in_method_spec {
         username: &str,
     ) -> models::User {
         let (base_url, sms) = sms_mock();
-        let request = account_request(username, "", Some(granted(PHONE)), None);
+        let request = account_request(username, &no_password(), Some(granted(PHONE)), None);
         create_account_at(Some(&base_url), request.clone(), conn).unwrap();
         let code = sms_code(&sms, 0);
         let done = create_account_at(
