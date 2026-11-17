@@ -77,7 +77,7 @@ pub fn update_ai_provider(
             .set(&existing)
             .get_result::<models::AIProvider>(conn)
             .map_err(|e| {
-                log::error!("Failed to update AI model provider: {:?}", e);
+                log::error!("Failed to update AI model provider: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_update_ai_provider")
             })?;
 

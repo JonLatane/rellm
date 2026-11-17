@@ -30,6 +30,8 @@ pub use sync_destinations::*;
 mod contact_methods;
 pub use contact_methods::*;
 
+pub mod contact_integrations_status;
+
 mod users;
 pub use users::*;
 
@@ -45,6 +47,11 @@ pub use market::*;
 pub mod subdomains;
 
 pub(crate) use contact_methods::{bird_sms, telnyx_sms, twilio_sms};
+// Reached directly only by specs (`tests/email_providers_tests.rs`).
+#[cfg(test)]
+#[allow(unused_imports)] // the `rellm` bin's duplicate module tree has no specs that use these
+pub(crate) use contact_methods::{mailgun_email, sendgrid_email, stalwart_email};
 pub(crate) use market::stripe_payments;
 
+pub mod log_redaction;
 pub mod embeddings;

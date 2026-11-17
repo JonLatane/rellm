@@ -17,11 +17,7 @@ pub fn create_event(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<Event, Status> {
-    log::info!(
-        "CreateEvent called for user {}, user_id={}",
-        &user.username,
-        user.id
-    );
+    log::info!("CreateEvent called for user_id={}", user.id);
     validate_permission(&Some(&user), Permission::CreateEvents)?;
     let configuration = crate::rpcs::get_server_configuration_proto(conn)?;
     let moderation = match &configuration
@@ -243,7 +239,7 @@ pub fn create_event(
                 .to_proto(Some(&media_lookup), None, None))
         }
         Err(e) => {
-            log::error!("Error creating event! {:?}", e);
+            log::error!("Error creating event! {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "internal_error"))
         }
     }

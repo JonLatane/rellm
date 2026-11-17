@@ -52,7 +52,7 @@ pub fn update_group_post(
             )
         }
         Err(e) => {
-            log::error!("Error updating group_post: {:?}", e);
+            log::error!("Error updating group_post: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating_group_post"))
         }
     }

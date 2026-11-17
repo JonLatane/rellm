@@ -50,12 +50,12 @@ fn fetch_feed(source: &models::SyncSource, url: &str) -> Result<String, Status> 
             .and_then(|client| client.get(url).send())
             .and_then(|response| response.error_for_status())
             .map_err(|e| {
-                log::error!("Failed to fetch feed from {}: {:?}", url, e);
+                log::error!("Failed to fetch feed from {}: {:?}", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "feed_fetch_failed")
             })?
             .text()
             .map_err(|e| {
-                log::error!("Failed to read feed response body from {}: {:?}", url, e);
+                log::error!("Failed to read feed response body from {}: {:?}", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "feed_fetch_failed")
             })
     };
@@ -83,7 +83,7 @@ pub fn sync_feed_text(
     conn: &mut PgPooledConnection,
 ) -> Result<(), Status> {
     let feed = feed_rs::parser::parse(feed_text.as_bytes()).map_err(|e| {
-        log::error!("Failed to parse feed text: {:?}", e);
+        log::error!("Failed to parse feed text: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::FailedPrecondition, "feed_parse_failed")
     })?;
 
@@ -135,7 +135,7 @@ pub fn sync_feed_text(
     });
 
     result.map_err(|e| {
-        log::error!("Failed to sync SyncSource {}: {:?}", source.id, e);
+        log::error!("Failed to sync SyncSource {}: {:?}", source.id, crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_sync_source")
     })
 }

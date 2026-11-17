@@ -36,7 +36,7 @@ pub async fn delete_unowned_media(
                     "Failed to delete object storage object {} for Media {}: {:?}. Proceeding through remaining media.",
                     size.object_storage_path,
                     media.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
             }
         }

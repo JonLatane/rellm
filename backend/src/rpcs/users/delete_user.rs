@@ -41,7 +41,7 @@ pub async fn delete_user(
         .select(events::post_id)
         .load::<i64>(conn)
         .map_err(|e| {
-            log::error!("Error loading events for user {}: {:?}", target_user_id, e);
+            log::error!("Error loading events for user {}: {:?}", target_user_id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "data_error")
         })?;
     for event_id in event_ids {
@@ -69,7 +69,7 @@ pub async fn delete_user(
         .select(posts::id)
         .load::<i64>(conn)
         .map_err(|e| {
-            log::error!("Error loading posts for user {}: {:?}", target_user_id, e);
+            log::error!("Error loading posts for user {}: {:?}", target_user_id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "data_error")
         })?;
     for post_id in post_ids {
@@ -89,7 +89,7 @@ pub async fn delete_user(
         .select(media::id)
         .load::<i64>(conn)
         .map_err(|e| {
-            log::error!("Error loading media for user {}: {:?}", target_user_id, e);
+            log::error!("Error loading media for user {}: {:?}", target_user_id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "data_error")
         })?;
     for media_id in media_ids {
@@ -148,11 +148,11 @@ pub async fn delete_user(
         Ok(_) => Ok(()),
         Err(NotFound) => Err(Status::new(Code::NotFound, "user_not_found")),
         Err(e) => {
-            log::error!("Error deleting user: {:?}", e);
+            log::error!("Error deleting user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!("DeleteUser::request: {:?}, result: {:?}", request, result);
+    log::info!("DeleteUser: user_id={:?}, ok={}", request.id, result.is_ok());
 
     result
 }

@@ -44,18 +44,11 @@ pub fn reset_password(
         Ok(_) => Ok(()),
         Err(NotFound) => Err(Status::new(Code::NotFound, "user_not_found")),
         Err(e) => {
-            log::error!("Error deleting user: {:?}", e);
+            log::error!("Error deleting user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!(
-        "ResetPassword::request: {:?}, result: {:?}",
-        ResetPasswordRequest {
-            password: "<redacted>".to_string(),
-            ..request
-        },
-        result
-    );
+    log::info!("ResetPassword: user_id={}, ok={}", user_id, result.is_ok());
 
     result
 }

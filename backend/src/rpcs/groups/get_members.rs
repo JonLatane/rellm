@@ -64,9 +64,9 @@ pub fn get_members(
         // _ => return Err(Status::invalid_argument("invalid_request")),
     };
     log::info!(
-        "GetMembers::request: {:?}\nresponse: {:?}",
-        request,
-        response
+        "GetMembers: group_id={}, response_length: {}",
+        request.group_id,
+        response.members.len()
     );
     Ok(response)
 }

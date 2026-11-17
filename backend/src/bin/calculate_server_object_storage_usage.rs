@@ -22,13 +22,13 @@ async fn main() {
     let bucket = match object_storage_connection::get_and_test_bucket().await {
         Ok(bucket) => bucket,
         Err(e) => {
-            log::error!("Failed to connect to object storage: {:?}", e);
+            log::error!("Failed to connect to object storage: {:?}", rellm::logic::log_redaction::safe_error(&e));
             std::process::exit(1);
         }
     };
 
     match recompute_server_object_storage_usage_bytes(&mut conn, &bucket).await {
         Ok(()) => log::info!("Done calculating server object storage usage."),
-        Err(e) => log::error!("Failed to calculate server object storage usage: {:?}", e),
+        Err(e) => log::error!("Failed to calculate server object storage usage: {:?}", rellm::logic::log_redaction::safe_error(&e)),
     }
 }

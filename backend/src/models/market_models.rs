@@ -161,7 +161,7 @@ pub fn increment_market_product_sold_count(product_id: i64, conn: &mut PgConnect
         .set(market_products::sold_count.eq(market_products::sold_count + 1))
         .execute(conn)
     {
-        log::error!("Failed to increment sold_count for market product {}: {:?}", product_id, e);
+        log::error!("Failed to increment sold_count for market product {}: {:?}", product_id, crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -176,7 +176,7 @@ pub fn decrement_market_product_sold_count(product_id: i64, conn: &mut PgConnect
         )
         .execute(conn)
     {
-        log::error!("Failed to decrement sold_count for market product {}: {:?}", product_id, e);
+        log::error!("Failed to decrement sold_count for market product {}: {:?}", product_id, crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -194,7 +194,7 @@ pub fn get_market_products(
         .order(market_products::created_at.asc())
         .load::<MarketProduct>(conn)
         .map_err(|e| {
-            log::error!("Failed to load market products: {:?}", e);
+            log::error!("Failed to load market products: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_products")
         })
 }
@@ -212,7 +212,7 @@ pub fn get_market_products_by_ids(
         .filter(market_products::id.eq_any(ids))
         .load::<MarketProduct>(conn)
         .map_err(|e| {
-            log::error!("Failed to load market products {:?}: {:?}", ids, e);
+            log::error!("Failed to load market products {:?}: {:?}", ids, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_products")
         })
 }
@@ -259,7 +259,7 @@ pub fn get_market_subscriptions_for_buyer(
             log::error!(
                 "Failed to load market subscriptions for buyer {}: {:?}",
                 buyer_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -282,7 +282,7 @@ pub fn get_market_subscriptions_for_buyers(
             log::error!(
                 "Failed to load market subscriptions for buyers {:?}: {:?}",
                 buyer_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -304,7 +304,7 @@ pub fn get_market_subscriptions_by_product_type(
             log::error!(
                 "Failed to load market subscriptions of type {}: {:?}",
                 product_type,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -314,7 +314,7 @@ pub fn get_market_subscriptions_by_product_type(
 /// `GET_MARKET_SUBSCRIPTIONS_REQUEST_FOR_ALL_ADMIN` (see `marshaling::market_marshaling::build_all_subscriptions`).
 pub fn get_all_market_subscriptions(conn: &mut PgPooledConnection) -> Result<Vec<MarketSubscription>, Status> {
     market_subscriptions::table.load::<MarketSubscription>(conn).map_err(|e| {
-        log::error!("Failed to load all market subscriptions: {:?}", e);
+        log::error!("Failed to load all market subscriptions: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_load_subscriptions")
     })
 }
@@ -335,7 +335,7 @@ pub fn get_due_market_subscriptions(
             log::error!(
                 "Failed to load due market subscriptions of type {}: {:?}",
                 product_type,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -370,7 +370,7 @@ pub fn get_terminable_market_subscriptions(
             log::error!(
                 "Failed to load terminable market subscriptions of type {}: {:?}",
                 product_type,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -403,7 +403,7 @@ pub fn get_resumable_market_subscription(
                 "Failed to look up resumable market subscription for buyer {} product {}: {:?}",
                 buyer_id,
                 product_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_subscriptions")
         })
@@ -426,7 +426,7 @@ pub fn cancel_market_subscription_row(
     .execute(conn)
     .map(|rows| rows > 0)
     .map_err(|e| {
-        log::error!("Failed to cancel market subscription {}: {:?}", subscription_id, e);
+        log::error!("Failed to cancel market subscription {}: {:?}", subscription_id, crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_cancel_subscription")
     })
 }
@@ -453,7 +453,7 @@ pub fn resume_market_subscription_row(
     .execute(conn)
     .map(|rows| rows > 0)
     .map_err(|e| {
-        log::error!("Failed to resume market subscription {}: {:?}", subscription_id, e);
+        log::error!("Failed to resume market subscription {}: {:?}", subscription_id, crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_resume_subscription")
     })
 }
@@ -476,7 +476,7 @@ impl TxError {
         match self {
             TxError::Status(status) => status,
             TxError::Db(e) => {
-                log::error!("Transaction failed ({}): {:?}", what, e);
+                log::error!("Transaction failed ({}): {:?}", what, crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "transaction_failed")
             }
         }
@@ -567,7 +567,7 @@ pub fn get_market_purchases_for_subscription(
             log::error!(
                 "Failed to load market purchases for subscription {}: {:?}",
                 subscription_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_purchases")
         })
@@ -590,7 +590,7 @@ pub fn get_market_purchases_for_subscriptions(
             log::error!(
                 "Failed to load market purchases for subscriptions {:?}: {:?}",
                 subscription_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_purchases")
         })
@@ -613,7 +613,7 @@ pub fn get_market_payments_for_purchases(
             log::error!(
                 "Failed to load market payments for purchases {:?}: {:?}",
                 purchase_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_payments")
         })
@@ -627,7 +627,7 @@ pub fn insert_market_subscription(
         .values(new_subscription)
         .get_result::<MarketSubscription>(conn)
         .map_err(|e| {
-            log::error!("Failed to create market subscription: {:?}", e);
+            log::error!("Failed to create market subscription: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_subscription")
         })
 }
@@ -640,7 +640,7 @@ pub fn insert_market_purchase(
         .values(new_purchase)
         .get_result::<MarketPurchase>(conn)
         .map_err(|e| {
-            log::error!("Failed to create market purchase: {:?}", e);
+            log::error!("Failed to create market purchase: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_purchase")
         })
 }
@@ -653,7 +653,7 @@ pub fn insert_market_payment(
         .values(new_payment)
         .get_result::<MarketPayment>(conn)
         .map_err(|e| {
-            log::error!("Failed to create market payment: {:?}", e);
+            log::error!("Failed to create market payment: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_payment")
         })
 }

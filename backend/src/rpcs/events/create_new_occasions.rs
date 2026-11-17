@@ -118,7 +118,7 @@ pub fn create_occasion(
         .returning(models::POST_COLUMNS)
         .get_result::<models::Post>(conn)
         .map_err(|e| {
-            log::error!("Failed to create event occasion post: {:?}", e);
+            log::error!("Failed to create event occasion post: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_occasion_post")
         })?;
     let occasion = insert_into(occasions::table)
@@ -137,7 +137,7 @@ pub fn create_occasion(
         .returning(models::OCCASION_COLUMNS)
         .get_result::<models::Occasion>(conn)
         .map_err(|e| {
-            log::error!("Failed to create event occasion: {:?}", e);
+            log::error!("Failed to create event occasion: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_occasion")
         })?;
     Ok((occasion, occasion_post))

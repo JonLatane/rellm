@@ -341,7 +341,7 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
                 }
                 Ok(_) => log::info!("Semantic search was turned off or the model changed while connecting; dropping the connection."),
                 Err(e) => {
-                    log::error!("Couldn't reach the embedding service; search stays full-text only: {:?}", e);
+                    log::error!("Couldn't reach the embedding service; search stays full-text only: {:?}", crate::logic::log_redaction::safe_error(&e));
                     *LAST_LOAD_FAILURE.lock().unwrap() = Some((spec.id, Instant::now()));
                 }
             }
@@ -453,7 +453,7 @@ pub fn semantic_ranking(
         .lock()
         .ok()?
         .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", e))
+        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
         .ok()?;
     // Scoped search is always the Postgres scan: it reads only `scope_ids`' vectors and needs nothing else running.
     // It is also the fallback when the optional vector search service can't answer a "search anywhere" query.
@@ -495,7 +495,7 @@ pub fn semantic_ranking_global(conn: &mut PgPooledConnection, kind: EmbeddingKin
         .lock()
         .ok()?
         .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", e))
+        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
         .ok()?;
     semantic_index().search(
         conn,
@@ -693,7 +693,7 @@ fn store_embeddings(
     if !to_embed.is_empty() {
         if ctx.embedder.is_none() {
             let embedder = load_embedder().map_err(|e| {
-                log::error!("{:#}", e);
+                log::error!("{:?}", crate::logic::log_redaction::safe_error(&e));
                 anyhow::Error::new(EmbeddingServiceUnavailable)
             })?;
             // The service moved to another model since this run decided which one to embed with: don't store its

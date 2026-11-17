@@ -24,12 +24,12 @@ pub fn blocking_json_request(
     let call = move || {
         let client = reqwest::blocking::Client::new();
         let response = build(&client).send().map_err(|e| {
-            log::error!("HTTP request failed: {:?}", e);
+            log::error!("HTTP request failed: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, request_failed_error)
         })?;
         let status = response.status();
         let text = response.text().map_err(|e| {
-            log::error!("Failed to read HTTP response body: {:?}", e);
+            log::error!("Failed to read HTTP response body: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, request_failed_error)
         })?;
         let value: Value = if text.trim().is_empty() {
@@ -38,8 +38,8 @@ pub fn blocking_json_request(
             serde_json::from_str(&text).map_err(|e| {
                 log::error!(
                     "Failed to parse HTTP response as JSON: {:?} ({})",
-                    e,
-                    text
+                    crate::logic::log_redaction::safe_error(&e),
+                    crate::logic::log_redaction::summarize(&text)
                 );
                 Status::new(Code::FailedPrecondition, request_failed_error)
             })?

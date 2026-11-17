@@ -191,7 +191,7 @@ pub fn sync_occasion(
         .set(&new_row)
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to record event occasion sync status: {:?}", e);
+            log::error!("Failed to record event occasion sync status: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_record_occasion_sync")
         })?;
 

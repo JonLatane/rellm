@@ -125,7 +125,7 @@ pub async fn generate_media(
             .first::<models::AIProviderGrant>(conn)
             .optional()
             .map_err(|e| {
-                log::error!("Failed to load AI model provider grant: {:?}", e);
+                log::error!("Failed to load AI model provider grant: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_load_grant")
             })?
             .ok_or_else(|| Status::new(Code::PermissionDenied, "no_access_to_provider"))?;
@@ -343,7 +343,7 @@ pub async fn generate_media(
         .bind::<diesel::sql_types::BigInt, _>(grant.id)
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to spend AI model provider grant tokens: {:?}", e);
+            log::error!("Failed to spend AI model provider grant tokens: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_spend_token")
         })?;
         if updated == 0 {
@@ -362,7 +362,7 @@ pub async fn generate_media(
         .put_object_with_content_type(&object_storage_path, &generated_bytes, &generated_content_type)
         .await
         .map_err(|e| {
-            log::error!("Failed to upload generated media to object storage: {:?}", e);
+            log::error!("Failed to upload generated media to object storage: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_store_generated_media")
         })?;
 
@@ -386,7 +386,7 @@ pub async fn generate_media(
         })
         .get_result::<models::Media>(conn)
         .map_err(|e| {
-            log::error!("Failed to create generated media: {:?}", e);
+            log::error!("Failed to create generated media: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_generated_media")
         })?;
 
@@ -394,14 +394,14 @@ pub async fn generate_media(
         log::error!(
             "Failed to adjust server_media_usage_bytes for generated media {}: {:?}",
             new_media.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
     if let Err(e) = update_media_storage_used(current_user.id, conn) {
         log::error!(
             "Failed to update media_storage_bytes_used for user {}: {:?}",
             current_user.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
 
@@ -411,7 +411,7 @@ pub async fn generate_media(
             .filter(posts::id.eq(attach_post_id))
             .first(conn)
             .map_err(|e| {
-                log::error!("Failed to load target post media: {:?}", e);
+                log::error!("Failed to load target post media: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_load_target_post_media")
             })?;
         existing_media.insert(0, Some(new_media.id));
@@ -419,7 +419,7 @@ pub async fn generate_media(
             .set(posts::media.eq(existing_media))
             .execute(conn)
             .map_err(|e| {
-                log::error!("Failed to attach generated media to post: {:?}", e);
+                log::error!("Failed to attach generated media to post: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_attach_generated_media")
             })?;
     }
@@ -463,7 +463,7 @@ async fn load_reference_images(
         .filter(media::id.eq_any(media_ids))
         .load(conn)
         .map_err(|e| {
-            log::error!("Failed to load reference media: {:?}", e);
+            log::error!("Failed to load reference media: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_reference_media")
         })?;
     let by_id: HashMap<i64, models::Media> = rows.into_iter().map(|m| (m.id, m)).collect();
@@ -484,7 +484,7 @@ async fn load_reference_images(
             .map(|s| (s.object_storage_path.clone(), s.content_type.clone()))
             .ok_or_else(|| Status::new(Code::NotFound, "reference_media_not_found"))?;
         let bytes = bucket.get_object(&object_storage_path).await.map_err(|e| {
-            log::error!("Failed to download reference media {} from object storage: {:?}", id, e);
+            log::error!("Failed to download reference media {} from object storage: {:?}", id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_reference_media")
         })?;
         images.push((content_type, bytes.as_slice().to_vec()));

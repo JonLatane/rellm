@@ -14,10 +14,10 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'google/protobuf/timestamp.pb.dart' as $14;
 import 'media.pbenum.dart';
-import 'permissions.pbenum.dart' as $15;
-import 'visibility_moderation.pbenum.dart' as $14;
+import 'permissions.pbenum.dart' as $16;
+import 'visibility_moderation.pbenum.dart' as $15;
 
 export 'media.pbenum.dart';
 
@@ -59,12 +59,12 @@ class Media extends $pb.GeneratedMessage {
     Author? author,
     $core.String? name,
     $core.String? description,
-    $14.Visibility? visibility,
-    $14.Moderation? moderation,
+    $15.Visibility? visibility,
+    $15.Moderation? moderation,
     $core.bool? generated,
     $core.bool? processed,
-    $13.Timestamp? createdAt,
-    $13.Timestamp? updatedAt,
+    $14.Timestamp? createdAt,
+    $14.Timestamp? updatedAt,
     MediaMetadata? metadata,
     $core.String? url,
     $core.Iterable<MediaSize>? sizes,
@@ -120,12 +120,12 @@ class Media extends $pb.GeneratedMessage {
     ..aOM<Author>(2, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
     ..aOS(4, _omitFieldNames ? '' : 'name')
     ..aOS(5, _omitFieldNames ? '' : 'description')
-    ..e<$14.Visibility>(6, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
-    ..e<$14.Moderation>(7, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
+    ..e<$15.Visibility>(6, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
+    ..e<$15.Moderation>(7, _omitFieldNames ? '' : 'moderation', $pb.PbFieldType.OE, defaultOrMaker: $15.Moderation.MODERATION_UNKNOWN, valueOf: $15.Moderation.valueOf, enumValues: $15.Moderation.values)
     ..aOB(8, _omitFieldNames ? '' : 'generated')
     ..aOB(9, _omitFieldNames ? '' : 'processed')
-    ..aOM<$13.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(15, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(16, _omitFieldNames ? '' : 'updatedAt', subBuilder: $14.Timestamp.create)
     ..aOM<MediaMetadata>(17, _omitFieldNames ? '' : 'metadata', subBuilder: MediaMetadata.create)
     ..aOS(18, _omitFieldNames ? '' : 'url')
     ..pc<MediaSize>(19, _omitFieldNames ? '' : 'sizes', $pb.PbFieldType.PM, subBuilder: MediaSize.create)
@@ -197,9 +197,9 @@ class Media extends $pb.GeneratedMessage {
 
   /// Visibility of the media item.
   @$pb.TagNumber(6)
-  $14.Visibility get visibility => $_getN(4);
+  $15.Visibility get visibility => $_getN(4);
   @$pb.TagNumber(6)
-  set visibility($14.Visibility v) { setField(6, v); }
+  set visibility($15.Visibility v) { setField(6, v); }
   @$pb.TagNumber(6)
   $core.bool hasVisibility() => $_has(4);
   @$pb.TagNumber(6)
@@ -207,9 +207,9 @@ class Media extends $pb.GeneratedMessage {
 
   /// Moderation of the media item.
   @$pb.TagNumber(7)
-  $14.Moderation get moderation => $_getN(5);
+  $15.Moderation get moderation => $_getN(5);
   @$pb.TagNumber(7)
-  set moderation($14.Moderation v) { setField(7, v); }
+  set moderation($15.Moderation v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasModeration() => $_has(5);
   @$pb.TagNumber(7)
@@ -237,26 +237,26 @@ class Media extends $pb.GeneratedMessage {
   void clearProcessed() => clearField(9);
 
   @$pb.TagNumber(15)
-  $13.Timestamp get createdAt => $_getN(8);
+  $14.Timestamp get createdAt => $_getN(8);
   @$pb.TagNumber(15)
-  set createdAt($13.Timestamp v) { setField(15, v); }
+  set createdAt($14.Timestamp v) { setField(15, v); }
   @$pb.TagNumber(15)
   $core.bool hasCreatedAt() => $_has(8);
   @$pb.TagNumber(15)
   void clearCreatedAt() => clearField(15);
   @$pb.TagNumber(15)
-  $13.Timestamp ensureCreatedAt() => $_ensure(8);
+  $14.Timestamp ensureCreatedAt() => $_ensure(8);
 
   @$pb.TagNumber(16)
-  $13.Timestamp get updatedAt => $_getN(9);
+  $14.Timestamp get updatedAt => $_getN(9);
   @$pb.TagNumber(16)
-  set updatedAt($13.Timestamp v) { setField(16, v); }
+  set updatedAt($14.Timestamp v) { setField(16, v); }
   @$pb.TagNumber(16)
   $core.bool hasUpdatedAt() => $_has(9);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => clearField(16);
   @$pb.TagNumber(16)
-  $13.Timestamp ensureUpdatedAt() => $_ensure(9);
+  $14.Timestamp ensureUpdatedAt() => $_ensure(9);
 
   @$pb.TagNumber(17)
   MediaMetadata get metadata => $_getN(10);
@@ -782,8 +782,8 @@ class License extends $pb.GeneratedMessage {
     $core.String? id,
     Author? licensedTo,
     MediaReference? media,
-    $13.Timestamp? createdAt,
-    $13.Timestamp? revokedAt,
+    $14.Timestamp? createdAt,
+    $14.Timestamp? revokedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -811,8 +811,8 @@ class License extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOM<Author>(2, _omitFieldNames ? '' : 'licensedTo', subBuilder: Author.create)
     ..aOM<MediaReference>(3, _omitFieldNames ? '' : 'media', subBuilder: MediaReference.create)
-    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(5, _omitFieldNames ? '' : 'revokedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(5, _omitFieldNames ? '' : 'revokedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -871,27 +871,27 @@ class License extends $pb.GeneratedMessage {
   MediaReference ensureMedia() => $_ensure(2);
 
   @$pb.TagNumber(4)
-  $13.Timestamp get createdAt => $_getN(3);
+  $14.Timestamp get createdAt => $_getN(3);
   @$pb.TagNumber(4)
-  set createdAt($13.Timestamp v) { setField(4, v); }
+  set createdAt($14.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasCreatedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $13.Timestamp ensureCreatedAt() => $_ensure(3);
+  $14.Timestamp ensureCreatedAt() => $_ensure(3);
 
   /// When set, the license no longer grants access.
   @$pb.TagNumber(5)
-  $13.Timestamp get revokedAt => $_getN(4);
+  $14.Timestamp get revokedAt => $_getN(4);
   @$pb.TagNumber(5)
-  set revokedAt($13.Timestamp v) { setField(5, v); }
+  set revokedAt($14.Timestamp v) { setField(5, v); }
   @$pb.TagNumber(5)
   $core.bool hasRevokedAt() => $_has(4);
   @$pb.TagNumber(5)
   void clearRevokedAt() => clearField(5);
   @$pb.TagNumber(5)
-  $13.Timestamp ensureRevokedAt() => $_ensure(4);
+  $14.Timestamp ensureRevokedAt() => $_ensure(4);
 }
 
 /// A reference to a media item, designed to be included in other messages as a reference.
@@ -907,7 +907,7 @@ class MediaReference extends $pb.GeneratedMessage {
     $core.String? url,
     $core.String? description,
     Author? author,
-    $14.Visibility? visibility,
+    $15.Visibility? visibility,
   }) {
     final $result = create();
     if (id != null) {
@@ -952,7 +952,7 @@ class MediaReference extends $pb.GeneratedMessage {
     ..aOS(11, _omitFieldNames ? '' : 'url')
     ..aOS(12, _omitFieldNames ? '' : 'description')
     ..aOM<Author>(13, _omitFieldNames ? '' : 'author', subBuilder: Author.create)
-    ..e<$14.Visibility>(14, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$15.Visibility>(14, _omitFieldNames ? '' : 'visibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
     ..hasRequiredFields = false
   ;
 
@@ -1060,9 +1060,9 @@ class MediaReference extends $pb.GeneratedMessage {
   /// See `Media.visibility`. Included so a client holding only a `MediaReference` (e.g. the media
   /// viewer) can show/edit it and tell whether it's `LICENSED`.
   @$pb.TagNumber(14)
-  $14.Visibility get visibility => $_getN(8);
+  $15.Visibility get visibility => $_getN(8);
   @$pb.TagNumber(14)
-  set visibility($14.Visibility v) { setField(14, v); }
+  set visibility($15.Visibility v) { setField(14, v); }
   @$pb.TagNumber(14)
   $core.bool hasVisibility() => $_has(8);
   @$pb.TagNumber(14)
@@ -1086,7 +1086,7 @@ class Author extends $pb.GeneratedMessage {
     $core.String? username,
     MediaReference? avatar,
     $core.String? realName,
-    $core.Iterable<$15.Permission>? permissions,
+    $core.Iterable<$16.Permission>? permissions,
   }) {
     final $result = create();
     if (userId != null) {
@@ -1115,7 +1115,7 @@ class Author extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'username')
     ..aOM<MediaReference>(3, _omitFieldNames ? '' : 'avatar', subBuilder: MediaReference.create)
     ..aOS(4, _omitFieldNames ? '' : 'realName')
-    ..pc<$15.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(5, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
     ..hasRequiredFields = false
   ;
 
@@ -1182,7 +1182,7 @@ class Author extends $pb.GeneratedMessage {
   void clearRealName() => clearField(4);
 
   @$pb.TagNumber(5)
-  $core.List<$15.Permission> get permissions => $_getList(4);
+  $core.List<$16.Permission> get permissions => $_getList(4);
 }
 
 ///  Valid GetMediaRequest formats:

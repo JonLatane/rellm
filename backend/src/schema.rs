@@ -36,6 +36,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    contact_verification_sends (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     rsvps (id) {
         id -> Int8,
         occasion_id -> Int8,
@@ -371,6 +379,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    pending_contact_verifications (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        code_hash -> Varchar,
+        attempts -> Int4,
+        created_at -> Timestamp,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     post_embeddings (post_id) {
         post_id -> Int8,
         model -> Varchar,
@@ -471,6 +490,7 @@ diesel::table! {
         custom_css_configuration -> Nullable<Jsonb>,
         custom_css -> Nullable<Text>,
         search_settings -> Nullable<Jsonb>,
+        email_providers_config -> Nullable<Jsonb>,
     }
 }
 
@@ -638,6 +658,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     rsvps,
     occasion_sync_destinations,
     occasions,
+    contact_verification_sends,
     event_embeddings,
     events,
     federated_accounts,
@@ -661,6 +682,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     message_recipients,
     messages,
     messaging_groups,
+    pending_contact_verifications,
     post_embeddings,
     post_sync_destinations,
     posts,

@@ -15,10 +15,10 @@ import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'federation.pb.dart' as $1;
-import 'google/protobuf/timestamp.pb.dart' as $13;
-import 'permissions.pbenum.dart' as $15;
+import 'google/protobuf/timestamp.pb.dart' as $14;
+import 'permissions.pbenum.dart' as $16;
 import 'server_configuration.pbenum.dart';
-import 'visibility_moderation.pbenum.dart' as $14;
+import 'visibility_moderation.pbenum.dart' as $15;
 
 export 'server_configuration.pbenum.dart';
 
@@ -27,9 +27,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   factory ServerConfiguration({
     ServerInfo? serverInfo,
     $1.FederationInfo? federationInfo,
-    $core.Iterable<$15.Permission>? anonymousUserPermissions,
-    $core.Iterable<$15.Permission>? defaultUserPermissions,
-    $core.Iterable<$15.Permission>? basicUserPermissions,
+    $core.Iterable<$16.Permission>? anonymousUserPermissions,
+    $core.Iterable<$16.Permission>? defaultUserPermissions,
+    $core.Iterable<$16.Permission>? basicUserPermissions,
     CustomNavigationTabSet? customTabs,
     FeatureSettings? peopleSettings,
     FeatureSettings? groupSettings,
@@ -52,7 +52,12 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     TelnyxConfig? telnyxConfig,
     StalwartConfig? stalwartConfig,
     CustomCSSConfiguration? customCssConfiguration,
+    $core.Iterable<EmailVerificationAPI>? preferredEmailApis,
+    $core.Iterable<EmailVerificationAPI>? availableEmailApis,
     SubdomainSettings? subdomainSettings,
+    PostmarkConfig? postmarkConfig,
+    SendgridConfig? sendgridConfig,
+    MailgunConfig? mailgunConfig,
   }) {
     final $result = create();
     if (serverInfo != null) {
@@ -136,8 +141,23 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     if (customCssConfiguration != null) {
       $result.customCssConfiguration = customCssConfiguration;
     }
+    if (preferredEmailApis != null) {
+      $result.preferredEmailApis.addAll(preferredEmailApis);
+    }
+    if (availableEmailApis != null) {
+      $result.availableEmailApis.addAll(availableEmailApis);
+    }
     if (subdomainSettings != null) {
       $result.subdomainSettings = subdomainSettings;
+    }
+    if (postmarkConfig != null) {
+      $result.postmarkConfig = postmarkConfig;
+    }
+    if (sendgridConfig != null) {
+      $result.sendgridConfig = sendgridConfig;
+    }
+    if (mailgunConfig != null) {
+      $result.mailgunConfig = mailgunConfig;
     }
     return $result;
   }
@@ -148,9 +168,9 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ServerConfiguration', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOM<ServerInfo>(1, _omitFieldNames ? '' : 'serverInfo', subBuilder: ServerInfo.create)
     ..aOM<$1.FederationInfo>(2, _omitFieldNames ? '' : 'federationInfo', subBuilder: $1.FederationInfo.create)
-    ..pc<$15.Permission>(10, _omitFieldNames ? '' : 'anonymousUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
-    ..pc<$15.Permission>(11, _omitFieldNames ? '' : 'defaultUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
-    ..pc<$15.Permission>(12, _omitFieldNames ? '' : 'basicUserPermissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(10, _omitFieldNames ? '' : 'anonymousUserPermissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(11, _omitFieldNames ? '' : 'defaultUserPermissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(12, _omitFieldNames ? '' : 'basicUserPermissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
     ..aOM<CustomNavigationTabSet>(19, _omitFieldNames ? '' : 'customTabs', subBuilder: CustomNavigationTabSet.create)
     ..aOM<FeatureSettings>(20, _omitFieldNames ? '' : 'peopleSettings', subBuilder: FeatureSettings.create)
     ..aOM<FeatureSettings>(21, _omitFieldNames ? '' : 'groupSettings', subBuilder: FeatureSettings.create)
@@ -173,7 +193,12 @@ class ServerConfiguration extends $pb.GeneratedMessage {
     ..aOM<TelnyxConfig>(125, _omitFieldNames ? '' : 'telnyxConfig', subBuilder: TelnyxConfig.create)
     ..aOM<StalwartConfig>(126, _omitFieldNames ? '' : 'stalwartConfig', subBuilder: StalwartConfig.create)
     ..aOM<CustomCSSConfiguration>(127, _omitFieldNames ? '' : 'customCssConfiguration', subBuilder: CustomCSSConfiguration.create)
+    ..pc<EmailVerificationAPI>(128, _omitFieldNames ? '' : 'preferredEmailApis', $pb.PbFieldType.KE, valueOf: EmailVerificationAPI.valueOf, enumValues: EmailVerificationAPI.values, defaultEnumValue: EmailVerificationAPI.EMAIL_VERIFICATION_API_POSTMARK)
+    ..pc<EmailVerificationAPI>(129, _omitFieldNames ? '' : 'availableEmailApis', $pb.PbFieldType.KE, valueOf: EmailVerificationAPI.valueOf, enumValues: EmailVerificationAPI.values, defaultEnumValue: EmailVerificationAPI.EMAIL_VERIFICATION_API_POSTMARK)
     ..aOM<SubdomainSettings>(130, _omitFieldNames ? '' : 'subdomainSettings', subBuilder: SubdomainSettings.create)
+    ..aOM<PostmarkConfig>(131, _omitFieldNames ? '' : 'postmarkConfig', subBuilder: PostmarkConfig.create)
+    ..aOM<SendgridConfig>(132, _omitFieldNames ? '' : 'sendgridConfig', subBuilder: SendgridConfig.create)
+    ..aOM<MailgunConfig>(133, _omitFieldNames ? '' : 'mailgunConfig', subBuilder: MailgunConfig.create)
     ..hasRequiredFields = false
   ;
 
@@ -226,7 +251,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// admins to disable certain features for anonymous users. Valid values are
   /// `VIEW_USERS`, `VIEW_GROUPS`, `VIEW_POSTS`, and `VIEW_EVENTS`.
   @$pb.TagNumber(10)
-  $core.List<$15.Permission> get anonymousUserPermissions => $_getList(2);
+  $core.List<$16.Permission> get anonymousUserPermissions => $_getList(2);
 
   /// Default user permissions given to a new user. Users with `MODERATE_USERS` permission can also
   /// grant/revoke these permissions for others. Valid values are
@@ -235,7 +260,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// `VIEW_POSTS`, `CREATE_POSTS`, `PUBLISH_POSTS_LOCALLY`, `PUBLISH_POSTS_GLOBALLY`,
   /// `VIEW_EVENTS`, `CREATE_EVENTS`, `PUBLISH_EVENTS_LOCALLY`, and `PUBLISH_EVENTS_GLOBALLY`.
   @$pb.TagNumber(11)
-  $core.List<$15.Permission> get defaultUserPermissions => $_getList(3);
+  $core.List<$16.Permission> get defaultUserPermissions => $_getList(3);
 
   /// Permissions grantable by a user with the `GRANT_BASIC_PERMISSIONS` permission. Valid values are
   /// `VIEW_USERS`, `PUBLISH_USERS_LOCALLY`, `PUBLISH_USERS_GLOBALLY`,
@@ -243,7 +268,7 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// `VIEW_POSTS`, `CREATE_POSTS`, `PUBLISH_POSTS_LOCALLY`, `PUBLISH_POSTS_GLOBALLY`,
   /// `VIEW_EVENTS`, `CREATE_EVENTS`, `PUBLISH_EVENTS_LOCALLY`, and `PUBLISH_EVENTS_GLOBALLY`.
   @$pb.TagNumber(12)
-  $core.List<$15.Permission> get basicUserPermissions => $_getList(4);
+  $core.List<$16.Permission> get basicUserPermissions => $_getList(4);
 
   @$pb.TagNumber(19)
   CustomNavigationTabSet get customTabs => $_getN(5);
@@ -401,7 +426,11 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(100)
   void clearPrivateUserStrategy() => clearField(100);
 
-  /// (TODO) Allows admins to enable/disable creating accounts and logging in.
+  /// Which ways of creating accounts and logging in the server allows. The `*_WITH_SMS`/
+  /// `*_WITH_EMAIL` values are enforced (they require the matching `ContactProtocol` to be
+  /// supported -- see `supported_contact_protocols` -- and change how
+  /// [`CreateAccount`](#grpc-api-CreateAccount)/[`Login`](#grpc-api-Login) behave); the
+  /// `*_WITH_PASSWORD` values are not enforced yet (password creation/login always work).
   /// Eventually, external auth too hopefully!
   @$pb.TagNumber(101)
   $core.List<AuthenticationFeature> get authenticationFeatures => $_getList(16);
@@ -424,10 +453,12 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
   /// invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
   /// [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
-  /// [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
-  /// always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
-  /// Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
-  /// Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+  /// [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO`
+  /// requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/
+  /// [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/
+  /// [`MailgunConfig`](#rellm-MailgunConfig). Edited via the "Enable SMS Sending"/"Enable
+  /// Email Sending" toggles on the Sign In & Contact tab's "SMS Configuration"/"Email
+  /// Configuration" sections (`SignInAndContactTab.smsConfigurationSection`/
   /// `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
   @$pb.TagNumber(119)
   $core.List<ContactProtocol> get supportedContactProtocols => $_getList(18);
@@ -507,11 +538,11 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(125)
   TelnyxConfig ensureTelnyxConfig() => $_ensure(24);
 
-  ///  Unlike the other configs, at least at the moment, the integration with Stalwart is designed
-  ///  to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
-  ///  to receive mail from a Stalwart deployed within the same Kubernetes cluster.
-  ///
-  ///  This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+  /// Unlike the other configs, at least at the moment, the integration with Stalwart is designed
+  /// to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
+  /// to receive mail from a Stalwart deployed within the same Kubernetes cluster, and can send
+  /// mail (verification codes) through the same Stalwart's SMTP submission port. Only serialized
+  /// for admin users.
   @$pb.TagNumber(126)
   StalwartConfig get stalwartConfig => $_getN(25);
   @$pb.TagNumber(126)
@@ -539,6 +570,19 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   @$pb.TagNumber(127)
   CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(26);
 
+  /// Email sending, parallel to the SMS providers above. A server-preferred order of
+  /// [`EmailVerificationAPI`](#rellm-EmailVerificationAPI) providers to try first when more than one
+  /// of `stalwart_config` (sending)/`postmark_config`/`sendgrid_config`/`mailgun_config` is enabled;
+  /// same preference-then-fallback ordering as `preferred_verification_apis` (fallback order:
+  /// Postmark, SendGrid, Mailgun, Stalwart). Only serialized for admin users.
+  @$pb.TagNumber(128)
+  $core.List<EmailVerificationAPI> get preferredEmailApis => $_getList(27);
+
+  /// The email providers that are enabled and configured, in the order they'd be tried -- the
+  /// email counterpart of `available_verification_apis`, serialized to every caller.
+  @$pb.TagNumber(129)
+  $core.List<EmailVerificationAPI> get availableEmailApis => $_getList(28);
+
   /// Set *only* on the virtual configuration a server returns to requests addressed to a user's
   /// Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
   /// Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is
@@ -546,15 +590,51 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by
   /// checking `subdomain_settings?.subdomain_of`.
   @$pb.TagNumber(130)
-  SubdomainSettings get subdomainSettings => $_getN(27);
+  SubdomainSettings get subdomainSettings => $_getN(29);
   @$pb.TagNumber(130)
   set subdomainSettings(SubdomainSettings v) { setField(130, v); }
   @$pb.TagNumber(130)
-  $core.bool hasSubdomainSettings() => $_has(27);
+  $core.bool hasSubdomainSettings() => $_has(29);
   @$pb.TagNumber(130)
   void clearSubdomainSettings() => clearField(130);
   @$pb.TagNumber(130)
-  SubdomainSettings ensureSubdomainSettings() => $_ensure(27);
+  SubdomainSettings ensureSubdomainSettings() => $_ensure(29);
+
+  /// Postmark Config -- see [`PostmarkConfig`](#rellm-PostmarkConfig). Only serialized for admin users.
+  @$pb.TagNumber(131)
+  PostmarkConfig get postmarkConfig => $_getN(30);
+  @$pb.TagNumber(131)
+  set postmarkConfig(PostmarkConfig v) { setField(131, v); }
+  @$pb.TagNumber(131)
+  $core.bool hasPostmarkConfig() => $_has(30);
+  @$pb.TagNumber(131)
+  void clearPostmarkConfig() => clearField(131);
+  @$pb.TagNumber(131)
+  PostmarkConfig ensurePostmarkConfig() => $_ensure(30);
+
+  /// SendGrid Config -- see [`SendgridConfig`](#rellm-SendgridConfig). Only serialized for admin users.
+  @$pb.TagNumber(132)
+  SendgridConfig get sendgridConfig => $_getN(31);
+  @$pb.TagNumber(132)
+  set sendgridConfig(SendgridConfig v) { setField(132, v); }
+  @$pb.TagNumber(132)
+  $core.bool hasSendgridConfig() => $_has(31);
+  @$pb.TagNumber(132)
+  void clearSendgridConfig() => clearField(132);
+  @$pb.TagNumber(132)
+  SendgridConfig ensureSendgridConfig() => $_ensure(31);
+
+  /// Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users.
+  @$pb.TagNumber(133)
+  MailgunConfig get mailgunConfig => $_getN(32);
+  @$pb.TagNumber(133)
+  set mailgunConfig(MailgunConfig v) { setField(133, v); }
+  @$pb.TagNumber(133)
+  $core.bool hasMailgunConfig() => $_has(32);
+  @$pb.TagNumber(133)
+  void clearMailgunConfig() => clearField(133);
+  @$pb.TagNumber(133)
+  MailgunConfig ensureMailgunConfig() => $_ensure(32);
 }
 
 /// A user's Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
@@ -923,7 +1003,7 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
   factory ClusterResourceLock({
     $core.String? lockHolderNamespaceId,
     $core.Iterable<ClusterResource>? resources,
-    $13.Timestamp? acquiredAt,
+    $14.Timestamp? acquiredAt,
   }) {
     final $result = create();
     if (lockHolderNamespaceId != null) {
@@ -944,7 +1024,7 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'ClusterResourceLock', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'lockHolderNamespaceId')
     ..pc<ClusterResource>(2, _omitFieldNames ? '' : 'resources', $pb.PbFieldType.KE, valueOf: ClusterResource.valueOf, enumValues: ClusterResource.values, defaultEnumValue: ClusterResource.CLUSTER_RESOURCE_BROWSER)
-    ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'acquiredAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'acquiredAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -985,15 +1065,15 @@ class ClusterResourceLock extends $pb.GeneratedMessage {
 
   /// When `LockClusterResources` granted this lock.
   @$pb.TagNumber(20)
-  $13.Timestamp get acquiredAt => $_getN(2);
+  $14.Timestamp get acquiredAt => $_getN(2);
   @$pb.TagNumber(20)
-  set acquiredAt($13.Timestamp v) { setField(20, v); }
+  set acquiredAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasAcquiredAt() => $_has(2);
   @$pb.TagNumber(20)
   void clearAcquiredAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureAcquiredAt() => $_ensure(2);
+  $14.Timestamp ensureAcquiredAt() => $_ensure(2);
 }
 
 /// One `ClusterResource`'s configured concurrency limit - a single `resource`/`limit` pairing per
@@ -1398,14 +1478,14 @@ class ExternalCDNConfig extends $pb.GeneratedMessage {
 class MediaSettings extends $pb.GeneratedMessage {
   factory MediaSettings({
     $core.bool? visible,
-    $14.Moderation? defaultModeration,
-    $14.Visibility? defaultVisibility,
+    $15.Moderation? defaultModeration,
+    $15.Visibility? defaultVisibility,
     $fixnum.Int64? defaultUserMediaAllocationBytes,
     $fixnum.Int64? serverMediaAllocationBytes,
     $fixnum.Int64? serverMediaUsageBytes,
-    $13.Timestamp? serverMediaUsageCalculatedAt,
+    $14.Timestamp? serverMediaUsageCalculatedAt,
     $fixnum.Int64? serverObjectStorageUsageBytes,
-    $13.Timestamp? serverObjectStorageUsageCalculatedAt,
+    $14.Timestamp? serverObjectStorageUsageCalculatedAt,
     $core.bool? disableLinkPreviewImages,
     $core.bool? preferMetadataForLinkPreviewImages,
     $core.bool? blockCorsAnonymousMediaAccess,
@@ -1463,14 +1543,14 @@ class MediaSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MediaSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
-    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$15.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $15.Moderation.MODERATION_UNKNOWN, valueOf: $15.Moderation.valueOf, enumValues: $15.Moderation.values)
+    ..e<$15.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
     ..a<$fixnum.Int64>(4, _omitFieldNames ? '' : 'defaultUserMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(5, _omitFieldNames ? '' : 'serverMediaAllocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..a<$fixnum.Int64>(6, _omitFieldNames ? '' : 'serverMediaUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$13.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(7, _omitFieldNames ? '' : 'serverMediaUsageCalculatedAt', subBuilder: $14.Timestamp.create)
     ..a<$fixnum.Int64>(8, _omitFieldNames ? '' : 'serverObjectStorageUsageBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'serverObjectStorageUsageCalculatedAt', subBuilder: $14.Timestamp.create)
     ..aOB(10, _omitFieldNames ? '' : 'disableLinkPreviewImages')
     ..aOB(11, _omitFieldNames ? '' : 'preferMetadataForLinkPreviewImages')
     ..aOB(20, _omitFieldNames ? '' : 'blockCorsAnonymousMediaAccess')
@@ -1517,9 +1597,9 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $14.Moderation get defaultModeration => $_getN(1);
+  $15.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($14.Moderation v) { setField(2, v); }
+  set defaultModeration($15.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -1529,9 +1609,9 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $14.Visibility get defaultVisibility => $_getN(2);
+  $15.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($14.Visibility v) { setField(3, v); }
+  set defaultVisibility($15.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -1580,15 +1660,15 @@ class MediaSettings extends $pb.GeneratedMessage {
   /// When `server_media_usage_bytes` was last written -- by either an incremental adjustment or a
   /// full recompute (see that field's own doc); not limited to just the periodic job's runs.
   @$pb.TagNumber(7)
-  $13.Timestamp get serverMediaUsageCalculatedAt => $_getN(6);
+  $14.Timestamp get serverMediaUsageCalculatedAt => $_getN(6);
   @$pb.TagNumber(7)
-  set serverMediaUsageCalculatedAt($13.Timestamp v) { setField(7, v); }
+  set serverMediaUsageCalculatedAt($14.Timestamp v) { setField(7, v); }
   @$pb.TagNumber(7)
   $core.bool hasServerMediaUsageCalculatedAt() => $_has(6);
   @$pb.TagNumber(7)
   void clearServerMediaUsageCalculatedAt() => clearField(7);
   @$pb.TagNumber(7)
-  $13.Timestamp ensureServerMediaUsageCalculatedAt() => $_ensure(6);
+  $14.Timestamp ensureServerMediaUsageCalculatedAt() => $_ensure(6);
 
   /// (Read-only) Amount of storage used by S3 (or compatible) object storage.
   /// Periodically computed via list+sum from object storage itself, by the
@@ -1605,15 +1685,15 @@ class MediaSettings extends $pb.GeneratedMessage {
   void clearServerObjectStorageUsageBytes() => clearField(8);
 
   @$pb.TagNumber(9)
-  $13.Timestamp get serverObjectStorageUsageCalculatedAt => $_getN(8);
+  $14.Timestamp get serverObjectStorageUsageCalculatedAt => $_getN(8);
   @$pb.TagNumber(9)
-  set serverObjectStorageUsageCalculatedAt($13.Timestamp v) { setField(9, v); }
+  set serverObjectStorageUsageCalculatedAt($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasServerObjectStorageUsageCalculatedAt() => $_has(8);
   @$pb.TagNumber(9)
   void clearServerObjectStorageUsageCalculatedAt() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
+  $14.Timestamp ensureServerObjectStorageUsageCalculatedAt() => $_ensure(8);
 
   /// Turns off the `generate_link_preview_images` background job's generation of a preview image
   /// (the page's main image, or failing that a screenshot of it) for posts with links. Off by default (i.e. generation
@@ -2040,8 +2120,8 @@ class EmbeddingModel extends $pb.GeneratedMessage {
 class FeatureSettings extends $pb.GeneratedMessage {
   factory FeatureSettings({
     $core.bool? visible,
-    $14.Moderation? defaultModeration,
-    $14.Visibility? defaultVisibility,
+    $15.Moderation? defaultModeration,
+    $15.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
   }) {
@@ -2069,8 +2149,8 @@ class FeatureSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'FeatureSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
-    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$15.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $15.Moderation.MODERATION_UNKNOWN, valueOf: $15.Moderation.valueOf, enumValues: $15.Moderation.values)
+    ..e<$15.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..hasRequiredFields = false
@@ -2114,9 +2194,9 @@ class FeatureSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $14.Moderation get defaultModeration => $_getN(1);
+  $15.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($14.Moderation v) { setField(2, v); }
+  set defaultModeration($15.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2126,9 +2206,9 @@ class FeatureSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $14.Visibility get defaultVisibility => $_getN(2);
+  $15.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($14.Visibility v) { setField(3, v); }
+  set defaultVisibility($15.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -2159,8 +2239,8 @@ class FeatureSettings extends $pb.GeneratedMessage {
 class PostSettings extends $pb.GeneratedMessage {
   factory PostSettings({
     $core.bool? visible,
-    $14.Moderation? defaultModeration,
-    $14.Visibility? defaultVisibility,
+    $15.Moderation? defaultModeration,
+    $15.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
     $core.bool? enableReplies,
@@ -2196,8 +2276,8 @@ class PostSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PostSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
-    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$15.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $15.Moderation.MODERATION_UNKNOWN, valueOf: $15.Moderation.valueOf, enumValues: $15.Moderation.values)
+    ..e<$15.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..aOB(6, _omitFieldNames ? '' : 'enableReplies')
@@ -2243,9 +2323,9 @@ class PostSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $14.Moderation get defaultModeration => $_getN(1);
+  $15.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($14.Moderation v) { setField(2, v); }
+  set defaultModeration($15.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2255,9 +2335,9 @@ class PostSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $14.Visibility get defaultVisibility => $_getN(2);
+  $15.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($14.Visibility v) { setField(3, v); }
+  set defaultVisibility($15.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -2312,8 +2392,8 @@ class PostSettings extends $pb.GeneratedMessage {
 class EventSettings extends $pb.GeneratedMessage {
   factory EventSettings({
     $core.bool? visible,
-    $14.Moderation? defaultModeration,
-    $14.Visibility? defaultVisibility,
+    $15.Moderation? defaultModeration,
+    $15.Visibility? defaultVisibility,
     $core.String? aliasSingular,
     $core.String? aliasPlural,
     $core.bool? enableReplies,
@@ -2357,8 +2437,8 @@ class EventSettings extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'EventSettings', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'visible')
-    ..e<$14.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $14.Moderation.MODERATION_UNKNOWN, valueOf: $14.Moderation.valueOf, enumValues: $14.Moderation.values)
-    ..e<$14.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $14.Visibility.VISIBILITY_UNKNOWN, valueOf: $14.Visibility.valueOf, enumValues: $14.Visibility.values)
+    ..e<$15.Moderation>(2, _omitFieldNames ? '' : 'defaultModeration', $pb.PbFieldType.OE, defaultOrMaker: $15.Moderation.MODERATION_UNKNOWN, valueOf: $15.Moderation.valueOf, enumValues: $15.Moderation.values)
+    ..e<$15.Visibility>(3, _omitFieldNames ? '' : 'defaultVisibility', $pb.PbFieldType.OE, defaultOrMaker: $15.Visibility.VISIBILITY_UNKNOWN, valueOf: $15.Visibility.valueOf, enumValues: $15.Visibility.values)
     ..aOS(4, _omitFieldNames ? '' : 'aliasSingular')
     ..aOS(5, _omitFieldNames ? '' : 'aliasPlural')
     ..aOB(6, _omitFieldNames ? '' : 'enableReplies')
@@ -2406,9 +2486,9 @@ class EventSettings extends $pb.GeneratedMessage {
   /// posts are always visible to targeted users (who have not blocked
   /// the author) regardless of default_moderation.
   @$pb.TagNumber(2)
-  $14.Moderation get defaultModeration => $_getN(1);
+  $15.Moderation get defaultModeration => $_getN(1);
   @$pb.TagNumber(2)
-  set defaultModeration($14.Moderation v) { setField(2, v); }
+  set defaultModeration($15.Moderation v) { setField(2, v); }
   @$pb.TagNumber(2)
   $core.bool hasDefaultModeration() => $_has(1);
   @$pb.TagNumber(2)
@@ -2418,9 +2498,9 @@ class EventSettings extends $pb.GeneratedMessage {
   /// if default_user_permissions contains `GLOBALLY_PUBLISH_[USERS|GROUPS|POSTS|EVENTS]`
   /// as appropriate.
   @$pb.TagNumber(3)
-  $14.Visibility get defaultVisibility => $_getN(2);
+  $15.Visibility get defaultVisibility => $_getN(2);
   @$pb.TagNumber(3)
-  set defaultVisibility($14.Visibility v) { setField(3, v); }
+  set defaultVisibility($15.Visibility v) { setField(3, v); }
   @$pb.TagNumber(3)
   $core.bool hasDefaultVisibility() => $_has(2);
   @$pb.TagNumber(3)
@@ -3636,7 +3716,7 @@ class TwilioConfig extends $pb.GeneratedMessage {
   /// Whether `twilio_webhook_signing_key` above is actually used to verify inbound
   /// `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
   /// a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
-  /// presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+  /// presence" reasoning `SignInAndContactTab`'s own "Use Webhook Signing Key" toggle exists
   /// for. `false` while this is `false` means inbound deliveries are accepted without signature
   /// verification, same fail-safe-direction reasoning as before (see this message's own doc and
   /// `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
@@ -4036,15 +4116,428 @@ class StripeConfig extends $pb.GeneratedMessage {
   void clearStripeWebhookSigningSecret() => clearField(4);
 }
 
+/// Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark's Email API
+/// (`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
+/// alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
+/// Account API Token, which lets the Sign In & Contact tab show the domain's DKIM/Return-Path
+/// verification state and the Server's own delivery statistics.
+class PostmarkConfig extends $pb.GeneratedMessage {
+  factory PostmarkConfig({
+    $core.bool? postmarkEnabled,
+    $core.String? postmarkServerToken,
+    $core.String? postmarkAccountToken,
+    $core.String? postmarkFromAddress,
+    $core.String? postmarkFromName,
+    $core.String? postmarkMessageStream,
+  }) {
+    final $result = create();
+    if (postmarkEnabled != null) {
+      $result.postmarkEnabled = postmarkEnabled;
+    }
+    if (postmarkServerToken != null) {
+      $result.postmarkServerToken = postmarkServerToken;
+    }
+    if (postmarkAccountToken != null) {
+      $result.postmarkAccountToken = postmarkAccountToken;
+    }
+    if (postmarkFromAddress != null) {
+      $result.postmarkFromAddress = postmarkFromAddress;
+    }
+    if (postmarkFromName != null) {
+      $result.postmarkFromName = postmarkFromName;
+    }
+    if (postmarkMessageStream != null) {
+      $result.postmarkMessageStream = postmarkMessageStream;
+    }
+    return $result;
+  }
+  PostmarkConfig._() : super();
+  factory PostmarkConfig.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory PostmarkConfig.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PostmarkConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'postmarkEnabled')
+    ..aOS(2, _omitFieldNames ? '' : 'postmarkServerToken')
+    ..aOS(3, _omitFieldNames ? '' : 'postmarkAccountToken')
+    ..aOS(4, _omitFieldNames ? '' : 'postmarkFromAddress')
+    ..aOS(5, _omitFieldNames ? '' : 'postmarkFromName')
+    ..aOS(6, _omitFieldNames ? '' : 'postmarkMessageStream')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  PostmarkConfig clone() => PostmarkConfig()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  PostmarkConfig copyWith(void Function(PostmarkConfig) updates) => super.copyWith((message) => updates(message as PostmarkConfig)) as PostmarkConfig;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static PostmarkConfig create() => PostmarkConfig._();
+  PostmarkConfig createEmptyInstance() => create();
+  static $pb.PbList<PostmarkConfig> createRepeated() => $pb.PbList<PostmarkConfig>();
+  @$core.pragma('dart2js:noInline')
+  static PostmarkConfig getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<PostmarkConfig>(create);
+  static PostmarkConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get postmarkEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set postmarkEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasPostmarkEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPostmarkEnabled() => clearField(1);
+
+  /// The Server API Token, sent as `X-Postmark-Server-Token`. Never serialized once written
+  /// (write-only; a blank value on `ConfigureServer` means "leave what's stored alone").
+  @$pb.TagNumber(2)
+  $core.String get postmarkServerToken => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set postmarkServerToken($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasPostmarkServerToken() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearPostmarkServerToken() => clearField(2);
+
+  /// The Account API Token (`X-Postmark-Account-Token`) -- optional, only used to *read* domain
+  /// verification status (`GET /domains`). Write-only, same as the server token.
+  @$pb.TagNumber(3)
+  $core.String get postmarkAccountToken => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set postmarkAccountToken($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasPostmarkAccountToken() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearPostmarkAccountToken() => clearField(3);
+
+  /// The `From` address; must belong to a verified Sender Signature or Domain.
+  @$pb.TagNumber(4)
+  $core.String get postmarkFromAddress => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set postmarkFromAddress($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasPostmarkFromAddress() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearPostmarkFromAddress() => clearField(4);
+
+  /// Optional display name for the `From` header, e.g. "My Rellm Server".
+  @$pb.TagNumber(5)
+  $core.String get postmarkFromName => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set postmarkFromName($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasPostmarkFromName() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearPostmarkFromName() => clearField(5);
+
+  /// The Message Stream to send through; empty means `outbound` (Postmark's default transactional
+  /// stream).
+  @$pb.TagNumber(6)
+  $core.String get postmarkMessageStream => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set postmarkMessageStream($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasPostmarkMessageStream() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearPostmarkMessageStream() => clearField(6);
+}
+
+/// SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
+/// Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
+/// read" if you want the Sign In & Contact tab to show domain-authentication and delivery
+/// statistics), and authenticate your sending domain (Settings -> Sender Authentication).
+class SendgridConfig extends $pb.GeneratedMessage {
+  factory SendgridConfig({
+    $core.bool? sendgridEnabled,
+    $core.String? sendgridApiKey,
+    $core.String? sendgridFromAddress,
+    $core.String? sendgridFromName,
+    $core.String? sendgridRegion,
+  }) {
+    final $result = create();
+    if (sendgridEnabled != null) {
+      $result.sendgridEnabled = sendgridEnabled;
+    }
+    if (sendgridApiKey != null) {
+      $result.sendgridApiKey = sendgridApiKey;
+    }
+    if (sendgridFromAddress != null) {
+      $result.sendgridFromAddress = sendgridFromAddress;
+    }
+    if (sendgridFromName != null) {
+      $result.sendgridFromName = sendgridFromName;
+    }
+    if (sendgridRegion != null) {
+      $result.sendgridRegion = sendgridRegion;
+    }
+    return $result;
+  }
+  SendgridConfig._() : super();
+  factory SendgridConfig.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SendgridConfig.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SendgridConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'sendgridEnabled')
+    ..aOS(2, _omitFieldNames ? '' : 'sendgridApiKey')
+    ..aOS(3, _omitFieldNames ? '' : 'sendgridFromAddress')
+    ..aOS(4, _omitFieldNames ? '' : 'sendgridFromName')
+    ..aOS(5, _omitFieldNames ? '' : 'sendgridRegion')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SendgridConfig clone() => SendgridConfig()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SendgridConfig copyWith(void Function(SendgridConfig) updates) => super.copyWith((message) => updates(message as SendgridConfig)) as SendgridConfig;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SendgridConfig create() => SendgridConfig._();
+  SendgridConfig createEmptyInstance() => create();
+  static $pb.PbList<SendgridConfig> createRepeated() => $pb.PbList<SendgridConfig>();
+  @$core.pragma('dart2js:noInline')
+  static SendgridConfig getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SendgridConfig>(create);
+  static SendgridConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get sendgridEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set sendgridEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSendgridEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSendgridEnabled() => clearField(1);
+
+  /// The API key (starts with `SG.`), used as Bearer auth. Write-only.
+  @$pb.TagNumber(2)
+  $core.String get sendgridApiKey => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set sendgridApiKey($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasSendgridApiKey() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearSendgridApiKey() => clearField(2);
+
+  /// The `From` address; must be a verified Single Sender or belong to an authenticated domain.
+  @$pb.TagNumber(3)
+  $core.String get sendgridFromAddress => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set sendgridFromAddress($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasSendgridFromAddress() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSendgridFromAddress() => clearField(3);
+
+  /// Optional display name for the `From` header.
+  @$pb.TagNumber(4)
+  $core.String get sendgridFromName => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set sendgridFromName($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasSendgridFromName() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearSendgridFromName() => clearField(4);
+
+  /// Optional: set to `eu` to use SendGrid's EU regional API host (`api.eu.sendgrid.com`) -- required
+  /// for EU-regional subusers/accounts. Empty (default) uses `api.sendgrid.com`.
+  @$pb.TagNumber(5)
+  $core.String get sendgridRegion => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set sendgridRegion($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasSendgridRegion() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearSendgridRegion() => clearField(5);
+}
+
+/// Mailgun (https://mailgun.com) Config -- sent via the Messages API
+/// (`POST /v3/{domain}/messages`). Setup: add and verify a sending domain, and create a (domain)
+/// sending key or use your account's private API key.
+class MailgunConfig extends $pb.GeneratedMessage {
+  factory MailgunConfig({
+    $core.bool? mailgunEnabled,
+    $core.String? mailgunApiKey,
+    $core.String? mailgunDomain,
+    $core.String? mailgunRegion,
+    $core.String? mailgunFromAddress,
+    $core.String? mailgunFromName,
+  }) {
+    final $result = create();
+    if (mailgunEnabled != null) {
+      $result.mailgunEnabled = mailgunEnabled;
+    }
+    if (mailgunApiKey != null) {
+      $result.mailgunApiKey = mailgunApiKey;
+    }
+    if (mailgunDomain != null) {
+      $result.mailgunDomain = mailgunDomain;
+    }
+    if (mailgunRegion != null) {
+      $result.mailgunRegion = mailgunRegion;
+    }
+    if (mailgunFromAddress != null) {
+      $result.mailgunFromAddress = mailgunFromAddress;
+    }
+    if (mailgunFromName != null) {
+      $result.mailgunFromName = mailgunFromName;
+    }
+    return $result;
+  }
+  MailgunConfig._() : super();
+  factory MailgunConfig.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory MailgunConfig.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'MailgunConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'mailgunEnabled')
+    ..aOS(2, _omitFieldNames ? '' : 'mailgunApiKey')
+    ..aOS(3, _omitFieldNames ? '' : 'mailgunDomain')
+    ..aOS(4, _omitFieldNames ? '' : 'mailgunRegion')
+    ..aOS(5, _omitFieldNames ? '' : 'mailgunFromAddress')
+    ..aOS(6, _omitFieldNames ? '' : 'mailgunFromName')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  MailgunConfig clone() => MailgunConfig()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  MailgunConfig copyWith(void Function(MailgunConfig) updates) => super.copyWith((message) => updates(message as MailgunConfig)) as MailgunConfig;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MailgunConfig create() => MailgunConfig._();
+  MailgunConfig createEmptyInstance() => create();
+  static $pb.PbList<MailgunConfig> createRepeated() => $pb.PbList<MailgunConfig>();
+  @$core.pragma('dart2js:noInline')
+  static MailgunConfig getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<MailgunConfig>(create);
+  static MailgunConfig? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get mailgunEnabled => $_getBF(0);
+  @$pb.TagNumber(1)
+  set mailgunEnabled($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasMailgunEnabled() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearMailgunEnabled() => clearField(1);
+
+  /// The API key, used as Basic auth (`api:{key}`). Write-only.
+  @$pb.TagNumber(2)
+  $core.String get mailgunApiKey => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set mailgunApiKey($core.String v) { $_setString(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasMailgunApiKey() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearMailgunApiKey() => clearField(2);
+
+  /// The Mailgun sending domain, e.g. `mg.example.com`.
+  @$pb.TagNumber(3)
+  $core.String get mailgunDomain => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set mailgunDomain($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasMailgunDomain() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearMailgunDomain() => clearField(3);
+
+  /// `us` (default, `api.mailgun.net`) or `eu` (`api.eu.mailgun.net`).
+  @$pb.TagNumber(4)
+  $core.String get mailgunRegion => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set mailgunRegion($core.String v) { $_setString(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasMailgunRegion() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearMailgunRegion() => clearField(4);
+
+  /// The `From` address; should belong to `mailgun_domain`.
+  @$pb.TagNumber(5)
+  $core.String get mailgunFromAddress => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set mailgunFromAddress($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasMailgunFromAddress() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearMailgunFromAddress() => clearField(5);
+
+  /// Optional display name for the `From` header.
+  @$pb.TagNumber(6)
+  $core.String get mailgunFromName => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set mailgunFromName($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasMailgunFromName() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearMailgunFromName() => clearField(6);
+}
+
 /// Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
-/// Currently Rellm supports receiving emails via Stalwart webhook configurations.
+/// Rellm can *receive* emails from Stalwart (via its MTA Hook webhook) and *send* email through
+/// Stalwart's SMTP submission port -- both are designed to be in-cluster, see `deploys/email`.
 class StalwartConfig extends $pb.GeneratedMessage {
   factory StalwartConfig({
     $core.bool? stalwartReceivingEnabled,
+    $core.bool? stalwartSendingEnabled,
+    $core.String? stalwartSmtpHost,
+    $core.int? stalwartSmtpPort,
+    $core.String? stalwartSmtpUsername,
+    $core.String? stalwartSmtpPassword,
+    $core.String? stalwartFromAddress,
+    $core.String? stalwartFromName,
+    $core.String? stalwartManagementUrl,
+    $core.String? stalwartManagementToken,
   }) {
     final $result = create();
     if (stalwartReceivingEnabled != null) {
       $result.stalwartReceivingEnabled = stalwartReceivingEnabled;
+    }
+    if (stalwartSendingEnabled != null) {
+      $result.stalwartSendingEnabled = stalwartSendingEnabled;
+    }
+    if (stalwartSmtpHost != null) {
+      $result.stalwartSmtpHost = stalwartSmtpHost;
+    }
+    if (stalwartSmtpPort != null) {
+      $result.stalwartSmtpPort = stalwartSmtpPort;
+    }
+    if (stalwartSmtpUsername != null) {
+      $result.stalwartSmtpUsername = stalwartSmtpUsername;
+    }
+    if (stalwartSmtpPassword != null) {
+      $result.stalwartSmtpPassword = stalwartSmtpPassword;
+    }
+    if (stalwartFromAddress != null) {
+      $result.stalwartFromAddress = stalwartFromAddress;
+    }
+    if (stalwartFromName != null) {
+      $result.stalwartFromName = stalwartFromName;
+    }
+    if (stalwartManagementUrl != null) {
+      $result.stalwartManagementUrl = stalwartManagementUrl;
+    }
+    if (stalwartManagementToken != null) {
+      $result.stalwartManagementToken = stalwartManagementToken;
     }
     return $result;
   }
@@ -4054,6 +4547,15 @@ class StalwartConfig extends $pb.GeneratedMessage {
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'StalwartConfig', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'stalwartReceivingEnabled')
+    ..aOB(2, _omitFieldNames ? '' : 'stalwartSendingEnabled')
+    ..aOS(3, _omitFieldNames ? '' : 'stalwartSmtpHost')
+    ..a<$core.int>(4, _omitFieldNames ? '' : 'stalwartSmtpPort', $pb.PbFieldType.O3)
+    ..aOS(5, _omitFieldNames ? '' : 'stalwartSmtpUsername')
+    ..aOS(6, _omitFieldNames ? '' : 'stalwartSmtpPassword')
+    ..aOS(7, _omitFieldNames ? '' : 'stalwartFromAddress')
+    ..aOS(8, _omitFieldNames ? '' : 'stalwartFromName')
+    ..aOS(9, _omitFieldNames ? '' : 'stalwartManagementUrl')
+    ..aOS(10, _omitFieldNames ? '' : 'stalwartManagementToken')
     ..hasRequiredFields = false
   ;
 
@@ -4087,6 +4589,101 @@ class StalwartConfig extends $pb.GeneratedMessage {
   $core.bool hasStalwartReceivingEnabled() => $_has(0);
   @$pb.TagNumber(1)
   void clearStalwartReceivingEnabled() => clearField(1);
+
+  /// Enables sending email (verification codes, ...) through Stalwart's SMTP submission service.
+  /// Requires `stalwart_smtp_host` and `stalwart_from_address`.
+  @$pb.TagNumber(2)
+  $core.bool get stalwartSendingEnabled => $_getBF(1);
+  @$pb.TagNumber(2)
+  set stalwartSendingEnabled($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasStalwartSendingEnabled() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearStalwartSendingEnabled() => clearField(2);
+
+  /// Host (usually the in-cluster Service name, e.g. `stalwart.email.svc.cluster.local`) of
+  /// Stalwart's SMTP submission listener.
+  @$pb.TagNumber(3)
+  $core.String get stalwartSmtpHost => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set stalwartSmtpHost($core.String v) { $_setString(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasStalwartSmtpHost() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearStalwartSmtpHost() => clearField(3);
+
+  /// Submission port; 0 means 587 (STARTTLS submission). 465 means implicit TLS.
+  @$pb.TagNumber(4)
+  $core.int get stalwartSmtpPort => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set stalwartSmtpPort($core.int v) { $_setSignedInt32(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasStalwartSmtpPort() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearStalwartSmtpPort() => clearField(4);
+
+  /// Credentials of the Stalwart account/app-password to authenticate (SMTP AUTH) as.
+  @$pb.TagNumber(5)
+  $core.String get stalwartSmtpUsername => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set stalwartSmtpUsername($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasStalwartSmtpUsername() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearStalwartSmtpUsername() => clearField(5);
+
+  /// Write-only, like every other credential.
+  @$pb.TagNumber(6)
+  $core.String get stalwartSmtpPassword => $_getSZ(5);
+  @$pb.TagNumber(6)
+  set stalwartSmtpPassword($core.String v) { $_setString(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasStalwartSmtpPassword() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearStalwartSmtpPassword() => clearField(6);
+
+  /// The `From` address -- must be one Stalwart accepts from `stalwart_smtp_username` and a domain
+  /// Stalwart DKIM-signs for.
+  @$pb.TagNumber(7)
+  $core.String get stalwartFromAddress => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set stalwartFromAddress($core.String v) { $_setString(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasStalwartFromAddress() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearStalwartFromAddress() => clearField(7);
+
+  /// Optional display name for the `From` header.
+  @$pb.TagNumber(8)
+  $core.String get stalwartFromName => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set stalwartFromName($core.String v) { $_setString(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasStalwartFromName() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearStalwartFromName() => clearField(8);
+
+  /// Base URL of Stalwart's management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`),
+  /// used *read-only* by the Sign In & Contact tab to show queue depth, DNS records and
+  /// received DMARC reports. Optional.
+  @$pb.TagNumber(9)
+  $core.String get stalwartManagementUrl => $_getSZ(8);
+  @$pb.TagNumber(9)
+  set stalwartManagementUrl($core.String v) { $_setString(8, v); }
+  @$pb.TagNumber(9)
+  $core.bool hasStalwartManagementUrl() => $_has(8);
+  @$pb.TagNumber(9)
+  void clearStalwartManagementUrl() => clearField(9);
+
+  /// API key/bearer token for the management API (Stalwart "API key" principal). Write-only.
+  @$pb.TagNumber(10)
+  $core.String get stalwartManagementToken => $_getSZ(9);
+  @$pb.TagNumber(10)
+  set stalwartManagementToken($core.String v) { $_setString(9, v); }
+  @$pb.TagNumber(10)
+  $core.bool hasStalwartManagementToken() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearStalwartManagementToken() => clearField(10);
 }
 
 

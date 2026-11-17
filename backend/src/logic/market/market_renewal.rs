@@ -53,7 +53,7 @@ pub fn renew_subscriptions_of_type(
                 "Failed to renew market subscription {} (buyer {}): {:?} -- ending subscription",
                 subscription.id,
                 subscription.buyer_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             end_subscription(&subscription, conn);
         }
@@ -137,7 +137,7 @@ fn renew_one(
         .set(market_subscriptions::renews_at.eq(renews_at))
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to advance renews_at for subscription {}: {:?}", subscription.id, e);
+            log::error!("Failed to advance renews_at for subscription {}: {:?}", subscription.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(tonic::Code::Internal, "failed_to_advance_renewal")
         })?;
 
@@ -167,7 +167,7 @@ fn end_subscription(subscription: &models::MarketSubscription, conn: &mut PgPool
     if let Err(e) =
         models::cancel_market_subscription_and_release_slot(subscription.id, subscription.product_id, conn)
     {
-        log::error!("Failed to end market subscription {}: {:?}", subscription.id, e);
+        log::error!("Failed to end market subscription {}: {:?}", subscription.id, crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -197,7 +197,7 @@ pub fn terminate_subscriptions_of_type(
                  leaving service_terminated_at unset for retry",
                 subscription.id,
                 subscription.buyer_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             continue;
         }
@@ -208,7 +208,7 @@ pub fn terminate_subscriptions_of_type(
             log::error!(
                 "Failed to stamp service_terminated_at for market subscription {}: {:?}",
                 subscription.id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }

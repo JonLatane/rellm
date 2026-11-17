@@ -209,7 +209,7 @@ pub fn update_user(
             }
             existing_user.updated_at = SystemTime::now().into();
 
-            log::info!("Updating user: {:?}", existing_user);
+            log::info!("Updating user_id={}", existing_user.id);
             match diesel::update(users::table)
                 .filter(users::id.eq(&existing_user.id))
                 .set(&existing_user)
@@ -243,11 +243,16 @@ pub fn update_user(
             Err(Status::new(Code::NotFound, "duplicate_username"))
         }
         Err(e) => {
-            log::error!("Error updating user: {:?}", e);
+            log::error!("Error updating user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!("UpdateUser::request: {:?}, result: {:?}", &request, result);
+    // Never dump the request/result: both carry the user's username, email and phone.
+    log::info!(
+        "UpdateUser: user_id={:?}, ok={}",
+        &request.id,
+        result.is_ok()
+    );
 
     result
 }

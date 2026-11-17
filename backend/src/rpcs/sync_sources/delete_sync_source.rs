@@ -35,7 +35,7 @@ pub fn delete_sync_source(
                 log::error!(
                     "Failed to delete posts synced from source {}: {:?}",
                     existing.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
                 Status::new(Code::Internal, "failed_to_delete_synced_events")
             })?;
@@ -51,7 +51,7 @@ pub fn delete_sync_source(
                 log::error!(
                     "Failed to detach posts synced from source {}: {:?}",
                     existing.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
                 Status::new(Code::Internal, "failed_to_detach_synced_events")
             })?;
@@ -60,7 +60,7 @@ pub fn delete_sync_source(
     diesel::delete(sync_sources::table.filter(sync_sources::id.eq(existing.id)))
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to delete sync source {}: {:?}", existing.id, e);
+            log::error!("Failed to delete sync source {}: {:?}", existing.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_delete_sync_source")
         })?;
 

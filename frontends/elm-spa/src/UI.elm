@@ -15,7 +15,7 @@ import Html.Attributes exposing (alt, attribute, checked, class, classList, disa
 import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
-import Proto.Rellm exposing (BlueskyServer, ContactConsentChange, ContactMethod, FederatedServer, MastodonServer)
+import Proto.Rellm exposing (BlueskyServer, ContactConsentChange, ContactMethod, FederatedServer, MastodonServer, ServerConfiguration)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
@@ -27,6 +27,8 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.BlueskyAppViews as BlueskyAppViews exposing (BlueskyAppView)
+import Shared.AccountsPanel.ContactAuth as ContactAuth
+import Shared.AccountsPanel.ContactAuthView as ContactAuthView
 import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
@@ -3834,9 +3836,50 @@ rellmAddAccountServerForm shared currentRoute =
         loginPasswordInvalid =
             String.isEmpty form.password
 
+        -- SMS/email sign-up and login (see `ContactAuth`): everything below is inert -- and the form
+        -- exactly the classic one -- unless the server's `authentication_features` offer them.
+        -- Which login methods the Server field's host offers (just Password unless it enables more).
+        contactState : ContactAuth.State
+        contactState =
+            accountsPanelModel.contactAuth
+
+        availableMethods : List ContactAuth.LoginMethod
+        availableMethods =
+            RellmServers.rellmServerForHost accountsPanelModel.servers (String.trim form.server)
+                |> Maybe.andThen .connected
+                |> Maybe.map (.configuration >> ContactAuth.loginMethods)
+                |> Maybe.withDefault [ ContactAuth.PasswordMethod ]
+
+        -- The accepted server's sign-up options, once past the policy modal.
+        acceptedConfiguration : Maybe ServerConfiguration
+        acceptedConfiguration =
+            accountsPanelModel.acceptedCreateAccount
+                |> Maybe.map (.server >> RellmServers.configurationOf)
+
+        createPhoneEnabled : Bool
+        createPhoneEnabled =
+            acceptedConfiguration |> Maybe.map ContactAuth.createPhoneEnabled |> Maybe.withDefault False
+
+        createEmailEnabled : Bool
+        createEmailEnabled =
+            acceptedConfiguration |> Maybe.map ContactAuth.createEmailEnabled |> Maybe.withDefault False
+
+        createContactOffered : Bool
+        createContactOffered =
+            createPhoneEnabled || createEmailEnabled
+
+        createProblem : Maybe String
+        createProblem =
+            ContactAuth.createFormProblem { phoneEnabled = createPhoneEnabled, emailEnabled = createEmailEnabled } form.password contactState
+
+        -- Without SMS/email sign-up this is the classic 8-character check, unchanged.
         createPasswordInvalid : Bool
         createPasswordInvalid =
-            String.length form.password < 8
+            if createContactOffered then
+                createProblem /= Nothing
+
+            else
+                String.length form.password < 8
 
         -- Username/password auth is only ever offered for our own main
         -- server, unless an admin has flipped
@@ -3876,8 +3919,66 @@ rellmAddAccountServerForm shared currentRoute =
             if newAccountType == Just AccountsPanel.CreateNewAccount then
                 AccountsPanel.CreateAccountClicked
 
+            else if contactMode then
+                if contactState.loginChallenge == Nothing then
+                    AccountsPanel.SendLoginCodeClicked
+
+                else
+                    AccountsPanel.SubmitLoginCodeClicked
+
             else
                 AccountsPanel.LoginClicked
+
+        -- Whether the form is on an SMS/email login (its first step asks for a phone/email, its
+        -- second for the code) rather than the username/password one, and each step's own
+        -- "can't submit yet".
+        contactMode : Bool
+        contactMode =
+            knownServer
+                && showUsernamePasswordFields
+                && newAccountType
+                == Nothing
+                && contactState.method
+                /= ContactAuth.PasswordMethod
+                && List.member contactState.method availableMethods
+
+        loginCodeInvalid : Bool
+        loginCodeInvalid =
+            not (ContactAuth.codeIsComplete contactState.code)
+
+        createCodesInvalid : Bool
+        createCodesInvalid =
+            case contactState.createChallenge of
+                Just challenge ->
+                    not (ContactAuth.createCodesComplete challenge contactState)
+
+                Nothing ->
+                    False
+
+        -- The Login/Create buttons (and Enter) only go through when this says the current step is
+        -- valid; otherwise Enter is a no-op, same as the Password step's own checks.
+        submitInvalid : Bool
+        submitInvalid =
+            if newAccountType == Just AccountsPanel.CreateNewAccount then
+                createUsernameInvalid || createPasswordInvalid || createCodesInvalid
+
+            else if contactMode then
+                if contactState.loginChallenge == Nothing then
+                    ContactAuth.loginContactInvalid contactState
+
+                else
+                    loginCodeInvalid
+
+            else
+                loginUsernameInvalid || loginPasswordInvalid
+
+        resendMsg : AccountsPanel.Msg
+        resendMsg =
+            if newAccountType == Just AccountsPanel.CreateNewAccount then
+                AccountsPanel.ResendCreateCodeClicked
+
+            else
+                AccountsPanel.SendLoginCodeClicked
     in
     Html.form
         [ class "account-form"
@@ -3909,7 +4010,7 @@ rellmAddAccountServerForm shared currentRoute =
         -- event to swallow.
         , onSubmit
             (Shared.AccountsPanelMsg
-                (if newAccountType == Nothing then
+                (if (newAccountType == Nothing && not contactMode) || (newAccountType /= Nothing && submitInvalid) || (contactMode && submitInvalid) then
                     AccountsPanel.NoOp
 
                  else
@@ -3958,7 +4059,10 @@ rellmAddAccountServerForm shared currentRoute =
                     )
                 ]
             )
-        , collapsible showUsernamePasswordFields
+        , collapsible (knownServer && showUsernamePasswordFields && newAccountType == Nothing && contactState.loginChallenge == Nothing && List.length availableMethods > 1)
+            []
+            (ContactAuthView.loginMethodChooser Shared.AccountsPanelMsg availableMethods contactState.method submitting)
+        , collapsible (showUsernamePasswordFields && not contactMode)
             []
             (div [ class "account-form-field" ]
                 [ input
@@ -3995,7 +4099,47 @@ rellmAddAccountServerForm shared currentRoute =
                     "Clear username"
                 ]
             )
-        , collapsible (showUsernamePasswordFields && newAccountType /= Nothing)
+        , collapsible (contactMode && contactState.loginChallenge == Nothing)
+            []
+            (ContactAuthView.contactField Shared.AccountsPanelMsg
+                contactState.method
+                contactState.contact
+                submitting
+                (if ContactAuth.loginContactInvalid contactState then
+                    AccountsPanel.NoOp
+
+                 else
+                    AccountsPanel.SendLoginCodeClicked
+                )
+            )
+        , collapsible (contactMode && contactState.loginChallenge /= Nothing)
+            []
+            (case contactState.loginChallenge of
+                Just challenge ->
+                    ContactAuthView.codeStep Shared.AccountsPanelMsg
+                        { challenge = challenge
+                        , now = contactState.now
+                        , fields =
+                            [ { id = AccountsPanel.verificationCodeInputId
+                              , placeholder = "6-digit code"
+                              , value = contactState.code
+                              , onChange = ContactAuth.CodeChanged
+                              }
+                            ]
+                        , submitMsg =
+                            if loginCodeInvalid then
+                                AccountsPanel.NoOp
+
+                            else
+                                AccountsPanel.SubmitLoginCodeClicked
+                        , resendMsg = resendMsg
+                        , disabled = submitting
+                        }
+
+                Nothing ->
+                    text ""
+            )
+        , collapsible (showUsernamePasswordFields && newAccountType /= Nothing && contactState.createChallenge == Nothing)
             []
             (case newAccountType of
                 Just accountType ->
@@ -4031,7 +4175,13 @@ rellmAddAccountServerForm shared currentRoute =
                                  else
                                     "current-password"
                                 )
-                            , placeholder "Password"
+                            , placeholder
+                                (if accountType == AccountsPanel.CreateNewAccount && createContactOffered then
+                                    "Password (optional)"
+
+                                 else
+                                    "Password"
+                                )
                             , value form.password
                             , onInput (AccountsPanel.PasswordChanged >> Shared.AccountsPanelMsg)
                             , onEnter
@@ -4084,31 +4234,120 @@ rellmAddAccountServerForm shared currentRoute =
                 Nothing ->
                     text ""
             )
+        , collapsible
+            (showUsernamePasswordFields
+                && newAccountType
+                == Just AccountsPanel.CreateNewAccount
+                && createContactOffered
+                && contactState.createChallenge
+                == Nothing
+            )
+            []
+            (ContactAuthView.createContactFields Shared.AccountsPanelMsg
+                { phoneEnabled = createPhoneEnabled
+                , emailEnabled = createEmailEnabled
+                , state = contactState
+                , passwordEmpty = String.isEmpty form.password
+                , problem = createProblem
+                , disabled = accountFieldsDisabled
+                , submitMsg =
+                    if createUsernameInvalid || createPasswordInvalid then
+                        AccountsPanel.NoOp
+
+                    else
+                        submitMsg
+                }
+            )
+        , collapsible (newAccountType == Just AccountsPanel.CreateNewAccount && contactState.createChallenge /= Nothing)
+            []
+            (case contactState.createChallenge of
+                Just challenge ->
+                    ContactAuthView.codeStep Shared.AccountsPanelMsg
+                        { challenge = challenge
+                        , now = contactState.now
+                        , fields =
+                            List.concat
+                                [ if ContactAuth.createWantsPhoneCode challenge then
+                                    [ { id = AccountsPanel.verificationCodeInputId
+                                      , placeholder = "Code from the text message"
+                                      , value = contactState.createPhoneCode
+                                      , onChange = ContactAuth.CreatePhoneCodeChanged
+                                      }
+                                    ]
+
+                                  else
+                                    []
+                                , if ContactAuth.createWantsEmailCode challenge then
+                                    [ { id =
+                                            if ContactAuth.createWantsPhoneCode challenge then
+                                                "account-form-code-email"
+
+                                            else
+                                                AccountsPanel.verificationCodeInputId
+                                      , placeholder = "Code from the email"
+                                      , value = contactState.createEmailCode
+                                      , onChange = ContactAuth.CreateEmailCodeChanged
+                                      }
+                                    ]
+
+                                  else
+                                    []
+                                ]
+                        , submitMsg =
+                            if createCodesInvalid then
+                                AccountsPanel.NoOp
+
+                            else
+                                submitMsg
+                        , resendMsg = resendMsg
+                        , disabled = submitting
+                        }
+
+                Nothing ->
+                    text ""
+            )
         , collapsible showUsernamePasswordFields
             []
             (div [ class "account-form-buttons" ]
                 (case newAccountType of
                     Nothing ->
-                        [ button
-                            [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
-                            , disabled (accountFieldsDisabled || loginUsernameInvalid)
-                            , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
+                        if contactMode then
+                            contactLoginButtons shared
+                                { codeSent = contactState.loginChallenge /= Nothing
+                                , disabled = accountFieldsDisabled
+                                , submitDisabled = accountFieldsDisabled || submitInvalid
+                                }
+
+                        else
+                            [ button
+                                [ type_ "button"
+                                , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
+                                , disabled (accountFieldsDisabled || loginUsernameInvalid)
+                                , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
+                                ]
+                                [ text "Login" ]
+                            , button
+                                [ type_ "button"
+                                , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseCreateAccountClicked)
+                                , disabled (accountFieldsDisabled || createUsernameInvalid)
+                                , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-nav" ]
+                                ]
+                                [ text "Create Account" ]
                             ]
-                            [ text "Login" ]
-                        , button
-                            [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseCreateAccountClicked)
-                            , disabled (accountFieldsDisabled || createUsernameInvalid)
-                            , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-nav" ]
-                            ]
-                            [ text "Create Account" ]
-                        ]
 
                     Just accountType ->
                         [ button
                             [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.NewAccountBackClicked)
+                            , onClick
+                                (Shared.AccountsPanelMsg
+                                    (if contactState.createChallenge /= Nothing then
+                                        -- Back from the code step to the sign-up fields, keeping them.
+                                        AccountsPanel.ContactAuthMsg ContactAuth.CreateChallengeDismissed
+
+                                     else
+                                        AccountsPanel.NewAccountBackClicked
+                                    )
+                                )
                             , disabled accountFieldsDisabled
 
                             -- Deliberately untinted (unlike the submit
@@ -4134,7 +4373,7 @@ rellmAddAccountServerForm shared currentRoute =
                             , disabled
                                 (accountFieldsDisabled
                                     || (if accountType == AccountsPanel.CreateNewAccount then
-                                            createUsernameInvalid || createPasswordInvalid
+                                            createUsernameInvalid || createPasswordInvalid || createCodesInvalid
 
                                         else
                                             loginUsernameInvalid || loginPasswordInvalid
@@ -4170,6 +4409,53 @@ rellmAddAccountServerForm shared currentRoute =
 
             _ ->
                 text ""
+        ]
+
+
+{-| The button row of an SMS/email login: "Create Account" (which switches back to the Password method,
+the only one with a username field) + "Send Code" before a code's been sent; "Back" + "Login" once it
+has. The primary button is the form's real `submit` (see the form's own doc).
+-}
+contactLoginButtons : Shared.Model -> { codeSent : Bool, disabled : Bool, submitDisabled : Bool } -> List (Html Shared.Msg)
+contactLoginButtons shared { codeSent, disabled, submitDisabled } =
+    let
+        themeClass : String
+        themeClass =
+            hostnameToCSSClass <| formThemeHost shared.accounts
+    in
+    if codeSent then
+        [ button
+            [ type_ "button"
+            , onClick (Shared.AccountsPanelMsg (AccountsPanel.ContactAuthMsg ContactAuth.LoginChallengeDismissed))
+            , Html.Attributes.disabled disabled
+            , class "back-button"
+            ]
+            [ text "← Back" ]
+        , button
+            [ type_ "submit"
+            , Html.Attributes.disabled submitDisabled
+            , classes [ themeClass, "background-color-primary" ]
+            ]
+            [ text "Login" ]
+        ]
+
+    else
+        -- The `submit` button stays second in both states: Elm patches the row's buttons in place, so
+        -- a `type="button"` (Back) that became the `submit` (Send Code) mid-click would submit the
+        -- form -- a resend -- on the very click that dismissed the code step.
+        [ button
+            [ type_ "button"
+            , onClick (Shared.AccountsPanelMsg AccountsPanel.CreateAccountInsteadClicked)
+            , Html.Attributes.disabled disabled
+            , classes [ themeClass, "background-color-nav" ]
+            ]
+            [ text "Create Account" ]
+        , button
+            [ type_ "submit"
+            , Html.Attributes.disabled submitDisabled
+            , classes [ themeClass, "background-color-primary" ]
+            ]
+            [ text "Send Code" ]
         ]
 
 

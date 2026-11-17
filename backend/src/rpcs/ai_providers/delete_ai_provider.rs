@@ -28,7 +28,7 @@ pub fn delete_ai_provider(
     diesel::delete(ai_providers::table.filter(ai_providers::id.eq(existing.id)))
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to delete AI model provider {}: {:?}", existing.id, e);
+            log::error!("Failed to delete AI model provider {}: {:?}", existing.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_delete_ai_provider")
         })?;
 

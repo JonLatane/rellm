@@ -1,6 +1,6 @@
 [package]
 name = "rellm"
-version = "0.5.553"
+version = "0.5.554"
 edition = "2024"
 
 authors = ["Jon Latané <jonlatane@gmail.com>"]
@@ -115,6 +115,16 @@ reqwest = { version = "0.13", default-features = false, features = [
   # tonic's "tls-ring" feature.
   "rustls-no-provider",
 ] }
+# SMTP submission (STARTTLS/implicit TLS + AUTH) for `logic::contact_methods::stalwart_email`. Explicit
+# features: `ring` + `webpki-roots` keep us off the aws-lc-rs backend (see the note on `reqwest`) and
+# off native-tls/openssl; the default `pool`/`hostname` features aren't needed.
+lettre = { version = "0.11.23", default-features = false, features = [
+  "smtp-transport",
+  "builder",
+  "rustls",
+  "ring",
+  "webpki-roots",
+] }
 rrule = "0.14"
 # Local text embeddings (ONNX Runtime) for semantic search/reranking -- see `logic::embeddings`. rustls
 # variants only (no OpenSSL), matching tonic/reqwest above. The model itself is downloaded from
@@ -127,6 +137,7 @@ mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
 atom_syndication = { version = "0.12.10", default-features = false, features = ["builders"] }
+psl = "2"
 
 # In-memory approximate nearest-neighbor index (USearch, C++ via cxx) for the per-namespace
 # `vector_search_service`. Off by default: nothing else needs it, and it adds a C++ build.

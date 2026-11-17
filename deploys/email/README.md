@@ -137,3 +137,7 @@ Remove a domain's acceptance + MTA Hook through the same admin UI you added it i
 ```bash
 make remove_email
 ```
+
+## Sending from Rellm through Stalwart (optional)
+
+Besides receiving, a Rellm instance can *send* its own verification/login emails through this Stalwart over SMTP **submission** (STARTTLS on 587, or implicit TLS on 465, with SMTP AUTH) - it is one of Rellm's email providers, alongside Postmark/SendGrid/Mailgun (see `docs/contact_integrations.md`). Create a Stalwart account (or app password) for Rellm, make sure Stalwart DKIM-signs the domain you'll send from and that SPF/DMARC are published for it, then enter the Service host (e.g. `stalwart.rellm-email.svc.cluster.local`), port, credentials and `From` address under the Stalwart card on the Server Information page's Sign In & Contact tab. Rellm only speaks TLS-verified submission: the certificate Stalwart presents on that port must be trusted by public web roots and match the host you entered, which an in-cluster Service name will not do on its own - point Rellm at a public hostname that resolves to the Service (or configure a certificate for it) rather than the bare cluster DNS name if you see `stalwart_send_failed`.

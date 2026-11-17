@@ -84,7 +84,7 @@ pub fn update_membership(
             Ok(existing_membership.to_proto())
         }
         Err(e) => {
-            log::error!("Error updating membership: {:?}", e);
+            log::error!("Error updating membership: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating_membership"))
         }
     }

@@ -23,7 +23,7 @@ pub fn free_cluster_resources(
     shared_secret: &str,
     conn: &mut PgPooledConnection,
 ) -> Result<(), Status> {
-    log::info!("FreeClusterResources called: {:?}", request);
+    log::info!("FreeClusterResources called");
 
     let config = scd::server_configurations
         .filter(scd::active.eq(true))
@@ -64,7 +64,7 @@ pub fn free_cluster_resources(
     match result {
         Ok(()) => Ok(()),
         Err(e) => {
-            log::error!("FreeClusterResources failed: {:?}", e);
+            log::error!("FreeClusterResources failed: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     }

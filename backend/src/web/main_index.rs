@@ -38,7 +38,7 @@ pub async fn main_index(
         });
         return CacheResponse::public(
             result_data.map_err(|e| {
-                log::info!("flutter: {:?}", e);
+                log::info!("flutter: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::NotFound
             }),
             60,

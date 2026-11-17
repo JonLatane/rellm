@@ -4,7 +4,7 @@ module Components.Pages.ServerInformationPage.MarketTab exposing (Model, Msg, ac
 payment processor credentials Rellm's Market checkout/webhook flow uses) and Market
 (`MarketSettings.enabled`, the public "is Rellm's Market turned on for this server" toggle that
 `Pages.Market`'s multi-server browsing reads off of every federated server). Split out of a single
-"Integrations" tab (see `Components.Pages.ServerInformationPage.ContactIntegrationsTab` for the
+"Integrations" tab (see `Components.Pages.ServerInformationPage.SignInAndContactTab` for the
 other half, Twilio/Bird/Preferred Providers) once that combined tab grew unwieldy -- Stripe/Market
 have nothing to do with Twilio/Bird beyond both once having lived in the same file.
 
@@ -13,12 +13,12 @@ Unlike `MarketSettings` (deliberately public -- see its own proto doc, and
 since federated Market browsing needs every server to expose at least this much), `StripeConfig` is
 admin-only-serialized, stripped from the unauthenticated `GetServerConfiguration` probe
 `RellmServers.configurationOf` reflects. So, exactly like `ClusterTab` (`cluster_resources` is
-admin-only the same way) and `ContactIntegrationsTab` (`twilioConfig`/`birdConfig` likewise), this
+admin-only the same way) and `SignInAndContactTab` (`twilioConfig`/`birdConfig` likewise), this
 tab fires its own authenticated `GetServerConfiguration`
 (`fetchAuthenticatedServerConfiguration`/`AdminMarketStatus`) once an admin account is present, and
 displays _both_ `stripeConfig` and `marketSettings` off of _that_ fetch, rather than only Stripe --
 simplest to keep one fetch covering everything this tab itself needs, even though `marketSettings`
-alone would already be visible via the public probe. `Components.Pages.ServerInformationPage.ContactIntegrationsTab`
+alone would already be visible via the public probe. `Components.Pages.ServerInformationPage.SignInAndContactTab`
 does the exact same thing independently for its own three fields, with its own separate fetch --
 the two tabs don't share this fetched `ServerConfiguration`, same as any other pair of admin tabs
 in this app. `Components.Pages.ServerInformationPage` dispatches `activated` (via `MarketTab.update`)

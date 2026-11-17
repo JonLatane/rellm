@@ -1,0 +1,237 @@
+/* DNS help shared by the Sign In & Contact tab (email domains) and the CDN tab (DNS setup) --
+   Components/Pages/ServerInformationPage/Dns/View.elm: copyable record blocks, copyable one-liners, the
+   collapsible explainer and the "How to fix" box. Only generic theme variables are used (--border,
+   --chip-bg, --panel-bg, --muted, --fg); the warning/error accents come from the `.sc-level-*` custom
+   properties (sign_in_and_contact.css) when a `.sc-root` ancestor provides them. */
+
+.dns-record {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.55rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.dns-record-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.dns-record-label {
+  flex: 0 0 4.3rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding-top: 0.12rem;
+}
+
+.dns-record-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  word-break: break-all;
+  user-select: all;
+}
+
+.dns-code-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.5rem 0.4rem 0.65rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.dns-code-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-all;
+  user-select: all;
+}
+
+.dns-copy {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.dns-fix {
+  margin: 0.3rem 0 0;
+  padding: 0.4rem 0.6rem 0.3rem;
+  border-left: 3px solid var(--sc-c, var(--border));
+  border-radius: 0.45rem;
+  background: var(--chip-bg);
+}
+
+.dns-fix-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.dns-fix-text {
+  margin: 0.2rem 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.dns-explainer {
+  margin: 0.2rem 0 0.7rem;
+}
+
+.dns-explainer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.dns-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.dns-collapse.is-open {
+  grid-template-rows: 1fr;
+}
+
+.dns-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.dns-collapse.is-closed {
+  pointer-events: none;
+}
+
+.dns-collapse.is-closed > * {
+  visibility: hidden;
+  transition: visibility 0s 0.2s;
+}
+
+.dns-explainer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0 0 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.dns-explainer-body p {
+  margin: 0;
+}
+
+/* CDN tab's DNS setup card */
+
+.dns-setup {
+  margin: 1rem 0;
+  padding: 0.8rem 0.9rem;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+}
+
+.dns-setup-title {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+}
+
+.dns-setup-lead,
+.dns-step-why,
+.dns-step-note {
+  margin: 0.15rem 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.dns-step {
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.dns-step-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.dns-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  font-size: 0.72rem;
+}
+
+.dns-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.02rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.dns-example {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.dns-warning {
+  margin: 0.4rem 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--sc-warning, #9a6700);
+  background: var(--sc-warning-bg, rgba(191, 135, 0, 0.16));
+}
+
+.dns-links {
+  margin: 0.2rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.dns-record-hint {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

@@ -30,6 +30,25 @@ impl Clone for RellmService {
 type ReplyStreamResult<T> = Result<Response<T>, Status>;
 type ReplyStream = Pin<Box<dyn Stream<Item = Result<Post, Status>> + Send>>;
 
+/// `ok` or `error <code>: <message>` -- the only part of an RPC's result that is logged (see the
+/// macros below). Error messages here are fixed machine-readable keys (`username_already_exists`...).
+fn rpc_outcome<T>(result: &Result<T, Status>) -> String {
+    match result {
+        Ok(_) => "ok".to_string(),
+        // Messages are meant to be fixed machine-readable keys (`username_already_exists`), but some
+        // carry interpolated text; only identifier-like ones are logged.
+        Err(status) => {
+            let message = status.message();
+            let message = if crate::logic::log_redaction::is_identifier_like(message) {
+                message
+            } else {
+                "<redacted>"
+            };
+            format!("error {:?}: {}", status.code(), message)
+        }
+    }
+}
+
 macro_rules! auth_rpc {
     ($self: expr, $rpc:expr, $request:expr) => {{
         let mut conn = get_connection(&$self.pool)?;
@@ -79,17 +98,14 @@ macro_rules! authenticated_rpc {
             "authentication_required",
         ))?;
         let inner = $request.into_inner();
-        let request_log = format!("{:?}", &inner);
         let result = $rpc(inner, &user, &mut conn);
-        let truncated_result = format!("{:?}", &result)
-            .chars()
-            .take(1000)
-            .collect::<String>();
+        // Never log the request or result themselves: they carry user content and PII (names,
+        // emails, post/message text, ...). RPC name, user id and outcome are enough.
         log::info!(
-            "Authenticated RPC: {}\tRequest: {:?}\tResult: {:?}",
+            "Authenticated RPC: {} user_id={} {}",
             stringify!($rpc),
-            request_log,
-            truncated_result
+            user.id,
+            rpc_outcome(&result)
         );
         result.map(Response::new)
     }};
@@ -105,17 +121,14 @@ macro_rules! authenticated_bucket_rpc {
             "authentication_required",
         ))?;
         let inner = $request.into_inner();
-        let request_log = format!("{:?}", &inner);
         let result = $rpc(inner, &user, &mut conn, &$self.bucket).await;
-        let truncated_result = format!("{:?}", &result)
-            .chars()
-            .take(1000)
-            .collect::<String>();
+        // Never log the request or result themselves: they carry user content and PII (names,
+        // emails, post/message text, ...). RPC name, user id and outcome are enough.
         log::info!(
-            "Authenticated RPC: {}\tRequest: {:?}\tResult: {:?}",
+            "Authenticated RPC: {} user_id={} {}",
             stringify!($rpc),
-            request_log,
-            truncated_result
+            user.id,
+            rpc_outcome(&result)
         );
         result.map(Response::new)
     }};
@@ -126,17 +139,12 @@ macro_rules! unauthenticated_rpc {
         let mut conn = get_connection(&$self.pool)?;
         let user: Option<models::User> = auth::get_auth_user(&$request, &mut conn)?;
         let inner = $request.into_inner();
-        let request_log = format!("{:?}", &inner);
         let result = $rpc(inner, &user.as_ref(), &mut conn);
-        let truncated_result = format!("{:?}", &result)
-            .chars()
-            .take(1000)
-            .collect::<String>();
         log::info!(
-            "Unauthenticated RPC: {}\tRequest: {:?}\tResult: {:?}",
+            "Unauthenticated RPC: {} user_id={:?} {}",
             stringify!($rpc),
-            request_log,
-            truncated_result
+            user.as_ref().map(|u| u.id),
+            rpc_outcome(&result)
         );
         result.map(Response::new)
     }};
@@ -222,6 +230,13 @@ impl Rellm for RellmService {
         request: Request<ServerConfiguration>,
     ) -> Result<Response<ServerConfiguration>, Status> {
         authenticated_rpc!(self, rpcs::configure_server, request)
+    }
+
+    async fn get_contact_integrations_status(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<ContactIntegrationsStatus>, Status> {
+        authenticated_rpc!(self, rpcs::get_contact_integrations_status, request)
     }
 
     async fn get_custom_css(
@@ -746,10 +761,10 @@ impl Rellm for RellmService {
     type StreamRepliesStream = ReplyStream;
     async fn stream_replies(
         &self,
-        req: Request<Post>,
+        _req: Request<Post>,
     ) -> ReplyStreamResult<Self::StreamRepliesStream> {
         println!("Rellm::stream_replies");
-        println!("\tclient connected from: {:?}", req.remote_addr());
+        // (The client's address is deliberately not logged: it is PII.)
 
         // creating infinite stream with requested message
         let repeat = std::iter::repeat(Post {

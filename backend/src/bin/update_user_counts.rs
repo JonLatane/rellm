@@ -25,7 +25,7 @@ pub fn main() {
             Err(e) => log::error!(
                 "Failed to update counts for User {}: {:?}. Proceeding through remaining Users.",
                 user_id,
-                e
+                rellm::logic::log_redaction::safe_error(&e)
             ),
         }
     }

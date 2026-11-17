@@ -56,10 +56,14 @@ impl ToI32PrivateUserStrategy for String {
     }
 }
 
-pub const ALL_AUTHENTICATION_FEATURES: [AuthenticationFeature; 3] = [
+pub const ALL_AUTHENTICATION_FEATURES: [AuthenticationFeature; 7] = [
     AuthenticationFeature::Unknown,
-    AuthenticationFeature::CreateAccount,
-    AuthenticationFeature::Login,
+    AuthenticationFeature::CreateAccountWithPassword,
+    AuthenticationFeature::CreateAccountWithSms,
+    AuthenticationFeature::CreateAccountWithEmail,
+    AuthenticationFeature::LoginWithPassword,
+    AuthenticationFeature::LoginWithSms,
+    AuthenticationFeature::LoginWithEmail,
 ];
 
 pub trait ToProtoAuthenticationFeature {

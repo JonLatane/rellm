@@ -48,7 +48,7 @@ pub async fn spa_file_or_username_or_custom_tab(
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     // `SpaPath`, not `PathBuf`: a short Bluesky post URL (`/~did:plc:…~rkey@bluesky:`) ends in `:`.
     let file = file.0;
-    log::info!("file_or_username_or_custom_tab: {:?}", &file);
+    // (Not logged: a path like `/username` names a person.)
     // See spa_web_path.rs: Next bakes a single fixed basePath into a build, so
     // "/" and "/tamagui" are served from two separate exports on disk. This
     // route is only ever mounted at root, so under the "/tamagui" prefix

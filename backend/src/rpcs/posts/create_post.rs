@@ -14,11 +14,7 @@ pub fn create_post(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<Post, Status> {
-    log::info!(
-        "CreatePost called for user {}, user_id={}",
-        &user.username,
-        user.id
-    );
+    log::info!("CreatePost called for user_id={}", user.id);
     validate_permission(&Some(user), Permission::CreatePosts)?;
 
     let configuration = crate::rpcs::get_server_configuration_proto(conn)?;
@@ -175,7 +171,7 @@ pub fn create_post(
                 .to_proto(Some(&media_lookup), None, None))
         }
         Err(e) => {
-            log::error!("Error creating post! {:?}", e);
+            log::error!("Error creating post! {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "internal_error"))
         }
     }

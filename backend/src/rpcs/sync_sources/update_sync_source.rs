@@ -67,7 +67,7 @@ pub fn update_sync_source(
         .set(&existing)
         .get_result::<models::SyncSource>(conn)
         .map_err(|e| {
-            log::error!("Failed to update sync source: {:?}", e);
+            log::error!("Failed to update sync source: {:?}", crate::logic::log_redaction::safe_error(&e));
             tonic::Status::new(tonic::Code::Internal, "failed_to_update_sync_source")
         })?;
 

@@ -89,7 +89,11 @@ message ServerConfiguration {
   // Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`.
   PrivateUserStrategy private_user_strategy = 100;
 
-  // (TODO) Allows admins to enable/disable creating accounts and logging in.
+  // Which ways of creating accounts and logging in the server allows. The `*_WITH_SMS`/
+  // `*_WITH_EMAIL` values are enforced (they require the matching `ContactProtocol` to be
+  // supported -- see `supported_contact_protocols` -- and change how
+  // [`CreateAccount`](#grpc-api-CreateAccount)/[`Login`](#grpc-api-Login) behave); the
+  // `*_WITH_PASSWORD` values are not enforced yet (password creation/login always work).
   // Eventually, external auth too hopefully!
   repeated AuthenticationFeature authentication_features = 101;
 
@@ -103,10 +107,12 @@ message ServerConfiguration {
   // [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an
   // invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled
   // [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
-  // [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is
-  // always rejected (no email provider exists yet). Edited via the "Enable SMS Sending"/"Enable
-  // Email Sending" toggles on the Contact Integrations tab's "SMS Configuration"/"Email
-  // Configuration" sections (`ContactIntegrationsTab.smsConfigurationSection`/
+  // [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO`
+  // requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/
+  // [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/
+  // [`MailgunConfig`](#rellm-MailgunConfig). Edited via the "Enable SMS Sending"/"Enable
+  // Email Sending" toggles on the Sign In & Contact tab's "SMS Configuration"/"Email
+  // Configuration" sections (`SignInAndContactTab.smsConfigurationSection`/
   // `emailConfigurationSection`) -- see `docs/contact_integrations.md`.
   repeated ContactProtocol supported_contact_protocols = 119;
 
@@ -149,9 +155,9 @@ message ServerConfiguration {
 
   // Unlike the other configs, at least at the moment, the integration with Stalwart is designed
   // to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705
-  // to receive mail from a Stalwart deployed within the same Kubernetes cluster.
-  //
-  // This could be extended in the future to allow sending mail with Stalwart, but that's TBD.
+  // to receive mail from a Stalwart deployed within the same Kubernetes cluster, and can send
+  // mail (verification codes) through the same Stalwart's SMTP submission port. Only serialized
+  // for admin users.
   optional StalwartConfig stalwart_config = 126;
 
   // The server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and
@@ -160,6 +166,26 @@ message ServerConfiguration {
   // text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with
   // [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS).
   optional CustomCSSConfiguration custom_css_configuration = 127;
+
+  // Email sending, parallel to the SMS providers above. A server-preferred order of
+  // [`EmailVerificationAPI`](#rellm-EmailVerificationAPI) providers to try first when more than one
+  // of `stalwart_config` (sending)/`postmark_config`/`sendgrid_config`/`mailgun_config` is enabled;
+  // same preference-then-fallback ordering as `preferred_verification_apis` (fallback order:
+  // Postmark, SendGrid, Mailgun, Stalwart). Only serialized for admin users.
+  repeated EmailVerificationAPI preferred_email_apis = 128;
+
+  // The email providers that are enabled and configured, in the order they'd be tried -- the
+  // email counterpart of `available_verification_apis`, serialized to every caller.
+  repeated EmailVerificationAPI available_email_apis = 129;
+
+  // Postmark Config -- see [`PostmarkConfig`](#rellm-PostmarkConfig). Only serialized for admin users.
+  optional PostmarkConfig postmark_config = 131;
+
+  // SendGrid Config -- see [`SendgridConfig`](#rellm-SendgridConfig). Only serialized for admin users.
+  optional SendgridConfig sendgrid_config = 132;
+
+  // Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users.
+  optional MailgunConfig mailgun_config = 133;
 
   // Set *only* on the virtual configuration a server returns to requests addressed to a user's
   // Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
@@ -394,10 +420,20 @@ message ExternalCDNConfig {
 enum AuthenticationFeature {
   // An authentication feature that is not known to the server. (Likely, the client and server use different versions of the Rellm protocol.)
   AUTHENTICATION_FEATURE_UNKNOWN = 0;
+
   // Users can sign up for an account.
-  CREATE_ACCOUNT = 1;
+  CREATE_ACCOUNT_WITH_PASSWORD = 1;
+  // Users can sign up for an account via SMS.
+  CREATE_ACCOUNT_WITH_SMS = 2;
+  // Users can sign up for an account via email.
+  CREATE_ACCOUNT_WITH_EMAIL = 3;
+
   // Users can sign in with an existing account.
-  LOGIN = 2;
+  LOGIN_WITH_PASSWORD = 11;
+  // Users can sign in with an existing account via SMS.
+  LOGIN_WITH_SMS = 12;
+  // Users can sign in with an existing account via email.
+  LOGIN_WITH_EMAIL = 13;
 }
 
 // Media is a special type and less customizable than "Features."
@@ -930,7 +966,10 @@ enum ContactProtocol {
   // `tel:` (phone/SMS) contact. Requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/
   // [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig).
   CONTACT_PROTOCOL_TEL = 0;
-  // `mailto:` (email) contact. Currently not supported -- no email provider exists yet.
+  // `mailto:` (email) contact. Requires an enabled, configured email provider:
+  // [`StalwartConfig`](#rellm-StalwartConfig) (with `stalwart_sending_enabled`),
+  // [`PostmarkConfig`](#rellm-PostmarkConfig), [`SendgridConfig`](#rellm-SendgridConfig) or
+  // [`MailgunConfig`](#rellm-MailgunConfig).
   CONTACT_PROTOCOL_MAILTO = 1;
 }
 
@@ -943,6 +982,16 @@ enum ContactVerificationAPI {
   CONTACT_VERIFICATION_API_TWILIO = 0;
   CONTACT_VERIFICATION_API_BIRD = 1;
   CONTACT_VERIFICATION_API_TELNYX = 2;
+}
+
+// The email providers [`ServerConfiguration.preferred_email_apis`](#rellm-ServerConfiguration)/
+// [`available_email_apis`](#rellm-ServerConfiguration) order between -- the email counterpart of
+// [`ContactVerificationAPI`](#rellm-ContactVerificationAPI).
+enum EmailVerificationAPI {
+  EMAIL_VERIFICATION_API_POSTMARK = 0;
+  EMAIL_VERIFICATION_API_SENDGRID = 1;
+  EMAIL_VERIFICATION_API_MAILGUN = 2;
+  EMAIL_VERIFICATION_API_STALWART = 3;
 }
 
 // Twilio credentials, authenticated via a Twilio **API Key** (`twilio_api_key_sid`/
@@ -985,7 +1034,7 @@ message TwilioConfig {
   // Whether `twilio_webhook_signing_key` above is actually used to verify inbound
   // `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once
   // a key is stored -- an admin must explicitly opt in, same "explicit switch, not implicit from
-  // presence" reasoning `ContactIntegrationsTab`'s own "Use Webhook Signing Key" toggle exists
+  // presence" reasoning `SignInAndContactTab`'s own "Use Webhook Signing Key" toggle exists
   // for. `false` while this is `false` means inbound deliveries are accepted without signature
   // verification, same fail-safe-direction reasoning as before (see this message's own doc and
   // `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can
@@ -1071,9 +1120,90 @@ message StripeConfig {
   string stripe_webhook_signing_secret = 4;
 }
 
+// Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark's Email API
+// (`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
+// alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
+// Account API Token, which lets the Sign In & Contact tab show the domain's DKIM/Return-Path
+// verification state and the Server's own delivery statistics.
+message PostmarkConfig {
+  bool postmark_enabled = 1;
+  // The Server API Token, sent as `X-Postmark-Server-Token`. Never serialized once written
+  // (write-only; a blank value on `ConfigureServer` means "leave what's stored alone").
+  string postmark_server_token = 2;
+  // The Account API Token (`X-Postmark-Account-Token`) -- optional, only used to *read* domain
+  // verification status (`GET /domains`). Write-only, same as the server token.
+  string postmark_account_token = 3;
+  // The `From` address; must belong to a verified Sender Signature or Domain.
+  string postmark_from_address = 4;
+  // Optional display name for the `From` header, e.g. "My Rellm Server".
+  string postmark_from_name = 5;
+  // The Message Stream to send through; empty means `outbound` (Postmark's default transactional
+  // stream).
+  string postmark_message_stream = 6;
+}
+
+// SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
+// Setup: create an API key with at least "Mail Send" (plus "Domain Authentication read"/"Stats
+// read" if you want the Sign In & Contact tab to show domain-authentication and delivery
+// statistics), and authenticate your sending domain (Settings -> Sender Authentication).
+message SendgridConfig {
+  bool sendgrid_enabled = 1;
+  // The API key (starts with `SG.`), used as Bearer auth. Write-only.
+  string sendgrid_api_key = 2;
+  // The `From` address; must be a verified Single Sender or belong to an authenticated domain.
+  string sendgrid_from_address = 3;
+  // Optional display name for the `From` header.
+  string sendgrid_from_name = 4;
+  // Optional: set to `eu` to use SendGrid's EU regional API host (`api.eu.sendgrid.com`) -- required
+  // for EU-regional subusers/accounts. Empty (default) uses `api.sendgrid.com`.
+  string sendgrid_region = 5;
+}
+
+// Mailgun (https://mailgun.com) Config -- sent via the Messages API
+// (`POST /v3/{domain}/messages`). Setup: add and verify a sending domain, and create a (domain)
+// sending key or use your account's private API key.
+message MailgunConfig {
+  bool mailgun_enabled = 1;
+  // The API key, used as Basic auth (`api:{key}`). Write-only.
+  string mailgun_api_key = 2;
+  // The Mailgun sending domain, e.g. `mg.example.com`.
+  string mailgun_domain = 3;
+  // `us` (default, `api.mailgun.net`) or `eu` (`api.eu.mailgun.net`).
+  string mailgun_region = 4;
+  // The `From` address; should belong to `mailgun_domain`.
+  string mailgun_from_address = 5;
+  // Optional display name for the `From` header.
+  string mailgun_from_name = 6;
+}
+
 // Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
-// Currently Rellm supports receiving emails via Stalwart webhook configurations.
+// Rellm can *receive* emails from Stalwart (via its MTA Hook webhook) and *send* email through
+// Stalwart's SMTP submission port -- both are designed to be in-cluster, see `deploys/email`.
 message StalwartConfig {
   // Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email.
   bool stalwart_receiving_enabled = 1;
+
+  // Enables sending email (verification codes, ...) through Stalwart's SMTP submission service.
+  // Requires `stalwart_smtp_host` and `stalwart_from_address`.
+  bool stalwart_sending_enabled = 2;
+  // Host (usually the in-cluster Service name, e.g. `stalwart.email.svc.cluster.local`) of
+  // Stalwart's SMTP submission listener.
+  string stalwart_smtp_host = 3;
+  // Submission port; 0 means 587 (STARTTLS submission). 465 means implicit TLS.
+  int32 stalwart_smtp_port = 4;
+  // Credentials of the Stalwart account/app-password to authenticate (SMTP AUTH) as.
+  string stalwart_smtp_username = 5;
+  // Write-only, like every other credential.
+  string stalwart_smtp_password = 6;
+  // The `From` address -- must be one Stalwart accepts from `stalwart_smtp_username` and a domain
+  // Stalwart DKIM-signs for.
+  string stalwart_from_address = 7;
+  // Optional display name for the `From` header.
+  string stalwart_from_name = 8;
+  // Base URL of Stalwart's management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`),
+  // used *read-only* by the Sign In & Contact tab to show queue depth, DNS records and
+  // received DMARC reports. Optional.
+  string stalwart_management_url = 9;
+  // API key/bearer token for the management API (Stalwart "API key" principal). Write-only.
+  string stalwart_management_token = 10;
 }

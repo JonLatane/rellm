@@ -127,7 +127,7 @@ impl SemanticIndex for RemoteIndex {
         let response = match reply_rx.recv_timeout(SEARCH_TIMEOUT + Duration::from_secs(1)) {
             Ok(Ok(response)) => response,
             Ok(Err(e)) => {
-                log::warn!("The vector search service failed ({}); using the Postgres scan for {}s.", e, DOWN_FOR.as_secs());
+                log::warn!("The vector search service failed ({}); using the Postgres scan for {}s.", crate::logic::log_redaction::safe_error(&e), DOWN_FOR.as_secs());
                 self.skip_for(DOWN_FOR);
                 return None;
             }

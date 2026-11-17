@@ -180,7 +180,7 @@ impl ToProtoMarshalableOccasion for MarshalableOccasion {
             starts_at: Some(occasion.starts_at.to_proto()),
             ends_at: Some(occasion.ends_at.to_proto()),
             info: Some(serde_json::from_value(occasion.info).unwrap_or_else(|e| {
-                log::warn!("Unreadable info on occasion {}: {:?}", occasion.post_id, e);
+                log::warn!("Unreadable info on occasion {}: {:?}", occasion.post_id, crate::logic::log_redaction::safe_error(&e));
                 OccasionInfo::default()
             })),
             location,

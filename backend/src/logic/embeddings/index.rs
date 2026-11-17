@@ -49,7 +49,7 @@ pub fn semantic_index() -> std::sync::Arc<dyn SemanticIndex> {
         Some((url, secret)) => match super::vector_client::RemoteIndex::new(&url, secret) {
             Ok(remote) => std::sync::Arc::new(remote),
             Err(e) => {
-                log::error!("Couldn't set up the vector search client; scanning Postgres instead: {:?}", e);
+                log::error!("Couldn't set up the vector search client; scanning Postgres instead: {:?}", crate::logic::log_redaction::safe_error(&e));
                 std::sync::Arc::new(PostgresScanIndex)
             }
         },
@@ -97,7 +97,7 @@ impl SemanticIndex for PostgresScanIndex {
         .bind::<diesel::sql_types::Array<BigInt>, _>(scope.to_vec())
         .bind::<Text, _>(query.spec.id)
         .load::<StoredVector>(conn)
-        .map_err(|e| log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), e))
+        .map_err(|e| log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), crate::logic::log_redaction::safe_error(&e)))
         .ok()?;
 
         let mut matches: Vec<(i64, f32)> = rows

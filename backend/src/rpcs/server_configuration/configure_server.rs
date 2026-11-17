@@ -12,7 +12,9 @@ pub fn configure_server(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::ServerConfiguration, Status> {
-    log::info!("ConfigureServer called; request {:?}", request);
+    // The configuration holds contact details (sender addresses, phone numbers, SMTP usernames, ...),
+    // so it is never logged.
+    log::info!("ConfigureServer called by user_id={}", user.id);
     validate_permission(&Some(user), Permission::Admin)?;
     validate_configuration(&request)?;
 
@@ -123,7 +125,7 @@ pub fn configure_server(
     // `twilio_api_key_sid`/`twilio_from_number`/`use_twilio_webhook_signing_key` pass through
     // freely, no scrubbing needed -- an API Key SID is useless without its Secret, same as a
     // username alone, and `use_twilio_webhook_signing_key` isn't a secret at all (it's the
-    // "Use Webhook Signing Key" toggle on `ContactIntegrationsTab`).
+    // "Use Webhook Signing Key" toggle on `SignInAndContactTab`).
     if let Some(incoming_twilio_config) = request.twilio_config.as_ref() {
         let existing_twilio_config = get_server_configuration_model(conn)
             .ok()
@@ -243,6 +245,73 @@ pub fn configure_server(
             })
             .unwrap(),
         );
+    }
+
+    // Email providers: same merge-on-blank treatment for every write-only secret (an empty
+    // incoming secret keeps the stored one). The three HTTP providers share the one
+    // `email_providers_config` column; Stalwart has its own. Sending a `None` config clears it.
+    {
+        let existing_model = get_server_configuration_model(conn).ok();
+        let existing_providers = existing_model
+            .as_ref()
+            .map(|c| c.email_providers())
+            .unwrap_or_default();
+        let keep = |incoming: &String, existing: &String| {
+            if incoming.is_empty() { existing.clone() } else { incoming.clone() }
+        };
+        let mut providers: models::EmailProvidersJson =
+            serde_json::from_value(new_config.email_providers_config.clone().unwrap_or_default())
+                .unwrap_or_default();
+        if let Some(incoming) = request.postmark_config.as_ref() {
+            let existing = existing_providers.postmark_config.clone().unwrap_or_default();
+            providers.postmark_config = Some(protos::PostmarkConfig {
+                postmark_server_token: keep(
+                    &incoming.postmark_server_token,
+                    &existing.postmark_server_token,
+                ),
+                postmark_account_token: keep(
+                    &incoming.postmark_account_token,
+                    &existing.postmark_account_token,
+                ),
+                ..incoming.clone()
+            });
+        }
+        if let Some(incoming) = request.sendgrid_config.as_ref() {
+            let existing = existing_providers.sendgrid_config.clone().unwrap_or_default();
+            providers.sendgrid_config = Some(protos::SendgridConfig {
+                sendgrid_api_key: keep(&incoming.sendgrid_api_key, &existing.sendgrid_api_key),
+                ..incoming.clone()
+            });
+        }
+        if let Some(incoming) = request.mailgun_config.as_ref() {
+            let existing = existing_providers.mailgun_config.clone().unwrap_or_default();
+            providers.mailgun_config = Some(protos::MailgunConfig {
+                mailgun_api_key: keep(&incoming.mailgun_api_key, &existing.mailgun_api_key),
+                ..incoming.clone()
+            });
+        }
+        new_config.email_providers_config = Some(serde_json::to_value(providers).unwrap());
+
+        if let Some(incoming) = request.stalwart_config.as_ref() {
+            let existing = existing_model
+                .and_then(|c| c.stalwart_config)
+                .and_then(|c| serde_json::from_value::<protos::StalwartConfig>(c).ok())
+                .unwrap_or_default();
+            new_config.stalwart_config = Some(
+                serde_json::to_value(protos::StalwartConfig {
+                    stalwart_smtp_password: keep(
+                        &incoming.stalwart_smtp_password,
+                        &existing.stalwart_smtp_password,
+                    ),
+                    stalwart_management_token: keep(
+                        &incoming.stalwart_management_token,
+                        &existing.stalwart_management_token,
+                    ),
+                    ..incoming.clone()
+                })
+                .unwrap(),
+            );
+        }
     }
 
     // Same merge-on-blank treatment as `twilio_config` above, for `StripeConfig.stripe_secret_key`/
@@ -433,14 +502,11 @@ pub fn configure_server(
             // Apply a changed `search_settings.semantic_search_enabled` right away: start loading the
             // query model when turned on, free its memory when turned off.
             crate::logic::embeddings::apply_semantic_search_setting(conn);
-            log::info!(
-                "ConfigureServer called; updated configuration to {:?}",
-                configuration.to_proto()
-            );
+            log::info!("ConfigureServer: configuration updated");
             Ok(configuration.to_proto())
         }
         Err(e) => {
-            log::error!("ConfigureServer failed. Error: {:?}", e);
+            log::error!("ConfigureServer failed. Error: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating"))
         }
     }

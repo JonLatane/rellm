@@ -34,6 +34,7 @@ import Json.Encode as Encode
 import Page
 import Ports
 import Proto.Rellm exposing (ExpirableToken, RefreshTokenResponse)
+import Proto.Rellm.LoginRequest.Request as LoginRequest
 import Proto.Rellm.Rellm as Rellm
 import Request
 import Shared
@@ -321,11 +322,16 @@ loginTask server username password =
 
         Just connection ->
             Grpc.new Rellm.login
-                { username = username
-                , password = password
-                , expiresAt = Nothing
-                , deviceName = Nothing
-                , userId = Nothing
+                { request =
+                    Just
+                        (LoginRequest.UsernamePassword
+                            { username = username
+                            , password = password
+                            , expiresAt = Nothing
+                            , deviceName = Nothing
+                            , userId = Nothing
+                            }
+                        )
                 }
                 |> Grpc.setHost (RellmServers.connectionUrl connection)
                 |> Grpc.toTask

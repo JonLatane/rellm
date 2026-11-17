@@ -55,6 +55,7 @@ pub struct ServerConfiguration {
     pub supported_contact_protocols: Option<serde_json::Value>,
 
     pub stalwart_config: Option<serde_json::Value>,
+    pub email_providers_config: Option<serde_json::Value>,
 
     /// A `CustomCSSConfiguration` *without* its `custom_css` text (that's the separate `custom_css` column,
     /// not loaded here -- see `SERVER_CONFIGURATION_COLUMNS`): the media IDs and forced theme.
@@ -98,6 +99,7 @@ pub const SERVER_CONFIGURATION_COLUMNS: (
     server_configurations::telnyx_config,
     server_configurations::supported_contact_protocols,
     server_configurations::stalwart_config,
+    server_configurations::email_providers_config,
     server_configurations::custom_css_configuration,
 ) = (
     server_configurations::id,
@@ -129,6 +131,7 @@ pub const SERVER_CONFIGURATION_COLUMNS: (
     server_configurations::telnyx_config,
     server_configurations::supported_contact_protocols,
     server_configurations::stalwart_config,
+    server_configurations::email_providers_config,
     server_configurations::custom_css_configuration,
 );
 
@@ -160,6 +163,7 @@ pub struct NewServerConfiguration {
     pub telnyx_config: Option<serde_json::Value>,
     pub supported_contact_protocols: Option<serde_json::Value>,
     pub stalwart_config: Option<serde_json::Value>,
+    pub email_providers_config: Option<serde_json::Value>,
     /// Always `None` out of `to_db` -- `ConfigureServer` carries the active row's value forward
     /// (see `configure_server`).
     pub custom_css_configuration: Option<serde_json::Value>,
@@ -201,6 +205,7 @@ impl From<ServerConfiguration> for NewServerConfiguration {
             telnyx_config: c.telnyx_config,
             supported_contact_protocols: c.supported_contact_protocols,
             stalwart_config: c.stalwart_config,
+            email_providers_config: c.email_providers_config,
             custom_css_configuration: c.custom_css_configuration,
             custom_css: None,
         }
@@ -339,6 +344,7 @@ Your media policy should describe who has ownership of uploaded media, anything 
         telnyx_config: None,
         supported_contact_protocols: None,
         stalwart_config: None,
+        email_providers_config: None,
         custom_css_configuration: None,
         custom_css: None,
         private_user_strategy: PrivateUserStrategy::AccountIsFrozen
@@ -346,8 +352,8 @@ Your media policy should describe who has ownership of uploaded media, anything 
             .to_string(),
         authentication_features: serde_json::to_value(
             [
-                AuthenticationFeature::Login,
-                AuthenticationFeature::CreateAccount,
+                AuthenticationFeature::LoginWithPassword,
+                AuthenticationFeature::CreateAccountWithPassword,
             ]
             .iter()
             .map(|it| it.as_str_name())
@@ -355,6 +361,29 @@ Your media policy should describe who has ownership of uploaded media, anything 
         )
         .unwrap(),
     };
+}
+
+/// The JSON stored in `server_configurations.email_providers_config` -- all the email providers'
+/// configs plus their preference order in one column (see that column's migration for why).
+/// `preferred_email_apis` holds `EmailVerificationApi` enum *names*, same convention as
+/// `preferred_verification_apis`.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct EmailProvidersJson {
+    pub postmark_config: Option<PostmarkConfig>,
+    pub sendgrid_config: Option<SendgridConfig>,
+    pub mailgun_config: Option<MailgunConfig>,
+    pub preferred_email_apis: Vec<String>,
+}
+
+impl ServerConfiguration {
+    /// Parses `email_providers_config` (empty/invalid -> all defaults).
+    pub fn email_providers(&self) -> EmailProvidersJson {
+        self.email_providers_config
+            .clone()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
+    }
 }
 
 /// What `ServerConfiguration.search_settings` reads as when nothing was ever saved (every server

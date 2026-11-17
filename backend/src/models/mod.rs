@@ -36,3 +36,6 @@ pub use ai_provider_models::*;
 
 mod market_models;
 pub use market_models::*;
+
+mod pending_contact_verification_models;
+pub use pending_contact_verification_models::*;

@@ -92,7 +92,7 @@ mod update_user_contact_methods {
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             // Twilio enabled directly, but `supported_contact_protocols` deliberately left unset
             // -- mirrors an admin having entered Twilio credentials without (yet, or anymore)
-            // checking "Enable SMS Sending" on `ContactIntegrationsTab.elm`. `supported_by_server`
+            // checking "Enable SMS Sending" on `SignInAndContactTab.elm`. `supported_by_server`
             // must be false: `contact_protocol_supported` (not the raw `twilio_enabled` flag) is
             // the actual gate, per `ContactMethod.supported_by_server`'s own proto doc.
             let mut new_config = models::default_server_configuration();
@@ -472,7 +472,9 @@ mod start_contact_method_verification_spec {
     }
 
     #[test]
-    fn rejects_mailto_as_unimplemented() {
+    fn rejects_mailto_when_user_has_no_email_set() {
+        // Email verification is implemented now (see `sms_email_auth_tests` for the happy paths);
+        // with no `email` ContactMethod stored there's nothing to verify.
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             configure_twilio(conn, true, "AC_sid", "SK_test_key_sid", "auth_token", "+15005550006");
@@ -488,8 +490,8 @@ mod start_contact_method_verification_spec {
                 conn,
             )
             .unwrap_err();
-            assert_eq!(err.code(), Code::Unimplemented);
-            assert_eq!(err.message(), "email_verification_not_implemented");
+            assert_eq!(err.code(), Code::FailedPrecondition);
+            assert_eq!(err.message(), "email_not_set");
 
             Ok(())
         });
@@ -1108,7 +1110,7 @@ mod verify_contact_method_spec {
     }
 
     #[test]
-    fn rejects_mailto_as_unimplemented() {
+    fn rejects_mailto_when_user_has_no_email_set() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {
             let user = create_user(conn, "vcm_mailto");
@@ -1122,8 +1124,8 @@ mod verify_contact_method_spec {
                 conn,
             )
             .unwrap_err();
-            assert_eq!(err.code(), Code::Unimplemented);
-            assert_eq!(err.message(), "email_verification_not_implemented");
+            assert_eq!(err.code(), Code::FailedPrecondition);
+            assert_eq!(err.message(), "email_not_set");
 
             Ok(())
         });

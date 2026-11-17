@@ -63,7 +63,7 @@ pub fn server_x_twitter_app_credentials(
     let configuration = crate::rpcs::get_server_configuration_model(conn)?;
     let federation_info: FederationInfo = serde_json::from_value(configuration.federation_info)
         .map_err(|e| {
-            log::error!("Failed to parse stored federation_info: {:?}", e);
+            log::error!("Failed to parse stored federation_info: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_server_configuration")
         })?;
     federation_info
@@ -108,7 +108,7 @@ fn parse_token_response(body: &serde_json::Value) -> Result<TokenResponse, Statu
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("X token response missing access_token: {:?}", body);
+            log::error!("X token response missing access_token: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::FailedPrecondition, "x_twitter_token_exchange_failed")
         })?;
     let refresh_token = body
@@ -118,7 +118,7 @@ fn parse_token_response(body: &serde_json::Value) -> Result<TokenResponse, Statu
         .ok_or_else(|| {
             log::error!(
                 "X token response missing refresh_token -- was the `offline.access` scope requested?: {:?}",
-                body
+                crate::logic::log_redaction::summarize(&body)
             );
             Status::new(Code::FailedPrecondition, "x_twitter_token_exchange_failed")
         })?;
@@ -183,7 +183,7 @@ pub fn exchange_x_twitter_code_for_token_at(
         "x_twitter_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("X code exchange failed ({}): {:?}", status, body);
+        log::error!("X code exchange failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "x_twitter_code_exchange_failed",
@@ -228,7 +228,7 @@ pub fn refresh_access_token_at(
         "x_twitter_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("X token refresh failed ({}): {:?}", status, body);
+        log::error!("X token refresh failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "x_twitter_token_refresh_failed",
@@ -252,14 +252,14 @@ pub fn get_me_at(base_url: &str, access_token: &str) -> Result<(String, String),
         "x_twitter_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("X users/me lookup failed ({}): {:?}", status, body);
+        log::error!("X users/me lookup failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "x_twitter_username_lookup_failed",
         ));
     }
     let data = body.get("data").ok_or_else(|| {
-        log::error!("X users/me response missing data: {:?}", body);
+        log::error!("X users/me response missing data: {:?}", crate::logic::log_redaction::summarize(&body));
         Status::new(Code::FailedPrecondition, "x_twitter_username_lookup_failed")
     })?;
     let x_user_id = data
@@ -267,7 +267,7 @@ pub fn get_me_at(base_url: &str, access_token: &str) -> Result<(String, String),
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("X users/me response missing id: {:?}", body);
+            log::error!("X users/me response missing id: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::FailedPrecondition, "x_twitter_username_lookup_failed")
         })?;
     let username = data
@@ -275,7 +275,7 @@ pub fn get_me_at(base_url: &str, access_token: &str) -> Result<(String, String),
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("X users/me response missing username: {:?}", body);
+            log::error!("X users/me response missing username: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::FailedPrecondition, "x_twitter_username_lookup_failed")
         })?;
     Ok((x_user_id, username))
@@ -357,7 +357,7 @@ pub fn post_tweet_at(
             .set(sync_destinations::configuration.eq(&new_configuration))
             .execute(conn)
             .map_err(|e| {
-                log::error!("Failed to persist refreshed X token: {:?}", e);
+                log::error!("Failed to persist refreshed X token: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_update_sync_destination")
             })?;
         new_access_token
@@ -372,8 +372,8 @@ pub fn post_tweet_at(
             Ok(id) => media_ids.push(id),
             Err(e) => log::error!(
                 "Failed to upload media {:?} to X, skipping: {:?}",
-                media.url,
-                e
+                crate::logic::log_redaction::redact_url(&media.url),
+                crate::logic::log_redaction::safe_error(&e)
             ),
         }
     }
@@ -401,7 +401,7 @@ pub fn post_tweet_at(
         "x_twitter_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("X tweet creation failed ({}): {:?}", status, body);
+        log::error!("X tweet creation failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "x_twitter_post_failed"));
     }
     let tweet_id = body
@@ -410,7 +410,7 @@ pub fn post_tweet_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("X tweet creation response missing data.id: {:?}", body);
+            log::error!("X tweet creation response missing data.id: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::Internal, "x_twitter_post_failed")
         })?;
     let permalink = format!("https://x.com/{username}/status/{tweet_id}");
@@ -431,13 +431,13 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .get(&media_url)
             .send()
             .map_err(|e| {
-                log::error!("Failed to fetch media {:?} for X upload: {:?}", media_url, e);
+                log::error!("Failed to fetch media {:?} for X upload: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "x_twitter_media_fetch_failed")
             })?;
         if !response.status().is_success() {
             log::error!(
                 "Fetching media {:?} for X upload failed ({})",
-                media_url,
+                crate::logic::log_redaction::redact_url(&media_url),
                 response.status()
             );
             return Err(Status::new(
@@ -446,7 +446,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             ));
         }
         response.bytes().map(|b| b.to_vec()).map_err(|e| {
-            log::error!("Failed to read media {:?} bytes: {:?}", media_url, e);
+            log::error!("Failed to read media {:?} bytes: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "x_twitter_media_fetch_failed")
         })
     })?;
@@ -458,7 +458,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .file_name("media")
             .mime_str(&content_type)
             .map_err(|e| {
-                log::error!("Invalid media content type {:?}: {:?}", content_type, e);
+                log::error!("Invalid media content type {:?}: {:?}", content_type, crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "x_twitter_request_failed")
             })?;
         let form = reqwest::blocking::multipart::Form::new()
@@ -470,26 +470,26 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .multipart(form)
             .send()
             .map_err(|e| {
-                log::error!("X media upload request failed: {:?}", e);
+                log::error!("X media upload request failed: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "x_twitter_request_failed")
             })?;
         let status = response.status();
         let text = response.text().map_err(|e| {
-            log::error!("Failed to read X media upload response body: {:?}", e);
+            log::error!("Failed to read X media upload response body: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "x_twitter_request_failed")
         })?;
         let value: serde_json::Value = if text.trim().is_empty() {
             serde_json::Value::Null
         } else {
             serde_json::from_str(&text).map_err(|e| {
-                log::error!("Failed to parse X media upload response as JSON: {:?} ({})", e, text);
+                log::error!("Failed to parse X media upload response as JSON: {:?} ({})", crate::logic::log_redaction::safe_error(&e), crate::logic::log_redaction::summarize(&text));
                 Status::new(Code::FailedPrecondition, "x_twitter_request_failed")
             })?
         };
         Ok((status, value))
     })?;
     if !status.is_success() {
-        log::error!("X media upload failed ({}): {:?}", status, body);
+        log::error!("X media upload failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "x_twitter_media_upload_failed",
@@ -500,7 +500,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("X media upload response missing data.id: {:?}", body);
+            log::error!("X media upload response missing data.id: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::Internal, "x_twitter_media_upload_failed")
         })
 }

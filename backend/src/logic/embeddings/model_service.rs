@@ -263,7 +263,7 @@ impl ClusterModelTracker {
                 *known = Some(embedder.spec);
                 self.invalidated.store(false, std::sync::atomic::Ordering::SeqCst);
             }
-            Err(e) => log::warn!("The embedding model service isn't available: {:?}", e),
+            Err(e) => log::warn!("The embedding model service isn't available: {:?}", crate::logic::log_redaction::safe_error(&e)),
         }
         self.known()
     }
@@ -382,7 +382,7 @@ impl EmbeddingService for EmbeddingServiceImpl {
         .await
         .map_err(|_| Status::internal("embedding_task_failed"))?
         .map_err(|e| {
-            log::error!("Embedding failed: {:?}", e);
+            log::error!("Embedding failed: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::internal("embedding_failed")
         })?;
         Ok(Response::new(EmbedResponse {

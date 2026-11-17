@@ -80,12 +80,12 @@ fn fetch_ics(source: &models::SyncSource, url: &str) -> Result<String, Status> {
             .and_then(|client| client.get(url).send())
             .and_then(|response| response.error_for_status())
             .map_err(|e| {
-                log::error!("Failed to fetch ICS from {}: {:?}", url, e);
+                log::error!("Failed to fetch ICS from {}: {:?}", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "ics_fetch_failed")
             })?
             .text()
             .map_err(|e| {
-                log::error!("Failed to read ICS response body from {}: {:?}", url, e);
+                log::error!("Failed to read ICS response body from {}: {:?}", crate::logic::log_redaction::redact_url(&url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "ics_fetch_failed")
             })
     };
@@ -146,7 +146,7 @@ pub fn sync_source_text(
 
 pub(super) fn parse_calendar(ics_text: &str) -> Result<Calendar, Status> {
     ics_text.parse().map_err(|e| {
-        log::error!("Failed to parse ICS text: {:?}", e);
+        log::error!("Failed to parse ICS text: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::FailedPrecondition, "ics_parse_failed")
     })
 }
@@ -331,7 +331,7 @@ pub fn sync_source_calendar(
             Status::new(Code::Aborted, "sync_source_changed")
         }
         e => {
-            log::error!("Failed to sync SyncSource {}: {:?}", source.id, e);
+            log::error!("Failed to sync SyncSource {}: {:?}", source.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_sync_source")
         }
     })
@@ -814,7 +814,7 @@ fn expand_occurrence_starts(
     let validated_rrule = match parsed {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("Failed to parse/validate RRULE '{}': {}", rrule_str, e);
+            log::warn!("Failed to parse/validate RRULE '{}': {}", rrule_str, crate::logic::log_redaction::safe_error(&e));
             return vec![master_start];
         }
     };

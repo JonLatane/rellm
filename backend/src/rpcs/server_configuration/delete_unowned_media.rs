@@ -16,7 +16,7 @@ pub async fn delete_unowned_media(
     log::info!("DeleteUnownedMedia called");
     validate_permission(&Some(user), Permission::Admin)?;
     logic::delete_unowned_media(conn, bucket).await.map_err(|e| {
-        log::error!("Failed to delete unowned media: {:?}", e);
+        log::error!("Failed to delete unowned media: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "error_updating")
     })
 }

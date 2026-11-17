@@ -41,9 +41,9 @@ class RellmAccount {
       String password, Function(String) showMessage,
       {bool allowInsecure = false, bool selectAccount = true}) async {
     return _authAccount(
-        (client) => client.login(LoginRequest()
-          ..username = username
-          ..password = password),
+        (client) => client.login(LoginRequest(
+            usernamePassword: UsernamePasswordLoginRequest(
+                username: username, password: password))),
         ['Logging in', 'login', 'Logged in'],
         server,
         username,

@@ -133,7 +133,7 @@ Supported flags:
     );
 
     let tempdir = Arc::new(tempfile::tempdir().map_err(|e| {
-        log::error!("Failed to create tempdir: {:?}", e);
+        log::error!("Failed to create tempdir: {:?}", crate::logic::log_redaction::safe_error(&e));
         e
     })?);
 

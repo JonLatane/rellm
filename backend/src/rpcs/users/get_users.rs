@@ -27,7 +27,7 @@ pub fn get_users(
     user: &Option<&models::User>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetUsersResponse, Status> {
-    log::info!("GetUsers::request: {:?}", request);
+    log::info!("GetUsers: listing_type={:?}, page={:?}", request.listing_type, request.page);
     let mut response = match (
         &user,
         request.to_owned().listing_type.to_proto_user_listing_type(),
@@ -86,8 +86,8 @@ pub fn get_users(
     // };
     // log::info!("GetUsers::request: {:?}, response: {:?}", request, response);
     log::info!(
-        "GetUsers::request: {:?}, response_length: {:?}",
-        request,
+        "GetUsers: listing_type={:?}, response_length: {:?}",
+        request.listing_type,
         response.users.len()
     );
     Ok(response)

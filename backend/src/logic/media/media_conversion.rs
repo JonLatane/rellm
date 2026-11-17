@@ -979,7 +979,7 @@ async fn retag_media(
     pending.commit();
     for path in &replaced_paths {
         if let Err(e) = bucket.delete_object(path).await {
-            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, path, e);
+            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, path, crate::logic::log_redaction::safe_error(&e));
         }
     }
     if let Some(user_id) = item.user_id {
@@ -1036,7 +1036,7 @@ async fn convert_media_inner(
             Ok(()) => return Ok(()),
             Err(e) if pending.committed => return Err(e),
             Err(e) => {
-                log::warn!("Media {}: retag failed ({:#}); regenerating its copies instead", item.id, e);
+                log::warn!("Media {}: retag failed ({:#}); regenerating its copies instead", item.id, crate::logic::log_redaction::safe_error(&e));
                 pending.discard(bucket, item.id).await;
             }
         }
@@ -1082,7 +1082,7 @@ async fn convert_media_inner(
                     metadata.fill_missing_credits(&credits_from_tags(&tags))
                 }
                 Err(e) => {
-                    log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, e);
+                    log::warn!("Media {}: couldn't read tags (skipping): {:#}", item.id, crate::logic::log_redaction::safe_error(&e));
                     false
                 }
             }
@@ -1102,7 +1102,7 @@ async fn convert_media_inner(
                     metadata.fill_missing_credits(&analysis.into_metadata())
                 }
                 Err(e) => {
-                    log::warn!("Media {}: couldn't analyze tempo/key (skipping): {:#}", item.id, e);
+                    log::warn!("Media {}: couldn't analyze tempo/key (skipping): {:#}", item.id, crate::logic::log_redaction::safe_error(&e));
                     false
                 }
             }
@@ -1272,7 +1272,7 @@ async fn convert_media_inner(
             for conversion in AUDIO_COVER_ART_CONVERSIONS {
                 let output_path = tmp_dir.join(format!("{}-{}.jpg", item.id, conversion.key()));
                 if let Err(e) = ffmpeg.cover_art(&input_path, &output_path, conversion.max_dimension()) {
-                    log::warn!("Media {}: couldn't extract cover art (skipping): {:#}", item.id, e);
+                    log::warn!("Media {}: couldn't extract cover art (skipping): {:#}", item.id, crate::logic::log_redaction::safe_error(&e));
                     break;
                 }
                 let output_bytes = std::fs::read(&output_path)?;
@@ -1429,7 +1429,7 @@ async fn convert_media_inner(
         .collect();
     for old in &replaced {
         if let Err(e) = bucket.delete_object(&old.object_storage_path).await {
-            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, old.object_storage_path, e);
+            log::warn!("Media {}: failed to delete replaced object {}: {:?}", item.id, old.object_storage_path, crate::logic::log_redaction::safe_error(&e));
         }
     }
     let replaced_bytes: i64 = replaced.iter().map(|old| old.size_bytes).sum();
@@ -1499,7 +1499,7 @@ pub async fn strip_quicktime_resized_sizes(
                 "Media {}: failed to delete stale object storage object {}: {:?}",
                 item.id,
                 size.object_storage_path,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }
@@ -1644,7 +1644,7 @@ pub async fn strip_derived_audio_sizes(
                 "Media {}: failed to delete stale object storage object {}: {:?}",
                 item.id,
                 size.object_storage_path,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
     }

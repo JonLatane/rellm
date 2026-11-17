@@ -1,25 +1,16 @@
-use std::time::{Duration, SystemTime};
-
-use diesel::*;
-use rand::RngExt;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::logic::{send_verification_sms, verification_available};
-use crate::marshaling::*;
+use crate::logic::*;
 use crate::models;
 use crate::protos::*;
-use crate::rpcs::validations::validate_phone;
-use crate::schema::users;
 
-/// Minimum time between two `StartContactMethodVerification` sends for the same user -- SMS costs
-/// money and this is an abuse vector, so this is a hard requirement, not merely a courtesy.
-const RESEND_COOLDOWN: Duration = Duration::from_secs(60);
-
-/// Starts SMS verification of `current_user`'s own `phone` `ContactMethod` -- see this RPC's own
-/// doc in `rellm.proto`. Always operates on `current_user`'s stored phone; `request` must match it
-/// exactly (this RPC verifies an already-set number, it doesn't set a new one -- that's
-/// `UpdateUser`'s job).
+/// Starts SMS/email verification of `current_user`'s own `phone`/`email` `ContactMethod` -- see
+/// this RPC's own doc in `rellm.proto`. Always operates on `current_user`'s stored value for
+/// `request`'s scheme (`tel:` -> phone, `mailto:` -> email); `request` must match it (emails
+/// case-insensitively) -- this RPC verifies an already-set contact, it doesn't set a new one;
+/// that's `UpdateUser`'s job. Code generation/cooldown/consent are shared with SMS/email login via
+/// `logic::contact_login`.
 pub fn start_contact_method_verification(
     request: ContactMethod,
     current_user: &models::User,
@@ -42,100 +33,74 @@ pub fn start_contact_method_verification_at(
         .value
         .as_deref()
         .ok_or_else(|| Status::new(Code::InvalidArgument, "value_required"))?;
+    let kind = ContactKind::from_value(value).ok_or_else(|| {
+        Status::new(Code::InvalidArgument, "value_must_be_a_tel_or_mailto_url")
+    })?;
+    let value = normalize_contact_value(kind, value)?;
 
-    if value.starts_with("mailto:") {
-        return Err(Status::new(
-            Code::Unimplemented,
-            "email_verification_not_implemented",
-        ));
-    }
-    if !value.starts_with("tel:") {
-        return Err(Status::new(
-            Code::InvalidArgument,
-            "value_must_be_a_tel_or_mailto_url",
-        ));
-    }
-    validate_phone(&Some(value.to_string()))?;
+    let existing = user_contact(current_user, kind)
+        .filter(|cm| {
+            cm.value
+                .as_deref()
+                .is_some_and(|v| contact_values_match(kind, v, &value))
+        })
+        // This RPC only verifies a contact already saved via `UpdateUser` -- it never sets a new
+        // one itself.
+        .ok_or_else(|| {
+            Status::new(
+                Code::FailedPrecondition,
+                match kind {
+                    ContactKind::Phone => "phone_not_set",
+                    ContactKind::Email => "email_not_set",
+                },
+            )
+        })?;
 
-    let existing_phone: Option<ContactMethod> = current_user
-        .phone
-        .to_owned()
-        .and_then(|v| serde_json::from_value(v).ok());
-    if existing_phone.as_ref().and_then(|cm| cm.value.as_deref()) != Some(value) {
-        // This RPC only verifies a phone number already saved via `UpdateUser` -- it never sets a
-        // new one itself.
-        return Err(Status::new(Code::FailedPrecondition, "phone_not_set"));
-    }
-    let existing_phone = existing_phone.unwrap();
-
-    // The verification SMS is itself an outbound message via a Twilio/Bird/Telnyx `ContactMethod`
-    // -- gated by `consent_state` exactly like any other outbound contact (see
-    // `docs/contact_integrations.md`), even though the user just requested it themselves. This is
-    // the single choke point every provider's outbound SMS passes through (via
-    // `send_verification_sms` below), so it's the only place this needs enforcing.
-    if ContactConsentState::try_from(existing_phone.consent_state).unwrap_or_default()
-        != ContactConsentState::ContactConsentGranted
-    {
+    // The verification message is itself an outbound message -- gated by `consent_state` exactly
+    // like any other outbound contact (see `docs/contact_integrations.md`), even though the user
+    // just requested it themselves.
+    if !consent_granted(&existing) {
         return Err(Status::new(
             Code::FailedPrecondition,
             "contact_consent_not_granted",
         ));
     }
 
-    if !verification_available(conn) {
+    if !contact_protocol_ready(conn, kind) {
+        return Err(kind.not_configured_error());
+    }
+
+    if cooldown_active(&existing) {
         return Err(Status::new(
             Code::FailedPrecondition,
-            "verification_not_configured",
+            "verification_recently_sent",
         ));
     }
 
-    if let Some(started_at) = existing_phone
-        .verification_in_progress
-        .as_ref()
-        .and_then(|v| v.verification_started_at.as_ref())
-    {
-        let started_at: SystemTime = started_at.to_db();
-        if started_at + RESEND_COOLDOWN > SystemTime::now() {
-            return Err(Status::new(
-                Code::FailedPrecondition,
-                "verification_recently_sent",
-            ));
-        }
+    // Don't spend a message on a contact that verification will then refuse.
+    ensure_contact_not_verified_elsewhere(conn, kind, &value, Some(current_user.id))?;
+
+    if contact_send_cap_reached(conn, &value)? {
+        return Err(Status::new(
+            Code::ResourceExhausted,
+            "too_many_verification_requests",
+        ));
     }
 
-    let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
-    send_verification_sms(base_url, conn, value, &code)?;
-
-    let now = SystemTime::now();
-    let updated_phone = ContactMethod {
-        value: existing_phone.value.clone(),
-        visibility: existing_phone.visibility,
-        supported_by_server: true,
-        verified_at: existing_phone.verified_at.clone(),
-        verification_in_progress: Some(ContactMethodVerification {
-            verification_code: code,
-            verification_started_at: Some(now.to_proto()),
-            attempts: 0,
-        }),
-        // Verification never touches consent -- carried forward unchanged.
-        consent_state: existing_phone.consent_state,
-        consent_history: existing_phone.consent_history.clone(),
-    };
-
-    diesel::update(users::table)
-        .filter(users::id.eq(current_user.id))
-        .set(users::phone.eq(serde_json::to_value(&updated_phone).unwrap()))
-        .execute(conn)
-        .map_err(|e| {
-            log::error!("Failed to persist phone verification_in_progress: {:?}", e);
-            Status::new(Code::Internal, "data_error")
-        })?;
+    // Send to the stored spelling of the value (case preserved for emails).
+    let send_to = existing.value.clone().unwrap_or(value);
+    let mut updated = begin_user_contact_verification(
+        base_url,
+        conn,
+        current_user.id,
+        kind,
+        &send_to,
+    )?;
 
     // Never echo the real code back -- see `ContactMethodVerification.verification_code`'s own
     // doc.
-    let mut response = updated_phone;
-    if let Some(v) = response.verification_in_progress.as_mut() {
+    if let Some(v) = updated.verification_in_progress.as_mut() {
         v.verification_code = String::new();
     }
-    Ok(response)
+    Ok(updated)
 }

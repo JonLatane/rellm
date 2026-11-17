@@ -29,11 +29,23 @@ fieldNumbersAuthenticationFeature n_ =
         AUTHENTICATIONFEATUREUNKNOWN ->
             0
 
-        CREATEACCOUNT ->
+        CREATEACCOUNTWITHPASSWORD ->
             1
 
-        LOGIN ->
+        CREATEACCOUNTWITHSMS ->
             2
+
+        CREATEACCOUNTWITHEMAIL ->
+            3
+
+        LOGINWITHPASSWORD ->
+            11
+
+        LOGINWITHSMS ->
+            12
+
+        LOGINWITHEMAIL ->
+            13
 
         AuthenticationFeatureUnrecognized_ m_ ->
             m_
@@ -57,11 +69,23 @@ encodeAuthenticationFeature value =
             AUTHENTICATIONFEATUREUNKNOWN ->
                 0
 
-            CREATEACCOUNT ->
+            CREATEACCOUNTWITHPASSWORD ->
                 1
 
-            LOGIN ->
+            CREATEACCOUNTWITHSMS ->
                 2
+
+            CREATEACCOUNTWITHEMAIL ->
+                3
+
+            LOGINWITHPASSWORD ->
+                11
+
+            LOGINWITHSMS ->
+                12
+
+            LOGINWITHEMAIL ->
+                13
 
             AuthenticationFeatureUnrecognized_ i ->
                 i
@@ -80,10 +104,22 @@ decodeAuthenticationFeature =
                         AUTHENTICATIONFEATUREUNKNOWN
 
                     1 ->
-                        CREATEACCOUNT
+                        CREATEACCOUNTWITHPASSWORD
 
                     2 ->
-                        LOGIN
+                        CREATEACCOUNTWITHSMS
+
+                    3 ->
+                        CREATEACCOUNTWITHEMAIL
+
+                    11 ->
+                        LOGINWITHPASSWORD
+
+                    12 ->
+                        LOGINWITHSMS
+
+                    13 ->
+                        LOGINWITHEMAIL
 
                     _ ->
                         AuthenticationFeatureUnrecognized_ i
@@ -95,6 +131,10 @@ decodeAuthenticationFeature =
 -}
 type AuthenticationFeature
     = AUTHENTICATIONFEATUREUNKNOWN
-    | CREATEACCOUNT
-    | LOGIN
+    | CREATEACCOUNTWITHPASSWORD
+    | CREATEACCOUNTWITHSMS
+    | CREATEACCOUNTWITHEMAIL
+    | LOGINWITHPASSWORD
+    | LOGINWITHSMS
+    | LOGINWITHEMAIL
     | AuthenticationFeatureUnrecognized_ Int

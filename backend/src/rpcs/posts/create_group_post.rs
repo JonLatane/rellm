@@ -47,7 +47,7 @@ pub fn create_group_post(
             Ok(group_post)
         });
     let group_post = group_post_result.map_err(|e| {
-        log::error!("Error creating group post! {:?}", e);
+        log::error!("Error creating group post! {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "data_error")
     })?;
     group_post.update_related_counts(conn)?;

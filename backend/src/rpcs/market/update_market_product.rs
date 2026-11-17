@@ -53,7 +53,7 @@ pub fn update_market_product(
         .set(&existing)
         .get_result::<models::MarketProduct>(conn)
         .map_err(|e| {
-            log::error!("Failed to update market product: {:?}", e);
+            log::error!("Failed to update market product: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_update_product")
         })?;
 

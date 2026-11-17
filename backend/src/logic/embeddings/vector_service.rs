@@ -217,7 +217,7 @@ impl VectorIndexes {
         for (kind, _) in &self.kinds {
             if let Err(e) = self.sync_kind(conn, *kind) {
                 failed += 1;
-                log::error!("Couldn't sync the {} index: {:?}", kind.name(), e);
+                log::error!("Couldn't sync the {} index: {:?}", kind.name(), crate::logic::log_redaction::safe_error(&e));
             }
         }
         failed
@@ -291,7 +291,7 @@ pub fn run_indexer(indexes: Arc<VectorIndexes>, pool: crate::db_connection::PgPo
         let failed = match pool.get() {
             Ok(mut conn) => indexes.sync_all(&mut conn),
             Err(e) => {
-                log::error!("Couldn't get a database connection to sync the indexes: {:?}", e);
+                log::error!("Couldn't get a database connection to sync the indexes: {:?}", crate::logic::log_redaction::safe_error(&e));
                 usize::MAX
             }
         };

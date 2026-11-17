@@ -9,11 +9,7 @@ pub fn get_current_user_refresh_tokens(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::User, Status> {
-    log::info!(
-        "GetCurrentUser called for user {}, user_id={}",
-        &user.username,
-        user.id
-    );
+    log::info!("GetCurrentUser called for user_id={}", user.id);
 
     let avatar: Option<models::MediaReference> = match user.avatar_media_id {
         None => None,
@@ -22,6 +18,6 @@ pub fn get_current_user_refresh_tokens(
 
     let lookup = avatar.to_media_lookup();
     let result = user.to_proto(&None, &None, lookup.as_ref(), &Some(user), Some(conn));
-    log::info!("GetCurrentUser::response={:?}", &result);
+    log::info!("GetCurrentUserRefreshTokens: ok");
     Ok(result)
 }

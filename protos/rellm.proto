@@ -16,6 +16,7 @@ import "ai_providers.proto";
 import "federation.proto";
 import "server_configuration.proto";
 import "market.proto";
+import "contact_integrations.proto";
 
 // [Jump to the gRPC API?](#grpc-api)
 //
@@ -1123,8 +1124,13 @@ service Rellm {
   // [`ContactMethod.consent_state`](#rellm-ContactMethod)'s own doc; this is checked even though
   // the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and
   // stores it (with a start time and attempt counter) on the phone `ContactMethod`
-  // (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:`
-  // returns `Unimplemented`. Rate-limited to one send per 60 seconds per user.
+  // (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server's
+  // email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see
+  // [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user's `phone` or `email`
+  // respectively. Rate-limited to one send per 60 seconds per user. A contact method that is
+  // already verified on a *different* account can't be verified here (`contact_already_verified`).
+  // Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and
+  // [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on.
   rpc StartContactMethodVerification(ContactMethod) returns (ContactMethod) {}
   // Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.*
   // On match, sets [`ContactMethod.verified_at`](#rellm-ContactMethod) and clears
@@ -1382,6 +1388,13 @@ service Rellm {
   // [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just
   // stored -- see [`ContactProtocol`](#rellm-ContactProtocol)'s own doc.
   rpc ConfigureServer(ServerConfiguration) returns (ServerConfiguration) {}
+
+  // Checks the health of every configured SMS and email provider *right now* by calling their APIs
+  // (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see
+  // [`ContactIntegrationsStatus`](#rellm-ContactIntegrationsStatus). *Authenticated.* Requires
+  // `ADMIN` permissions. Slow (several outbound calls, made in parallel), so call it on demand,
+  // not on every page load. Never returns secrets.
+  rpc GetContactIntegrationsStatus(google.protobuf.Empty) returns (ContactIntegrationsStatus) {}
 
   // Gets the server's [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large)
   // `custom_css` text -- the only RPC that returns it:

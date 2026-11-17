@@ -11,12 +11,16 @@
     - [AccessTokenResponse](#rellm-AccessTokenResponse)
     - [CreateAccountRequest](#rellm-CreateAccountRequest)
     - [CreateThirdPartyRefreshTokenRequest](#rellm-CreateThirdPartyRefreshTokenRequest)
+    - [EmailLoginRequest](#rellm-EmailLoginRequest)
     - [ExpirableToken](#rellm-ExpirableToken)
     - [LoginRequest](#rellm-LoginRequest)
     - [RefreshTokenMetadata](#rellm-RefreshTokenMetadata)
     - [RefreshTokenResponse](#rellm-RefreshTokenResponse)
     - [ResetPasswordRequest](#rellm-ResetPasswordRequest)
+    - [SMSLoginRequest](#rellm-SMSLoginRequest)
     - [UserRefreshTokensResponse](#rellm-UserRefreshTokensResponse)
+    - [UsernamePasswordLoginRequest](#rellm-UsernamePasswordLoginRequest)
+    - [VerificationChallenge](#rellm-VerificationChallenge)
   
 - [visibility_moderation.proto](#visibility_moderation-proto)
     - [Moderation](#rellm-Moderation)
@@ -130,10 +134,13 @@
     - [FreeClusterResourcesRequest](#rellm-FreeClusterResourcesRequest)
     - [LockClusterResourcesRequest](#rellm-LockClusterResourcesRequest)
     - [LockClusterResourcesResponse](#rellm-LockClusterResourcesResponse)
+    - [MailgunConfig](#rellm-MailgunConfig)
     - [MarketSettings](#rellm-MarketSettings)
     - [MediaSettings](#rellm-MediaSettings)
     - [PostSettings](#rellm-PostSettings)
+    - [PostmarkConfig](#rellm-PostmarkConfig)
     - [SearchSettings](#rellm-SearchSettings)
+    - [SendgridConfig](#rellm-SendgridConfig)
     - [ServerColors](#rellm-ServerColors)
     - [ServerConfiguration](#rellm-ServerConfiguration)
     - [ServerInfo](#rellm-ServerInfo)
@@ -151,6 +158,7 @@
     - [ContactProtocol](#rellm-ContactProtocol)
     - [ContactVerificationAPI](#rellm-ContactVerificationAPI)
     - [DefaultPostsSort](#rellm-DefaultPostsSort)
+    - [EmailVerificationAPI](#rellm-EmailVerificationAPI)
     - [NavigationTab](#rellm-NavigationTab)
     - [NavigationTabStyle](#rellm-NavigationTabStyle)
     - [PrivateUserStrategy](#rellm-PrivateUserStrategy)
@@ -232,6 +240,16 @@
     - [MarketSubscriptionState](#rellm-MarketSubscriptionState)
     - [PurchasePeriod](#rellm-PurchasePeriod)
     - [PurchaseType](#rellm-PurchaseType)
+  
+- [contact_integrations.proto](#contact_integrations-proto)
+    - [ContactIntegrationsStatus](#rellm-ContactIntegrationsStatus)
+    - [DmarcStatus](#rellm-DmarcStatus)
+    - [EmailDomainStatus](#rellm-EmailDomainStatus)
+    - [ProviderStatus](#rellm-ProviderStatus)
+    - [StatusCheck](#rellm-StatusCheck)
+    - [StatusMetric](#rellm-StatusMetric)
+  
+    - [StatusLevel](#rellm-StatusLevel)
   
 - [Scalar Value Types](#scalar-value-types)
 
@@ -1318,7 +1336,7 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | DeleteMediaSizes | [Media](#rellm-Media) | [Media](#rellm-Media) | Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve in its place. *Authenticated.* Deleting other users&#39; media requires `ADMIN` permissions. Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to remove the whole item instead. |
 | GetUsers | [GetUsersRequest](#rellm-GetUsersRequest) | [GetUsersResponse](#rellm-GetUsersResponse) | Gets Users. *Publicly accessible **or** Authenticated.* Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility. |
 | UpdateUser | [User](#rellm-User) | [User](#rellm-User) | Update a user by ID. *Authenticated.* Updating other users requires `ADMIN` permissions. |
-| StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) SMS provider configured and enabled (see [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle). Also requires the phone `ContactMethod`&#39;s own `consent_state` to already be `CONTACT_CONSENT_GRANTED` -- fails with `contact_consent_not_granted` otherwise, since the verification code is itself an outbound SMS sent through that same provider (see [`ContactMethod.consent_state`](#rellm-ContactMethod)&#39;s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone `ContactMethod` (`verification_in_progress`). Only `tel:` values are supported this iteration -- `mailto:` returns `Unimplemented`. Rate-limited to one send per 60 seconds per user. |
+| StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) SMS provider configured and enabled (see [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle). Also requires the phone `ContactMethod`&#39;s own `consent_state` to already be `CONTACT_CONSENT_GRANTED` -- fails with `contact_consent_not_granted` otherwise, since the verification code is itself an outbound SMS sent through that same provider (see [`ContactMethod.consent_state`](#rellm-ContactMethod)&#39;s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone `ContactMethod` (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server&#39;s email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user&#39;s `phone` or `email` respectively. Rate-limited to one send per 60 seconds per user. A contact method that is already verified on a *different* account can&#39;t be verified here (`contact_already_verified`). Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on. |
 | VerifyContactMethod | [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest) | [ContactMethod](#rellm-ContactMethod) | Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.* On match, sets [`ContactMethod.verified_at`](#rellm-ContactMethod) and clears `verification_in_progress`. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) call. |
 | DeleteUser | [User](#rellm-User) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a user by ID. *Authenticated.* Deleting other users requires `ADMIN` permissions. |
 | SendMessage | [SendMessageRequest](#rellm-SendMessageRequest) | [Message](#rellm-Message) | Sends a Message to one or more recipients (creating/reusing their MessagingGroup). *Publicly accessible **or** Authenticated.* Like [`CreatePost`](#grpc-api-CreatePost)/[`CreateEvent`](#grpc-api-CreateEvent), authentication (if any) is via a standard `access_token`; unauthenticated calls are simply sent with no `sender`. |
@@ -1390,6 +1408,7 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | FederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [FederatedAccount](#rellm-FederatedAccount) | Federate the current user&#39;s profile with another user profile. *Authenticated*. |
 | DefederateProfile | [FederatedAccount](#rellm-FederatedAccount) | [.google.protobuf.Empty](#google-protobuf-Empty) | Authenticated*. |
 | ConfigureServer | [ServerConfiguration](#rellm-ServerConfiguration) | [ServerConfiguration](#rellm-ServerConfiguration) | Configure the server (i.e. the response to [`GetServerConfiguration`](#grpc-api-GetServerConfiguration)). *Authenticated.* Requires `ADMIN` permissions. Editing `cluster_resources` additionally requires `EDIT_CLUSTER_SETTINGS` - see that field&#39;s own doc. Editing [`supported_contact_protocols`](#rellm-ServerConfiguration) is validated, not just stored -- see [`ContactProtocol`](#rellm-ContactProtocol)&#39;s own doc. |
+| GetContactIntegrationsStatus | [.google.protobuf.Empty](#google-protobuf-Empty) | [ContactIntegrationsStatus](#rellm-ContactIntegrationsStatus) | Checks the health of every configured SMS and email provider *right now* by calling their APIs (and, for email, looking up SPF/DKIM/DMARC DNS records) -- see [`ContactIntegrationsStatus`](#rellm-ContactIntegrationsStatus). *Authenticated.* Requires `ADMIN` permissions. Slow (several outbound calls, made in parallel), so call it on demand, not on every page load. Never returns secrets. |
 | GetCustomCSS | [.google.protobuf.Empty](#google-protobuf-Empty) | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | Gets the server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), including the (potentially large) `custom_css` text -- the only RPC that returns it: [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) carries the rest of the message (media, forced theme) but never loads the stylesheet. An unset configuration returns an empty one. *Publicly accessible.* |
 | ConfigureCustomCSS | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | Sets the server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration), creating a new server configuration version (everything else is copied from the current one). Validated: at most 32 `media_ids`, each an existing `GLOBAL_PUBLIC` Media, at most 64 KiB of `custom_css`, and not both `force_light_theme` and `force_dark_theme`. An unset `custom_css` keeps the stored stylesheet. *Authenticated.* Requires `ADMIN` permissions. |
 | DeleteLinkPreviewImages | [.google.protobuf.Empty](#google-protobuf-Empty) | [.google.protobuf.Empty](#google-protobuf-Empty) | Unlinks all generated link preview images (see [`MediaSettings.disable_link_preview_images`](#rellm-MediaSettings)) from their posts and makes every post with a link eligible for preview generation again -- including posts that had given up after repeated failures. The old preview media is orphaned, not deleted: it&#39;s removed from storage by the next [`DeleteUnownedMedia`](#grpc-api-DeleteUnownedMedia) run (the periodic `delete_unowned_media` job, or call it directly). *Authenticated.* Requires `ADMIN` permissions. |
@@ -1445,17 +1464,43 @@ Returned when requesting access tokens.
 <a name="rellm-CreateAccountRequest"></a>
 
 ### CreateAccountRequest
-Request to create a new account.
+Request to create a new account. Three ways to prove who you are, which may be combined:
+
+- **Password** (`password` set): the classic flow. One request creates the account.
+- **Verified SMS** (`phone` set, server has `CREATE_ACCOUNT_WITH_SMS` enabled) and/or
+- **Verified email** (`email` set, server has `CREATE_ACCOUNT_WITH_EMAIL` enabled).
+
+When a server has `CREATE_ACCOUNT_WITH_SMS`/`CREATE_ACCOUNT_WITH_EMAIL` enabled (see
+[`AuthenticationFeature`](#rellm-AuthenticationFeature)), every `phone`/`email` supplied here
+**must be verified before the account is created**, using two requests with the same contact
+methods:
+
+1. Send the request *without* the matching `phone_verification_code`/`email_verification_code`.
+   The contact method must have `consent_state` `CONTACT_CONSENT_GRANTED` (we&#39;re about to
+   message it). The server sends a code to each unverified contact method and returns a
+   [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only `verification_challenge` set --
+   no account exists yet.
+2. Repeat the request with the codes filled in. If every code is correct, the account is
+   created with those contact methods already verified (`verified_at` set), and tokens are
+   returned as usual.
+
+If `password` is empty the account is passwordless: it can only be logged into via SMS/email
+(see [`LoginRequest`](#rellm-LoginRequest)), so at least one of `phone`/`email` must be given.
+A contact method that is already verified on another account is rejected
+(`contact_already_verified`). If the server doesn&#39;t have the matching `CREATE_ACCOUNT_WITH_*`
+feature enabled, `phone`/`email` are saved *unverified* exactly as before.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | username | [string](#string) |  | Username for the account to be created. Must not exist. |
-| password | [string](#string) |  | Password for the account to be created. Must be at least 8 characters. |
+| password | [string](#string) |  | Password for the account to be created. Must be at least 8 characters, or empty to create a passwordless (SMS/email-login-only) account -- see this message&#39;s own doc. |
 | email | [ContactMethod](#rellm-ContactMethod) | optional | Email to be used as a contact method. |
 | phone | [ContactMethod](#rellm-ContactMethod) | optional | Phone number to be used as a contact method. |
 | expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
 | device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to create the account. |
+| phone_verification_code | [string](#string) | optional | Second-phase code sent to `phone` (via SMS) by the first phase of this request. See this message&#39;s own doc. |
+| email_verification_code | [string](#string) | optional | Second-phase code sent to `email` by the first phase of this request. See this message&#39;s own doc. |
 
 
 
@@ -1494,6 +1539,26 @@ Note that refresh tokens
 
 
 
+<a name="rellm-EmailLoginRequest"></a>
+
+### EmailLoginRequest
+Request to login via email. Two EmailLoginRequests are required to complete
+a login.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| email | [string](#string) |  | The email address to be used for login (a leading `mailto:` is accepted; matched case-insensitively). Always required. Must be an address the account has verified. |
+| code | [string](#string) | optional | Response code sent to the email address for the second phase of authentication. Must be valid. |
+| expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
+| device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
+| user_id | [string](#string) | optional | Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored. |
+
+
+
+
+
+
 <a name="rellm-ExpirableToken"></a>
 
 ### ExpirableToken
@@ -1513,16 +1578,31 @@ Generic type for refresh and access tokens.
 <a name="rellm-LoginRequest"></a>
 
 ### LoginRequest
-Request to login to an existing account.
+Request to login to an existing account. Exactly one of the `request` variants must be set.
+
+`sms` and `email` logins are **two-phase**, and only work for a contact method that the account
+has already *verified* (`ContactMethod.verified_at`, see
+[`VerifyContactMethod`](#grpc-api-VerifyContactMethod)) and still consents to being contacted
+through (`consent_state` `CONTACT_CONSENT_GRANTED`):
+
+1. Send the request with no `code`. If an account matches, the server sends it a one-time code
+   and returns a [`RefreshTokenResponse`](#rellm-RefreshTokenResponse) with only
+   `verification_challenge` set. To avoid revealing which phone numbers/emails have accounts, the
+   response looks the same whether or not an account matched.
+2. Send the request again with the `code`. On success the response carries tokens and the user,
+   as with a password login.
+
+Codes are 6 digits, expire after 10 minutes, are limited to 5 wrong guesses, and can be re-sent
+at most once a minute -- the same rules as [`ContactMethodVerification`](#rellm-ContactMethodVerification).
+Servers advertise which login methods they allow in
+[`ServerConfiguration.authentication_features`](#rellm-ServerConfiguration).
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| username | [string](#string) |  | Username for the account to be logged into. Must exist. |
-| password | [string](#string) |  | Password for the account to be logged into. |
-| expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
-| device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
-| user_id | [string](#string) | optional | (TODO) If provided, username is ignored and login is initiated via user_id instead. |
+| username_password | [UsernamePasswordLoginRequest](#rellm-UsernamePasswordLoginRequest) |  |  |
+| sms | [SMSLoginRequest](#rellm-SMSLoginRequest) |  |  |
+| email | [EmailLoginRequest](#rellm-EmailLoginRequest) |  |  |
 
 
 
@@ -1560,6 +1640,7 @@ Returned when creating an account, logging in, or creating a third-party refresh
 | refresh_token | [ExpirableToken](#rellm-ExpirableToken) |  | The persisted token the device should store and associate with the account. Used to request new access tokens. |
 | access_token | [ExpirableToken](#rellm-ExpirableToken) |  | An initial access token provided for convenience. |
 | user | [User](#rellm-User) |  | The user associated with the account that was created/logged into. |
+| verification_challenge | [VerificationChallenge](#rellm-VerificationChallenge) | optional | Set *instead of* the tokens and `user` when this was the first phase of a two-phase [`LoginRequest`](#rellm-LoginRequest) (SMS/email) or [`CreateAccountRequest`](#rellm-CreateAccountRequest): a code was sent (or, for login, would have been -- see `LoginRequest`), and the client should prompt for it and repeat the request with the code filled in. |
 
 
 
@@ -1582,6 +1663,26 @@ Request to reset a password.
 
 
 
+<a name="rellm-SMSLoginRequest"></a>
+
+### SMSLoginRequest
+Request to login via SMS. Two SMSLoginRequests are required to complete
+a login.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| phone_number | [string](#string) |  | The phone number to be used for login, in E.164 format (`&#43;19195551234`); a leading `tel:` is accepted. Always required. Must be a phone number the account has verified. |
+| code | [string](#string) | optional | Response code sent to the phone number via SMS for the second phase of authentication. Must be valid. |
+| expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
+| device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
+| user_id | [string](#string) | optional | Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored. |
+
+
+
+
+
+
 <a name="rellm-UserRefreshTokensResponse"></a>
 
 ### UserRefreshTokensResponse
@@ -1591,6 +1692,43 @@ Response for `GetUserRefreshTokens` RPC. Returns all refresh tokens associated w
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | refresh_tokens | [RefreshTokenMetadata](#rellm-RefreshTokenMetadata) | repeated | The refresh tokens associated with the current user. |
+
+
+
+
+
+
+<a name="rellm-UsernamePasswordLoginRequest"></a>
+
+### UsernamePasswordLoginRequest
+Request to login with username &#43; password.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| username | [string](#string) |  | Username for the account to be logged into. Must exist. |
+| password | [string](#string) |  | Password for the account to be logged into. |
+| expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
+| device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
+| user_id | [string](#string) | optional | (TODO) If provided, username is ignored and login is initiated via user_id instead. |
+
+
+
+
+
+
+<a name="rellm-VerificationChallenge"></a>
+
+### VerificationChallenge
+Returned in [`RefreshTokenResponse.verification_challenge`](#rellm-RefreshTokenResponse) after the
+first phase of an SMS/email login or account creation.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sent_to | [string](#string) | repeated | The `tel:`/`mailto:` values a code was sent to, e.g. `[&#34;tel:&#43;19195551234&#34;]` -- shown to the user as &#34;We sent a code to ...&#34;. For login this echoes the requested value even when no account matched. |
+| expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When the code(s) expire (10 minutes after being sent). |
+| resend_available_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The earliest a new code can be requested for the same contact method. |
 
 
 
@@ -1995,7 +2133,7 @@ Request for [`VerifyContactMethod`](#grpc-api-VerifyContactMethod).
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| value | [string](#string) |  | The `tel:` (or, in the future, `mailto:`) value being verified -- must match the current user&#39;s own stored `phone`/`email` value. |
+| value | [string](#string) |  | The `tel:` or `mailto:` value being verified -- must match the current user&#39;s own stored `phone`/`email` value. |
 | code | [string](#string) |  | The code the user was sent by `StartContactMethodVerification`. |
 
 
@@ -3768,6 +3906,28 @@ See [`LockClusterResources`](#grpc-api-LockClusterResources).
 
 
 
+<a name="rellm-MailgunConfig"></a>
+
+### MailgunConfig
+Mailgun (https://mailgun.com) Config -- sent via the Messages API
+(`POST /v3/{domain}/messages`). Setup: add and verify a sending domain, and create a (domain)
+sending key or use your account&#39;s private API key.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| mailgun_enabled | [bool](#bool) |  |  |
+| mailgun_api_key | [string](#string) |  | The API key, used as Basic auth (`api:{key}`). Write-only. |
+| mailgun_domain | [string](#string) |  | The Mailgun sending domain, e.g. `mg.example.com`. |
+| mailgun_region | [string](#string) |  | `us` (default, `api.mailgun.net`) or `eu` (`api.eu.mailgun.net`). |
+| mailgun_from_address | [string](#string) |  | The `From` address; should belong to `mailgun_domain`. |
+| mailgun_from_name | [string](#string) |  | Optional display name for the `From` header. |
+
+
+
+
+
+
 <a name="rellm-MarketSettings"></a>
 
 ### MarketSettings
@@ -3838,6 +3998,30 @@ Specific settings for Posts.
 
 
 
+<a name="rellm-PostmarkConfig"></a>
+
+### PostmarkConfig
+Postmark (https://postmarkapp.com) Config -- transactional email, sent via Postmark&#39;s Email API
+(`POST /email`). Setup: create a *Server*, verify a Sender Signature or (better, for DKIM/SPF
+alignment) a whole sending Domain, and copy the Server API Token. Optionally also provide the
+Account API Token, which lets the Sign In &amp; Contact tab show the domain&#39;s DKIM/Return-Path
+verification state and the Server&#39;s own delivery statistics.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| postmark_enabled | [bool](#bool) |  |  |
+| postmark_server_token | [string](#string) |  | The Server API Token, sent as `X-Postmark-Server-Token`. Never serialized once written (write-only; a blank value on `ConfigureServer` means &#34;leave what&#39;s stored alone&#34;). |
+| postmark_account_token | [string](#string) |  | The Account API Token (`X-Postmark-Account-Token`) -- optional, only used to *read* domain verification status (`GET /domains`). Write-only, same as the server token. |
+| postmark_from_address | [string](#string) |  | The `From` address; must belong to a verified Sender Signature or Domain. |
+| postmark_from_name | [string](#string) |  | Optional display name for the `From` header, e.g. &#34;My Rellm Server&#34;. |
+| postmark_message_stream | [string](#string) |  | The Message Stream to send through; empty means `outbound` (Postmark&#39;s default transactional stream). |
+
+
+
+
+
+
 <a name="rellm-SearchSettings"></a>
 
 ### SearchSettings
@@ -3855,6 +4039,28 @@ Servers and jobs never load an embedding model themselves. When disabled, or whe
 | available_models | [EmbeddingModel](#rellm-EmbeddingModel) | repeated | The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`. |
 | model_chosen_by_cluster | [bool](#bool) |  | Always true now (kept for older clients): the model is chosen by the cluster&#39;s embedding service. |
 | embedding_service_available | [bool](#bool) |  | Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When false, semantic search can&#39;t work no matter what `semantic_search_enabled` says. Read-only. |
+
+
+
+
+
+
+<a name="rellm-SendgridConfig"></a>
+
+### SendgridConfig
+SendGrid (https://sendgrid.com) Config -- sent via the v3 Mail Send API (`POST /v3/mail/send`).
+Setup: create an API key with at least &#34;Mail Send&#34; (plus &#34;Domain Authentication read&#34;/&#34;Stats
+read&#34; if you want the Sign In &amp; Contact tab to show domain-authentication and delivery
+statistics), and authenticate your sending domain (Settings -&gt; Sender Authentication).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sendgrid_enabled | [bool](#bool) |  |  |
+| sendgrid_api_key | [string](#string) |  | The API key (starts with `SG.`), used as Bearer auth. Write-only. |
+| sendgrid_from_address | [string](#string) |  | The `From` address; must be a verified Single Sender or belong to an authenticated domain. |
+| sendgrid_from_name | [string](#string) |  | Optional display name for the `From` header. |
+| sendgrid_region | [string](#string) |  | Optional: set to `eu` to use SendGrid&#39;s EU regional API host (`api.eu.sendgrid.com`) -- required for EU-regional subusers/accounts. Empty (default) uses `api.sendgrid.com`. |
 
 
 
@@ -3904,19 +4110,22 @@ Configuration for a Rellm server instance.
 | external_cdn_config | [ExternalCDNConfig](#rellm-ExternalCDNConfig) | optional | If set, enables External CDN support for the server. This means that the non-secure HTTP server (on port 80) will *not* redirect to the secure server, and instead serve up Tamagui Web/Flutter clients directly. This allows you to point Cloudflare&#39;s &#34;CNAME HTTPS Proxy&#34; feature at your Rellm server to serve up HTML/CS/JS and Media files with caching from Cloudflare&#39;s CDN. See ExternalCDNConfig for more details on securing this setup. |
 | cluster_resources | [ClusterResources](#rellm-ClusterResources) | optional | Cluster-internal coordination state - see `ClusterResources`&#39;s own doc. Visible to any logged-in admin (unlike most fields here, this describes infrastructure topology rather than anything end users need, so it&#39;s stripped entirely from [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) for non-admins/anonymous callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission. |
 | private_user_strategy | [PrivateUserStrategy](#rellm-PrivateUserStrategy) |  | Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. |
-| authentication_features | [AuthenticationFeature](#rellm-AuthenticationFeature) | repeated | (TODO) Allows admins to enable/disable creating accounts and logging in. Eventually, external auth too hopefully! |
+| authentication_features | [AuthenticationFeature](#rellm-AuthenticationFeature) | repeated | Which ways of creating accounts and logging in the server allows. The `*_WITH_SMS`/ `*_WITH_EMAIL` values are enforced (they require the matching `ContactProtocol` to be supported -- see `supported_contact_protocols` -- and change how [`CreateAccount`](#grpc-api-CreateAccount)/[`Login`](#grpc-api-Login) behave); the `*_WITH_PASSWORD` values are not enforced yet (password creation/login always work). Eventually, external auth too hopefully! |
 | web_push_config | [WebPushConfig](#rellm-WebPushConfig) | optional | Web Push (VAPID) configuration for the server. |
-| supported_contact_protocols | [ContactProtocol](#rellm-ContactProtocol) | repeated | Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`, which can&#39;t reference this message directly -- see that field&#39;s own doc for why). Settable via [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` is always rejected (no email provider exists yet). Edited via the &#34;Enable SMS Sending&#34;/&#34;Enable Email Sending&#34; toggles on the Contact Integrations tab&#39;s &#34;SMS Configuration&#34;/&#34;Email Configuration&#34; sections (`ContactIntegrationsTab.smsConfigurationSection`/ `emailConfigurationSection`) -- see `docs/contact_integrations.md`. |
+| supported_contact_protocols | [ContactProtocol](#rellm-ContactProtocol) | repeated | Which [`ContactProtocol`](#rellm-ContactProtocol)s (`tel:`/`mailto:`) this server currently accepts -- drives [`ContactMethod.supported_by_server`](#rellm-ContactMethod) (`users.proto`, which can&#39;t reference this message directly -- see that field&#39;s own doc for why). Settable via [`ConfigureServer`](#grpc-api-ConfigureServer), which *errors* rather than silently dropping an invalid entry: `CONTACT_PROTOCOL_TEL` requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) in that same request, and `CONTACT_PROTOCOL_MAILTO` requires an enabled [`StalwartConfig`](#rellm-StalwartConfig) (with sending enabled)/ [`PostmarkConfig`](#rellm-PostmarkConfig)/[`SendgridConfig`](#rellm-SendgridConfig)/ [`MailgunConfig`](#rellm-MailgunConfig). Edited via the &#34;Enable SMS Sending&#34;/&#34;Enable Email Sending&#34; toggles on the Sign In &amp; Contact tab&#39;s &#34;SMS Configuration&#34;/&#34;Email Configuration&#34; sections (`SignInAndContactTab.smsConfigurationSection`/ `emailConfigurationSection`) -- see `docs/contact_integrations.md`. |
 | preferred_verification_apis | [ContactVerificationAPI](#rellm-ContactVerificationAPI) | repeated | A server-preferred order of [`ContactVerificationAPI`](#rellm-ContactVerificationAPI) providers to try first when more than one of `twilio_config`/`bird_config`/`telnyx_config` below is enabled -- see `contact_verification::available_verification_apis` for the full preference-then-fallback ordering this feeds into [`ServerConfiguration.available_verification_apis`](#rellm-ServerConfiguration) below. Even when this is blank, an enabled provider is still tried (in the fixed default order Telnyx/Bird/Twilio) -- this field only matters when more than one is enabled and the admin wants a specific one tried first. Only serialized for admin users. |
 | available_verification_apis | [ContactVerificationAPI](#rellm-ContactVerificationAPI) | repeated | Derived from whether [`TwilioConfig`](#rellm-TwilioConfig).twilio_enabled/ [`BirdConfig`](#rellm-BirdConfig).bird_enabled/ [`TelnyxConfig`](#rellm-TelnyxConfig).telnyx_enabled is true, ordered per `preferred_verification_apis` above. Serialized to every caller (not admin-only, unlike `preferred_verification_apis`/`twilio_config`/`bird_config`/`telnyx_config`) -- this is what a non-admin client should check to decide whether to show verification UI at all, without exposing any provider configuration. Independent of `supported_contact_protocols` above -- that&#39;s the admin&#39;s own on/off toggle (can disable `tel:` contact even while a provider stays enabled/configured), this is purely &#34;is at least one provider actually configured.&#34; |
 | twilio_config | [TwilioConfig](#rellm-TwilioConfig) | optional | Twilio Config -- see [`TwilioConfig`](#rellm-TwilioConfig). Only serialized for admin users. |
 | bird_config | [BirdConfig](#rellm-BirdConfig) | optional | Bird (bird.com, formerly MessageBird) Config -- a cheaper alternative to [`TwilioConfig`](#rellm-TwilioConfig) for SMS verification; see [`BirdConfig`](#rellm-BirdConfig)&#39;s own doc. Only serialized for admin users. |
 | stripe_config | [StripeConfig](#rellm-StripeConfig) | optional | Stripe Config, backing the Marketplace (`market.proto`). Only serialized for admin users. |
 | telnyx_config | [TelnyxConfig](#rellm-TelnyxConfig) | optional | Telnyx Config -- another alternative SMS verification provider to [`TwilioConfig`](#rellm-TwilioConfig) (see [`TelnyxConfig`](#rellm-TelnyxConfig)&#39;s own doc). Only serialized for admin users. |
-| stalwart_config | [StalwartConfig](#rellm-StalwartConfig) | optional | Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster.
-
-This could be extended in the future to allow sending mail with Stalwart, but that&#39;s TBD. |
+| stalwart_config | [StalwartConfig](#rellm-StalwartConfig) | optional | Unlike the other configs, at least at the moment, the integration with Stalwart is designed to be *in-cluster*, not over the web. It relies on unsecured /email endpoint on port 27705 to receive mail from a Stalwart deployed within the same Kubernetes cluster, and can send mail (verification codes) through the same Stalwart&#39;s SMTP submission port. Only serialized for admin users. |
 | custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The server&#39;s [`CustomCSSConfiguration`](#rellm-CustomCSSConfiguration): which media its custom stylesheet uses and whether it forces the light or dark theme. Publicly readable. `custom_css` itself is always unset here -- fetch it with [`GetCustomCSS`](#grpc-api-GetCustomCSS), which is the only way to read the (potentially large) stylesheet text. Ignored by [`ConfigureServer`](#grpc-api-ConfigureServer); write it with [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS). |
+| preferred_email_apis | [EmailVerificationAPI](#rellm-EmailVerificationAPI) | repeated | Email sending, parallel to the SMS providers above. A server-preferred order of [`EmailVerificationAPI`](#rellm-EmailVerificationAPI) providers to try first when more than one of `stalwart_config` (sending)/`postmark_config`/`sendgrid_config`/`mailgun_config` is enabled; same preference-then-fallback ordering as `preferred_verification_apis` (fallback order: Postmark, SendGrid, Mailgun, Stalwart). Only serialized for admin users. |
+| available_email_apis | [EmailVerificationAPI](#rellm-EmailVerificationAPI) | repeated | The email providers that are enabled and configured, in the order they&#39;d be tried -- the email counterpart of `available_verification_apis`, serialized to every caller. |
+| postmark_config | [PostmarkConfig](#rellm-PostmarkConfig) | optional | Postmark Config -- see [`PostmarkConfig`](#rellm-PostmarkConfig). Only serialized for admin users. |
+| sendgrid_config | [SendgridConfig](#rellm-SendgridConfig) | optional | SendGrid Config -- see [`SendgridConfig`](#rellm-SendgridConfig). Only serialized for admin users. |
+| mailgun_config | [MailgunConfig](#rellm-MailgunConfig) | optional | Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users. |
 | subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) | optional | Set *only* on the virtual configuration a server returns to requests addressed to a user&#39;s Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)). Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is derived from the owner&#39;s `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by checking `subdomain_settings?.subdomain_of`. |
 
 
@@ -3969,12 +4178,22 @@ Logo data for the server. Built atop Rellm [`Media` APIs](#rellm-Media).
 
 ### StalwartConfig
 Stalwart is an extablished, open-source Rust email/contact/calendar server (think an Outlook or Google Workspace competitor).
-Currently Rellm supports receiving emails via Stalwart webhook configurations.
+Rellm can *receive* emails from Stalwart (via its MTA Hook webhook) and *send* email through
+Stalwart&#39;s SMTP submission port -- both are designed to be in-cluster, see `deploys/email`.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | stalwart_receiving_enabled | [bool](#bool) |  | Enables receiving emails from the private, unsecured cluster-facing HTTP server at :27705/email. |
+| stalwart_sending_enabled | [bool](#bool) |  | Enables sending email (verification codes, ...) through Stalwart&#39;s SMTP submission service. Requires `stalwart_smtp_host` and `stalwart_from_address`. |
+| stalwart_smtp_host | [string](#string) |  | Host (usually the in-cluster Service name, e.g. `stalwart.email.svc.cluster.local`) of Stalwart&#39;s SMTP submission listener. |
+| stalwart_smtp_port | [int32](#int32) |  | Submission port; 0 means 587 (STARTTLS submission). 465 means implicit TLS. |
+| stalwart_smtp_username | [string](#string) |  | Credentials of the Stalwart account/app-password to authenticate (SMTP AUTH) as. |
+| stalwart_smtp_password | [string](#string) |  | Write-only, like every other credential. |
+| stalwart_from_address | [string](#string) |  | The `From` address -- must be one Stalwart accepts from `stalwart_smtp_username` and a domain Stalwart DKIM-signs for. |
+| stalwart_from_name | [string](#string) |  | Optional display name for the `From` header. |
+| stalwart_management_url | [string](#string) |  | Base URL of Stalwart&#39;s management HTTP API (e.g. `http://stalwart.email.svc.cluster.local:8080`), used *read-only* by the Sign In &amp; Contact tab to show queue depth, DNS records and received DMARC reports. Optional. |
+| stalwart_management_token | [string](#string) |  | API key/bearer token for the management API (Stalwart &#34;API key&#34; principal). Write-only. |
 
 
 
@@ -4074,7 +4293,7 @@ creation, inbound webhook registration), and [`ContactMethod`](#rellm-ContactMet
 | twilio_api_key_secret | [string](#string) |  | The Twilio API Key&#39;s Secret, used as the Basic Auth password. Never serialized once written. |
 | twilio_from_number | [string](#string) |  | The Twilio-provisioned sending number for outbound verification SMS. Not secret. |
 | twilio_webhook_signing_key | [string](#string) |  | The Twilio Account&#39;s Auth Token, used *only* to verify the `X-Twilio-Signature` header on inbound deliveries to `/contact_integrations/twilio/receive` (see https://www.twilio.com/docs/usage/webhooks/webhooks-security and `docs/contact_integrations.md`). Never used to authenticate outbound API calls -- this message&#39;s own doc explains why the Auth Token is deliberately excluded from that role; this is the one narrow exception, since signature verification is the one thing only the Auth Token (not an API Key) can do. Write-only like every other credential here -- always blanked to `&#34;&#34;` once written, so a client can never read the real value back. Sending an empty value back on `ConfigureServer` means &#34;leave whatever&#39;s already stored alone,&#34; same as every other write-only field&#39;s blank-means-no-op rule. Whether this key is actually *used* to verify inbound deliveries is controlled independently by `use_twilio_webhook_signing_key` below -- storing a key here doesn&#39;t by itself turn verification on. |
-| use_twilio_webhook_signing_key | [bool](#bool) |  | Whether `twilio_webhook_signing_key` above is actually used to verify inbound `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once a key is stored -- an admin must explicitly opt in, same &#34;explicit switch, not implicit from presence&#34; reasoning `ContactIntegrationsTab`&#39;s own &#34;Use Webhook Signing Key&#34; toggle exists for. `false` while this is `false` means inbound deliveries are accepted without signature verification, same fail-safe-direction reasoning as before (see this message&#39;s own doc and `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can have either way is *revoking* consent, never granting it. |
+| use_twilio_webhook_signing_key | [bool](#bool) |  | Whether `twilio_webhook_signing_key` above is actually used to verify inbound `/contact_integrations/twilio/receive` deliveries. Defaults to `false` (unverified) even once a key is stored -- an admin must explicitly opt in, same &#34;explicit switch, not implicit from presence&#34; reasoning `SignInAndContactTab`&#39;s own &#34;Use Webhook Signing Key&#34; toggle exists for. `false` while this is `false` means inbound deliveries are accepted without signature verification, same fail-safe-direction reasoning as before (see this message&#39;s own doc and `docs/contact_integrations.md`) -- the only effect an unauthenticated/spoofed delivery can have either way is *revoking* consent, never granting it. |
 
 
 
@@ -4107,8 +4326,12 @@ Authentication features that can be enabled/disabled by the server admin.
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | AUTHENTICATION_FEATURE_UNKNOWN | 0 | An authentication feature that is not known to the server. (Likely, the client and server use different versions of the Rellm protocol.) |
-| CREATE_ACCOUNT | 1 | Users can sign up for an account. |
-| LOGIN | 2 | Users can sign in with an existing account. |
+| CREATE_ACCOUNT_WITH_PASSWORD | 1 | Users can sign up for an account. |
+| CREATE_ACCOUNT_WITH_SMS | 2 | Users can sign up for an account via SMS. |
+| CREATE_ACCOUNT_WITH_EMAIL | 3 | Users can sign up for an account via email. |
+| LOGIN_WITH_PASSWORD | 11 | Users can sign in with an existing account. |
+| LOGIN_WITH_SMS | 12 | Users can sign in with an existing account via SMS. |
+| LOGIN_WITH_EMAIL | 13 | Users can sign in with an existing account via email. |
 
 
 
@@ -4150,7 +4373,7 @@ server-wide setting keyed off this enum, and `docs/contact_integrations.md` for 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | CONTACT_PROTOCOL_TEL | 0 | `tel:` (phone/SMS) contact. Requires an enabled [`TwilioConfig`](#rellm-TwilioConfig)/ [`BirdConfig`](#rellm-BirdConfig)/[`TelnyxConfig`](#rellm-TelnyxConfig). |
-| CONTACT_PROTOCOL_MAILTO | 1 | `mailto:` (email) contact. Currently not supported -- no email provider exists yet. |
+| CONTACT_PROTOCOL_MAILTO | 1 | `mailto:` (email) contact. Requires an enabled, configured email provider: [`StalwartConfig`](#rellm-StalwartConfig) (with `stalwart_sending_enabled`), [`PostmarkConfig`](#rellm-PostmarkConfig), [`SendgridConfig`](#rellm-SendgridConfig) or [`MailgunConfig`](#rellm-MailgunConfig). |
 
 
 
@@ -4181,6 +4404,22 @@ The feed the Posts page shows by default. See `PostSettings.default_sort`.
 | DEFAULT_POSTS_SORT_RECENT | 0 | &#34;Recent Posts&#34; -- newest first. |
 | DEFAULT_POSTS_SORT_POPULAR | 1 | &#34;Recently Popular Posts&#34; -- stars and responses, decayed by age. |
 | DEFAULT_POSTS_SORT_FOLLOWING | 2 | &#34;Following Posts&#34; -- only what the signed-in accounts follow. Visitors who aren&#39;t signed in anywhere (and so aren&#39;t offered that option) get `RECENT` instead. |
+
+
+
+<a name="rellm-EmailVerificationAPI"></a>
+
+### EmailVerificationAPI
+The email providers [`ServerConfiguration.preferred_email_apis`](#rellm-ServerConfiguration)/
+[`available_email_apis`](#rellm-ServerConfiguration) order between -- the email counterpart of
+[`ContactVerificationAPI`](#rellm-ContactVerificationAPI).
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| EMAIL_VERIFICATION_API_POSTMARK | 0 |  |
+| EMAIL_VERIFICATION_API_SENDGRID | 1 |  |
+| EMAIL_VERIFICATION_API_MAILGUN | 2 |  |
+| EMAIL_VERIFICATION_API_STALWART | 3 |  |
 
 
 
@@ -5706,6 +5945,168 @@ is delisted and replaced with a new one instead.
 | PURCHASE_TYPE_RELLM_HOSTING | 2 | A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated -- fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks progress via `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes` on the `/market/fulfillment` admin page. Not automatically revoked on cancellation/expiry either (out of scope for this MVP -- an admin handles teardown manually too). |
 | PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
 | PURCHASE_TYPE_SUBDOMAIN | 4 | A Rellm Subdomain for the buyer&#39;s own profile: `bullcity.social/jon` becomes reachable as `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment records the buyer&#39;s lower-cased username as the subscription&#39;s `SubdomainSettings.subdomain` (failing if another active subscription already holds it); there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force. The buyer then edits their `SubdomainSettings` with `SaveMarketSubscription`. Revoked (the subdomain stops resolving) as soon as the subscription&#39;s `service_terminated_at` is set. |
+
+
+ 
+
+ 
+
+ 
+
+
+
+<a name="contact_integrations-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## contact_integrations.proto
+
+
+
+<a name="rellm-ContactIntegrationsStatus"></a>
+
+### ContactIntegrationsStatus
+A live health report for every SMS and email integration an admin has configured -- the response to
+[`GetContactIntegrationsStatus`](#grpc-api-GetContactIntegrationsStatus). Everything here is
+gathered *on demand* by actually calling each provider&#39;s own API (and, for email, looking up the
+sending domains&#39; SPF/DKIM/DMARC DNS records), so it reflects reality right now rather than what
+the admin last typed into the form -- and it&#39;s therefore slow (several outbound HTTP calls, run
+in parallel), which is why it&#39;s its own RPC instead of part of
+[`ServerConfiguration`](#rellm-ServerConfiguration). Contains no secrets.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| checked_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | When the server gathered this report. |
+| sms_providers | [ProviderStatus](#rellm-ProviderStatus) | repeated | One entry per SMS provider (Twilio/Bird/Telnyx) that is enabled or has any configuration stored, in the order the server would try them for verification codes. |
+| email_providers | [ProviderStatus](#rellm-ProviderStatus) | repeated | One entry per email provider (Stalwart/Postmark/SendGrid/Mailgun) that is enabled or has any configuration stored, in the order the server would try them. |
+| email_domains | [EmailDomainStatus](#rellm-EmailDomainStatus) | repeated | DNS-level email authentication (SPF/DKIM/DMARC) for each distinct domain the enabled email providers send from. Independent of which provider is used -- this is what receiving mail servers (Gmail, Outlook, ...) actually check. |
+
+
+
+
+
+
+<a name="rellm-DmarcStatus"></a>
+
+### DmarcStatus
+A parsed DMARC record (`_dmarc.&lt;domain&gt;` TXT) -- RFC 7489 tags in friendly form.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| record_found | [bool](#bool) |  | Whether a `v=DMARC1` TXT record exists at `_dmarc.&lt;domain&gt;`. |
+| raw_record | [string](#string) |  | The raw record, e.g. `v=DMARC1; p=reject; rua=mailto:dmarc@example.com`. Empty if none. |
+| policy | [string](#string) |  | Requested handling for failing mail (`p=`): `none` (monitor only), `quarantine` or `reject`. Empty if no record. |
+| subdomain_policy | [string](#string) |  | Policy for subdomains (`sp=`); empty means &#34;same as `policy`&#34;. |
+| percentage | [int32](#int32) |  | Percentage of failing mail the policy applies to (`pct=`, default 100). |
+| aggregate_report_uris | [string](#string) | repeated | Where aggregate reports are sent (`rua=`). |
+| forensic_report_uris | [string](#string) | repeated | Where forensic reports are sent (`ruf=`). |
+| dkim_alignment | [string](#string) |  | DKIM alignment (`adkim=`): `relaxed` (default) or `strict`. |
+| spf_alignment | [string](#string) |  | SPF alignment (`aspf=`): `relaxed` (default) or `strict`. |
+| level | [StatusLevel](#rellm-StatusLevel) |  |  |
+| summary | [string](#string) |  | One friendly sentence, e.g. &#34;Enforced (reject) for 100% of failing mail.&#34; |
+
+
+
+
+
+
+<a name="rellm-EmailDomainStatus"></a>
+
+### EmailDomainStatus
+Email-authentication (SPF/DKIM/DMARC) state for one sending domain, from live DNS lookups plus
+whatever the providers&#39; APIs report about domain verification.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| domain | [string](#string) |  | The domain, e.g. `example.com` (the domain of the `from_address` the providers send as). |
+| used_by | [string](#string) | repeated | Names of the providers (see `ProviderStatus.provider`) that send from this domain. |
+| level | [StatusLevel](#rellm-StatusLevel) |  |  |
+| summary | [string](#string) |  |  |
+| dmarc | [DmarcStatus](#rellm-DmarcStatus) |  | The domain&#39;s parsed DMARC record. Always present; `record_found` says whether one exists. |
+| checks | [StatusCheck](#rellm-StatusCheck) | repeated | SPF, DKIM, MX, ... checks -- DNS lookups plus provider-reported verification state. |
+
+
+
+
+
+
+<a name="rellm-ProviderStatus"></a>
+
+### ProviderStatus
+The health of one SMS or email provider integration.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| provider | [string](#string) |  | Stable lowercase identifier: `twilio`, `bird`, `telnyx`, `postmark`, `sendgrid`, `mailgun` or `stalwart`. |
+| display_name | [string](#string) |  | Human-friendly name, e.g. &#34;Twilio&#34;, &#34;SendGrid&#34;. |
+| enabled | [bool](#bool) |  | Whether the admin has switched this provider on. |
+| configured | [bool](#bool) |  | Whether it has all the credentials/settings it needs to attempt a send. |
+| level | [StatusLevel](#rellm-StatusLevel) |  | The overall verdict: the worst `level` among `checks`, or `STATUS_LEVEL_DISABLED`. |
+| summary | [string](#string) |  | A one-sentence, plain-language summary suitable for a headline, e.g. &#34;Ready to send -- 1 thing needs attention.&#34; |
+| checks | [StatusCheck](#rellm-StatusCheck) | repeated | Individual pass/warn/fail checks, e.g. &#34;API credentials valid&#34;, &#34;Sender number can send SMS&#34;, &#34;Domain authenticated (DKIM &#43; SPF)&#34;. |
+| metrics | [StatusMetric](#rellm-StatusMetric) | repeated | Numbers the provider reported, e.g. account balance, messages sent in the last 30 days, delivery/bounce rates. |
+| dashboard_url | [string](#string) | optional | A link to this provider&#39;s own dashboard, if it has a stable one. |
+
+
+
+
+
+
+<a name="rellm-StatusCheck"></a>
+
+### StatusCheck
+One pass/warn/fail line within a [`ProviderStatus`](#rellm-ProviderStatus) or
+[`EmailDomainStatus`](#rellm-EmailDomainStatus).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| name | [string](#string) |  | Short name, e.g. &#34;API credentials&#34;. |
+| level | [StatusLevel](#rellm-StatusLevel) |  |  |
+| detail | [string](#string) |  | What was found, e.g. &#34;Authenticated as account AC12…&#34;. |
+| fix_hint | [string](#string) | optional | Optional advice for fixing a `WARNING`/`ERROR`, e.g. &#34;Add a DMARC record at _dmarc.example.com.&#34; |
+
+
+
+
+
+
+<a name="rellm-StatusMetric"></a>
+
+### StatusMetric
+A single labelled number/string a provider reported, e.g. `{label: &#34;Balance&#34;, value: &#34;$12.34&#34;}`.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| label | [string](#string) |  |  |
+| value | [string](#string) |  | Already formatted for display. |
+| detail | [string](#string) | optional | Optional extra context, e.g. &#34;last 30 days&#34;. |
+
+
+
+
+
+ 
+
+
+<a name="rellm-StatusLevel"></a>
+
+### StatusLevel
+Overall verdict for a provider, domain, or single check. Ordered roughly from best to worst so
+a UI can pick the &#34;worst&#34; of a list.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| STATUS_LEVEL_UNKNOWN | 0 | The check wasn&#39;t run, or the provider doesn&#39;t expose enough information to tell. |
+| STATUS_LEVEL_OK | 1 | Everything looks right. |
+| STATUS_LEVEL_INFO | 2 | Purely informational (e.g. an account&#39;s plan name); neither good nor bad. |
+| STATUS_LEVEL_WARNING | 3 | Works, but something deserves an admin&#39;s attention (a trial account, a DMARC policy of `none`, an unregistered 10DLC campaign, a low balance, ...). |
+| STATUS_LEVEL_ERROR | 4 | Broken or about to break (bad credentials, unverified sending domain, missing DKIM, ...). |
+| STATUS_LEVEL_DISABLED | 5 | Not configured/enabled, so nothing to check. |
 
 
  

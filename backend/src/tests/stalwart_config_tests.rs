@@ -30,7 +30,7 @@ fn stalwart_receiving_enabled_is_false_when_present_but_disabled() {
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let mut new_config = models::default_server_configuration();
         new_config.stalwart_config =
-            Some(serde_json::to_value(StalwartConfig { stalwart_receiving_enabled: false }).unwrap());
+            Some(serde_json::to_value(StalwartConfig { stalwart_receiving_enabled: false, ..Default::default() }).unwrap());
         diesel::insert_into(server_configurations::table)
             .values(&new_config)
             .execute(conn)
@@ -47,7 +47,7 @@ fn stalwart_receiving_enabled_is_true_once_enabled() {
     conn.test_transaction::<_, tonic::Status, _>(|conn| {
         let mut new_config = models::default_server_configuration();
         new_config.stalwart_config =
-            Some(serde_json::to_value(StalwartConfig { stalwart_receiving_enabled: true }).unwrap());
+            Some(serde_json::to_value(StalwartConfig { stalwart_receiving_enabled: true, ..Default::default() }).unwrap());
         diesel::insert_into(server_configurations::table)
             .values(&new_config)
             .execute(conn)

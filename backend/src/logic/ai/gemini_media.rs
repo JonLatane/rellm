@@ -78,7 +78,7 @@ pub fn generate_image(
     )?;
 
     if !status.is_success() {
-        log::error!("Gemini image generation failed ({}): {:?}", status, value);
+        log::error!("Gemini image generation failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&value));
         return Err(Status::new(Code::FailedPrecondition, "gemini_request_failed"));
     }
 
@@ -95,7 +95,7 @@ fn parse_generated_image(value: &serde_json::Value) -> Result<GeneratedImage, St
         .find(|block| block["type"] == "image");
 
     let Some(image_block) = image_block else {
-        log::error!("Gemini response had no image output: {:?}", value);
+        log::error!("Gemini response had no image output: {:?}", crate::logic::log_redaction::summarize(&value));
         return Err(Status::new(Code::Internal, "gemini_no_image_returned"));
     };
 

@@ -153,14 +153,14 @@ pub async fn create_media(
         log::error!(
             "Failed to update media_storage_bytes_used for user {}: {:?}",
             user.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
     if let Err(e) = adjust_server_media_usage_bytes(&mut conn, uploaded_bytes) {
         log::error!(
             "Failed to adjust server_media_usage_bytes for new media {}: {:?}",
             media.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
 
