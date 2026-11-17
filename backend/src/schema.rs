@@ -36,6 +36,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    contact_verification_sends (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     rsvps (id) {
         id -> Int8,
         occasion_id -> Int8,
@@ -91,14 +99,6 @@ diesel::table! {
         embedding -> Nullable<Bytea>,
         embedded_at -> Timestamp,
         checked_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    contact_verification_sends (id) {
-        id -> Int8,
-        contact_value -> Varchar,
-        sent_at -> Timestamp,
     }
 }
 
@@ -379,17 +379,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    post_embeddings (post_id) {
-        post_id -> Int8,
-        model -> Varchar,
-        document_hash -> Int8,
-        embedding -> Nullable<Bytea>,
-        embedded_at -> Timestamp,
-        checked_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     pending_contact_verifications (id) {
         id -> Int8,
         contact_value -> Varchar,
@@ -397,6 +386,17 @@ diesel::table! {
         attempts -> Int4,
         created_at -> Timestamp,
         sent_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    post_embeddings (post_id) {
+        post_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
     }
 }
 
@@ -487,10 +487,10 @@ diesel::table! {
         telnyx_config -> Nullable<Jsonb>,
         supported_contact_protocols -> Nullable<Jsonb>,
         stalwart_config -> Nullable<Jsonb>,
-        email_providers_config -> Nullable<Jsonb>,
         custom_css_configuration -> Nullable<Jsonb>,
         custom_css -> Nullable<Text>,
         search_settings -> Nullable<Jsonb>,
+        email_providers_config -> Nullable<Jsonb>,
     }
 }
 
@@ -655,10 +655,10 @@ diesel::joinable!(user_refresh_tokens -> users (user_id));
 diesel::allow_tables_to_appear_in_same_query!(
     ai_provider_grants,
     ai_providers,
-    contact_verification_sends,
     rsvps,
     occasion_sync_destinations,
     occasions,
+    contact_verification_sends,
     event_embeddings,
     events,
     federated_accounts,
