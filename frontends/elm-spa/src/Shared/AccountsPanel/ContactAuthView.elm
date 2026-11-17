@@ -146,10 +146,10 @@ loginConsentCheckbox toMsg method isChecked isDisabled =
             (" "
                 ++ (case method of
                         EmailMethod ->
-                            "I agree to receive a one-time sign-in code by email."
+                            "I agree to receive sign-in codes by email, including this one."
 
                         _ ->
-                            "I agree to receive a one-time sign-in code by text message. " ++ smsRatesNote
+                            "I agree to receive sign-in codes by text message, including this one. " ++ smsRatesNote
                    )
             )
         ]

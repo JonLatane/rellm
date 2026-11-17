@@ -642,6 +642,10 @@ mod login_consent_spec {
             let response =
                 login_at(None, email_login_consent(EMAIL, Some(&code), None, true), conn).unwrap();
             assert_logged_in(&response, "lc_email_on");
+            // The response reflects the consent just recorded, not the pre-login state.
+            let returned = response.user.as_ref().unwrap().email.as_ref().unwrap();
+            assert_eq!(returned.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert_eq!(returned.consent_history.len(), 1);
             let stored = stored_email(conn, &user);
             assert_eq!(stored.consent_state, ContactConsentState::ContactConsentGranted as i32);
             assert_eq!(stored.consent_history.len(), 1);
@@ -820,6 +824,40 @@ mod consent_record_spec {
             let rows = consent_rows(conn, PHONE);
             assert_eq!(rows.len(), 1, "completing the signup adds no second row");
             assert_eq!(rows[0].user_id, Some(user_id));
+            Ok(())
+        });
+    }
+
+    /// Rows orphaned when an earlier account of the same contact was deleted must not be claimed by
+    /// a later signup.
+    #[test]
+    fn a_new_signup_does_not_claim_orphaned_consents_of_a_deleted_account() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            diesel::insert_into(contact_consents::table)
+                .values((
+                    contact_consents::contact_value.eq(PHONE),
+                    contact_consents::flow.eq("create_account"),
+                    contact_consents::consented_at.eq(SystemTime::now() - Duration::from_secs(86_400)),
+                ))
+                .execute(conn)
+                .unwrap();
+            let (base_url, sms) = sms_mock();
+            let request = account_request("cr_orphan", &test_password(), Some(granted(PHONE)), None);
+            create_account_at(Some(&base_url), request.clone(), conn).unwrap();
+            let code = sms_code(&sms, 0);
+            let done = create_account_at(
+                Some(&base_url),
+                CreateAccountRequest { phone_verification_code: Some(code), ..request },
+                conn,
+            )
+            .unwrap();
+            let user_id = done.user.as_ref().unwrap().id.to_db_id_or_err("id").unwrap();
+            let rows = consent_rows(conn, PHONE);
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].user_id, None, "the old, orphaned row stays unclaimed");
+            assert_eq!(rows[1].user_id, Some(user_id));
             Ok(())
         });
     }

@@ -222,25 +222,30 @@ pub fn record_contact_consent(
             contact_consents::contact_value.eq(contact_value.to_lowercase()),
             contact_consents::flow.eq(flow.as_str()),
             contact_consents::user_id.eq(user_id),
+            // The app's clock, like `pending_contact_verifications.created_at`, so the two compare.
+            contact_consents::consented_at.eq(SystemTime::now()),
         ))
         .execute(conn)
         .map(|_| ())
         .map_err(|e| db_error("record consent for", e))
 }
 
-/// Ties a just-created account to the sign-up consents recorded for the contact values it verified
-/// (rows still without an account).
+/// Ties a just-created account to the sign-up consents recorded for `contact_value` by the attempt it
+/// just completed: rows still without an account that were given at or after `since` (when that
+/// attempt's pending verification was created). Older unlinked rows -- e.g. orphaned when an earlier
+/// account of this contact was deleted -- belong to someone else and are left alone.
 pub fn link_signup_consents_to_user(
-    contact_values: &[String],
+    contact_value: &str,
+    since: SystemTime,
     user_id: i64,
     conn: &mut diesel::PgConnection,
 ) -> QueryResult<usize> {
-    let values: Vec<String> = contact_values.iter().map(|v| v.to_lowercase()).collect();
     update(
         contact_consents::table
-            .filter(contact_consents::contact_value.eq_any(values))
+            .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
             .filter(contact_consents::flow.eq(ConsentFlow::CreateAccount.as_str()))
-            .filter(contact_consents::user_id.is_null()),
+            .filter(contact_consents::user_id.is_null())
+            .filter(contact_consents::consented_at.ge(since)),
     )
     .set(contact_consents::user_id.eq(user_id))
     .execute(conn)

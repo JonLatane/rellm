@@ -617,7 +617,10 @@ enum Previous {
 /// `key` is the contact's normalized value (ledger/lock/pending key); `send_to` is where the
 /// message goes (a user's stored spelling, same address modulo case). Errors from the checks are
 /// `verification_recently_sent` / `too_many_verification_requests` / `contact_changed` /
-/// `contact_consent_not_granted`. For `UserContact` returns the stored contact method INCLUDING the
+/// `contact_consent_not_granted`. `consent`, if given, is the sign-up/sign-in form whose checkbox this
+/// send rests on: its `contact_consents` row is written in the SAME reservation transaction (so it
+/// exists before the provider is called, and only for a send that was actually reserved).
+/// For `UserContact` returns the stored contact method INCLUDING the
 /// real code -- blank it before returning it to a client.
 pub fn send_reserved_code(
     base_url: Option<&str>,
@@ -626,9 +629,10 @@ pub fn send_reserved_code(
     send_to: &str,
     target: SendTarget,
     global_cap: Option<i64>,
+    consent: Option<models::ConsentFlow>,
 ) -> Result<Option<ContactMethod>, Status> {
     let code = generate_code();
-    let (previous, reserved) = reserve_send(conn, key, target, &code, global_cap)?;
+    let (previous, reserved) = reserve_send(conn, key, target, &code, global_cap, consent)?;
 
     #[cfg(test)]
     in_flight_hook::run(conn);
@@ -652,6 +656,7 @@ fn reserve_send(
     target: SendTarget,
     code: &str,
     global_cap: Option<i64>,
+    consent: Option<models::ConsentFlow>,
 ) -> Result<(Previous, Option<ContactMethod>), Status> {
     let hour = Duration::from_secs(60 * 60);
     let outcome: Result<Result<(Previous, Option<ContactMethod>), Status>, diesel::result::Error> =
@@ -678,6 +683,15 @@ fn reserve_send(
                 }
                 models::record_contact_verification_send(key, conn)
             };
+            // The consent row, written once the send is certain to be reserved (same transaction as
+            // the ledger row). For a pending signup it must come AFTER the pending row is upserted:
+            // `link_signup_consents_to_user` claims rows given at/after that row's `created_at`.
+            let record_consent = |conn: &mut PgPooledConnection, user_id: Option<i64>| -> Result<(), Status> {
+                match consent {
+                    Some(flow) => models::record_contact_consent(key, flow, user_id, conn),
+                    None => Ok(()),
+                }
+            };
             let result = match target {
                 SendTarget::Pending => (|| -> Result<_, Status> {
                     let previous = models::find_pending_contact_verification(key, conn)?;
@@ -692,6 +706,7 @@ fn reserve_send(
                     }
                     limits(conn)?;
                     models::upsert_pending_contact_verification(key, &hash_code(key, code), conn)?;
+                    record_consent(conn, None)?;
                     Ok((Previous::Pending(previous), None))
                 })(),
                 SendTarget::UserContact { user_id, kind, attested_consent } => {
@@ -710,6 +725,7 @@ fn reserve_send(
                             ));
                         }
                         limits(conn)?;
+                        record_consent(conn, Some(user_id))?;
                         previous = contact.verification_in_progress.clone();
                         contact.supported_by_server = true;
                         contact.verification_in_progress = Some(ContactMethodVerification {
@@ -806,6 +822,8 @@ pub fn begin_user_contact_verification(
         value,
         SendTarget::UserContact { user_id, kind, attested_consent },
         None,
+        // Sign-in is the only caller that attests consent; keep the evidence of it.
+        attested_consent.then_some(models::ConsentFlow::Login),
     )?
     .ok_or_else(|| Status::new(Code::Internal, "data_error"))
 }

@@ -232,10 +232,10 @@ fn send_codes(
             &c.value,
             SendTarget::Pending,
             Some(MAX_PENDING_SENDS_PER_HOUR),
+            // Recorded in the reservation, before the provider call: evidence of the checkbox even if
+            // the signup is never completed (tied to the account if it is).
+            Some(models::ConsentFlow::CreateAccount),
         )?;
-        // The code went out on the strength of the consent checkbox; keep evidence of it even if
-        // the signup is never completed (it is tied to the account if it is).
-        models::record_contact_consent(&c.value, models::ConsentFlow::CreateAccount, None, conn)?;
     }
 
     Ok(RefreshTokenResponse {
@@ -424,8 +424,16 @@ fn insert_account(
             ))
             .returning(models::USER_COLUMNS)
             .get_result::<models::User>(conn)?;
-        let verified_values: Vec<String> = verified.iter().map(|c| c.value.clone()).collect();
-        models::link_signup_consents_to_user(&verified_values, user.id, conn)?;
+        for c in &verified {
+            // Only this signup attempt's consents: those since its pending row was created. Rows
+            // orphaned by an earlier, deleted account of the same contact predate it.
+            let since = models::find_pending_contact_verification(&c.value, conn)
+                .ok()
+                .flatten()
+                .map(|p| p.created_at)
+                .unwrap_or_else(SystemTime::now);
+            models::link_signup_consents_to_user(&c.value, since, user.id, conn)?;
+        }
         for c in &verified {
             delete(
                 crate::schema::pending_contact_verifications::table.filter(

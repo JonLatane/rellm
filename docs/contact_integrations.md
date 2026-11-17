@@ -317,10 +317,11 @@ not receive the code.
 
 **Evidence of consent (`contact_consents`).** Consent on these forms is given before it can live on a
 `ContactMethod.consent_history` (at sign-up no account exists yet, and may never; at sign-in it is only
-copied onto the account once the code is redeemed). So every time a code is actually *sent* on the
-strength of a checkbox, an append-only `contact_consents` row is written: normalized contact value,
+copied onto the account once the code is redeemed). So every time a code is *reserved for sending* on the
+strength of a checkbox (the row is written in the same transaction as the send ledger row, before the
+provider is called, so a provider failure can't leave a message without it), an append-only `contact_consents` row is written: normalized contact value,
 `flow` (`create_account`/`login`), `user_id` and `consented_at`. Sign-in rows carry the matched account;
-a sign-up row has no `user_id` until the account is created (then it is tied to it, no second row), and
+a sign-up row has no `user_id` until the account is created (then the rows given since that attempt's pending verification began are tied to it, no second row; older orphaned rows of a deleted account are never claimed), and
 stays without one if the signup is abandoned. Nothing is written when no message is sent. Unlike the
 hourly send ledger, these rows are kept indefinitely (the `user_id` is nulled if the account is
 deleted); they hold the phone/email, so treat them as PII. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
