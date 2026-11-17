@@ -141,11 +141,29 @@ validationTests =
         , test "loginContactInvalid follows the picked method" <|
             \_ ->
                 Expect.equal [ False, True, False, True ]
-                    [ ContactAuth.loginContactInvalid { initial | method = SmsMethod, contact = "+19195551234" }
-                    , ContactAuth.loginContactInvalid { initial | method = SmsMethod, contact = "jon@example.com" }
-                    , ContactAuth.loginContactInvalid { initial | method = EmailMethod, contact = "jon@example.com" }
-                    , ContactAuth.loginContactInvalid { initial | method = EmailMethod, contact = "+19195551234" }
+                    [ ContactAuth.loginContactInvalid { initial | method = SmsMethod, contact = "+19195551234", loginConsent = True }
+                    , ContactAuth.loginContactInvalid { initial | method = SmsMethod, contact = "jon@example.com", loginConsent = True }
+                    , ContactAuth.loginContactInvalid { initial | method = EmailMethod, contact = "jon@example.com", loginConsent = True }
+                    , ContactAuth.loginContactInvalid { initial | method = EmailMethod, contact = "+19195551234", loginConsent = True }
                     ]
+        , test "a valid phone/email still can't be submitted until the sign-in consent box is checked" <|
+            \_ ->
+                Expect.equal [ True, True, False ]
+                    [ ContactAuth.loginContactInvalid { initial | method = SmsMethod, contact = "+19195551234" }
+                    , ContactAuth.loginContactInvalid { initial | method = EmailMethod, contact = "jon@example.com", loginConsent = False }
+                    , ContactAuth.loginContactInvalid
+                        (ContactAuth.update (ContactAuth.LoginConsentToggled True) { initial | method = EmailMethod, contact = "jon@example.com" })
+                    ]
+        , test "picking another method forgets the sign-in consent" <|
+            \_ ->
+                ContactAuth.update (ContactAuth.MethodSelected EmailMethod) { initial | method = SmsMethod, loginConsent = True }
+                    |> .loginConsent
+                    |> Expect.equal False
+        , test "keeping the same method keeps the sign-in consent" <|
+            \_ ->
+                ContactAuth.update (ContactAuth.MethodSelected SmsMethod) { initial | method = SmsMethod, loginConsent = True }
+                    |> .loginConsent
+                    |> Expect.equal True
         ]
 
 

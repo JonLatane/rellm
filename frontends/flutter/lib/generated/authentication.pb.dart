@@ -449,6 +449,7 @@ class SMSLoginRequest extends $pb.GeneratedMessage {
     $14.Timestamp? expiresAt,
     $core.String? deviceName,
     $core.String? userId,
+    $core.bool? consentToContact,
   }) {
     final $result = create();
     if (phoneNumber != null) {
@@ -466,6 +467,9 @@ class SMSLoginRequest extends $pb.GeneratedMessage {
     if (userId != null) {
       $result.userId = userId;
     }
+    if (consentToContact != null) {
+      $result.consentToContact = consentToContact;
+    }
     return $result;
   }
   SMSLoginRequest._() : super();
@@ -478,6 +482,7 @@ class SMSLoginRequest extends $pb.GeneratedMessage {
     ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..aOS(4, _omitFieldNames ? '' : 'deviceName')
     ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..aOB(6, _omitFieldNames ? '' : 'consentToContact')
     ..hasRequiredFields = false
   ;
 
@@ -555,6 +560,24 @@ class SMSLoginRequest extends $pb.GeneratedMessage {
   $core.bool hasUserId() => $_has(4);
   @$pb.TagNumber(5)
   void clearUserId() => clearField(5);
+
+  /// The person signing in attests that they consent to being sent one-time sign-in codes by SMS
+  /// (the sign-in form's consent checkbox). Send it on **both** phases. Only matters when the
+  /// matched account's phone `ContactMethod.consent_state` is not `CONTACT_CONSENT_GRANTED` (they
+  /// unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 --
+  /// once the code proves control of the phone number -- records the consent
+  /// (`CONTACT_CONSENT_GRANTED`, with a server-timestamped `consent_history` entry). Without it, a
+  /// contact method that doesn't consent is sent nothing (the response is unchanged, see
+  /// [`LoginRequest`](#rellm-LoginRequest)). Never changes consent on its own: an unverified
+  /// phase 2 changes nothing, so it can't be used to grant consent for a number you don't control.
+  @$pb.TagNumber(6)
+  $core.bool get consentToContact => $_getBF(5);
+  @$pb.TagNumber(6)
+  set consentToContact($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasConsentToContact() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearConsentToContact() => clearField(6);
 }
 
 /// Request to login via email. Two EmailLoginRequests are required to complete
@@ -566,6 +589,7 @@ class EmailLoginRequest extends $pb.GeneratedMessage {
     $14.Timestamp? expiresAt,
     $core.String? deviceName,
     $core.String? userId,
+    $core.bool? consentToContact,
   }) {
     final $result = create();
     if (email != null) {
@@ -583,6 +607,9 @@ class EmailLoginRequest extends $pb.GeneratedMessage {
     if (userId != null) {
       $result.userId = userId;
     }
+    if (consentToContact != null) {
+      $result.consentToContact = consentToContact;
+    }
     return $result;
   }
   EmailLoginRequest._() : super();
@@ -595,6 +622,7 @@ class EmailLoginRequest extends $pb.GeneratedMessage {
     ..aOM<$14.Timestamp>(3, _omitFieldNames ? '' : 'expiresAt', subBuilder: $14.Timestamp.create)
     ..aOS(4, _omitFieldNames ? '' : 'deviceName')
     ..aOS(5, _omitFieldNames ? '' : 'userId')
+    ..aOB(6, _omitFieldNames ? '' : 'consentToContact')
     ..hasRequiredFields = false
   ;
 
@@ -672,6 +700,17 @@ class EmailLoginRequest extends $pb.GeneratedMessage {
   $core.bool hasUserId() => $_has(4);
   @$pb.TagNumber(5)
   void clearUserId() => clearField(5);
+
+  /// Same as [`SMSLoginRequest.consent_to_contact`](#rellm-SMSLoginRequest), for the account's
+  /// email `ContactMethod`.
+  @$pb.TagNumber(6)
+  $core.bool get consentToContact => $_getBF(5);
+  @$pb.TagNumber(6)
+  set consentToContact($core.bool v) { $_setBool(5, v); }
+  @$pb.TagNumber(6)
+  $core.bool hasConsentToContact() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearConsentToContact() => clearField(6);
 }
 
 ///  Request to create a new third-party refresh token. Unlike [`LoginRequest`](#rellm-LoginRequest) or [`CreateAccountRequest`](#rellm-CreateAccountRequest), the user must be logged in to create a third-party refresh token.

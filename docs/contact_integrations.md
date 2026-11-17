@@ -302,7 +302,29 @@ Two requests. Phase 1 (no `code`) *always* returns the same `VerificationChallen
 `sent_to` echoing the requested value. A code is only actually sent if an account has that contact
 verified, consent granted, and no code was sent within the last minute -- every other case (unknown
 contact, unverified contact, revoked consent, cooldown, even a provider send failure) is logged
-server-side only. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
+server-side only.
+
+**Consent at sign-in.** The sign-in form shows a consent checkbox (`consent_to_contact` on
+`SMSLoginRequest`/`EmailLoginRequest`, sent on both phases). It only matters when the account's stored
+`consent_state` isn't `CONTACT_CONSENT_GRANTED` (the user unchecked it, or replied STOP): with it
+checked, phase 1 sends the one-time code anyway; with it unchecked that account is sent nothing, as
+above. Consent is **recorded only when the code is redeemed** (phase 2 valid *and* the box checked:
+`consent_state` -> `GRANTED` plus a server-timestamped `consent_history` entry, no duplicate if already
+granted) -- redeeming the code proves control of the contact, so an unauthenticated request can't flip
+someone else's consent. A wrong/expired code, or phase 2 without the box, records nothing. A number
+that replied STOP is still blocked by the SMS provider until it replies START, so that user may
+not receive the code.
+
+**Evidence of consent (`contact_consents`).** Consent on these forms is given before it can live on a
+`ContactMethod.consent_history` (at sign-up no account exists yet, and may never; at sign-in it is only
+copied onto the account once the code is redeemed). So every time a code is *reserved for sending* on the
+strength of a checkbox (the row is written in the same transaction as the send ledger row, before the
+provider is called, so a provider failure can't leave a message without it), an append-only `contact_consents` row is written: normalized contact value,
+`flow` (`create_account`/`login`), `user_id` and `consented_at`. Sign-in rows carry the matched account;
+a sign-up row has no `user_id` until the account is created (then the rows given since that attempt's pending verification began are tied to it, no second row; older orphaned rows of a deleted account are never claimed), and
+stays without one if the signup is abandoned. Nothing is written when no message is sent. Unlike the
+hourly send ledger, these rows are kept indefinitely (the `user_id` is nulled if the account is
+deleted); they hold the phone/email, so treat them as PII. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
 such account, no code outstanding, wrong, expired, or attempt-exhausted) for the same reason; the
 state is still updated server-side (guess counted; code cleared on expiry, burned on exhaustion). Known
 limits of the anti-enumeration: the SMS/email send makes phase 1 slower for a real account than for
@@ -344,6 +366,32 @@ The code is stored in plaintext in the account's own `ContactMethod.verification
 same slot `StartContactMethodVerification` uses, so the two share one cooldown/attempt counter),
 and the login is complete once it matches: `verification_in_progress` is cleared and tokens + the
 `User` are returned exactly as for a password login.
+
+### Sign-in contact methods, and the password behind them
+
+A verified contact method signs you in only if its `ContactMethod.use_for_sign_in` is on (phase 1
+of SMS/email `Login` sends nothing otherwise, like any other non-match). It is switched on:
+
+- implicitly, for every contact method **proven at sign-up** (`CreateAccount`);
+- by the user, via `UpdateUser`, for a contact method that is already *verified* (an unverified one
+  is refused, `contact_must_be_verified_for_sign_in`). Editing the `value` un-verifies a contact
+  method and so switches this off. Unset in an `UpdateUser` means "leave as is", so clients that
+  predate the field don't clear it. (A migration turned it on for every contact method that was
+  already verified, so existing SMS/email logins kept working.)
+
+**An account must always have a way in.** While a contact method is a sign-in method and the account
+has **no password** (`User.has_password` is `false` -- a passwordless account, created by signing up
+with an empty password), `UpdateUser` refuses to turn it off, change its value, or remove it
+(`password_required_for_sign_in`; admins editing someone else's account are held to the same rule).
+Setting a password with `ResetPassword` flips `has_password` and lifts the restriction. The Elm UI
+says this next to the checkbox and disables Edit/Delete for such a contact method (the server is
+the real guard). `has_password` is only sent to the user themselves or an admin. Accounts that were
+created passwordless *before* this column existed are reported as having a password (the two can't
+be told apart), so they aren't protected until they set one.
+
+**Consent time is copied onto the account.** The time consent was given on the sign-up / sign-in form
+(`contact_consents.consented_at`, see below) is what goes into the contact method's `consent_history`
+entry when the account is created / the code is redeemed -- not the later moment of completion.
 
 ### Account creation (`CreateAccountRequest` with `phone`/`email`)
 

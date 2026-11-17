@@ -10,7 +10,7 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::schema::{contact_verification_sends, pending_contact_verifications};
+use crate::schema::{contact_consents, contact_verification_sends, pending_contact_verifications};
 
 #[derive(Debug, Queryable, Identifiable, Clone)]
 #[diesel(table_name = pending_contact_verifications)]
@@ -181,4 +181,124 @@ pub fn delete_expired_pending_contact_verifications(
     )
     .execute(conn)
     .map_err(|e| db_error("delete expired", e))
+}
+
+/// The sign-up / sign-in form a `contact_consents` row was given on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsentFlow {
+    CreateAccount,
+    Login,
+}
+
+impl ConsentFlow {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConsentFlow::CreateAccount => "create_account",
+            ConsentFlow::Login => "login",
+        }
+    }
+}
+
+#[derive(Debug, Queryable, Clone)]
+#[diesel(table_name = contact_consents)]
+pub struct ContactConsentRecord {
+    pub id: i64,
+    pub contact_value: String,
+    pub flow: String,
+    pub user_id: Option<i64>,
+    pub consented_at: SystemTime,
+}
+
+/// Appends a `contact_consents` row: the person using the `flow` form consented to be messaged at
+/// `contact_value` (stored lowercased, like the send ledger) as of `at`. `user_id` if the account is
+/// known.
+pub fn record_contact_consent(
+    contact_value: &str,
+    flow: ConsentFlow,
+    user_id: Option<i64>,
+    at: SystemTime,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    insert_into(contact_consents::table)
+        .values((
+            contact_consents::contact_value.eq(contact_value.to_lowercase()),
+            contact_consents::flow.eq(flow.as_str()),
+            contact_consents::user_id.eq(user_id),
+            // The app's clock, like `pending_contact_verifications.created_at`, so the two compare.
+            contact_consents::consented_at.eq(at),
+        ))
+        .execute(conn)
+        .map(|_| ())
+        .map_err(|e| db_error("record consent for", e))
+}
+
+/// Ties a just-created account to the sign-up consents recorded for `contact_value` by the attempt it
+/// just completed: rows still without an account that were given at or after `since` (when that
+/// attempt's pending verification was created). Older unlinked rows -- e.g. orphaned when an earlier
+/// account of this contact was deleted -- belong to someone else and are left alone.
+pub fn link_signup_consents_to_user(
+    contact_value: &str,
+    since: SystemTime,
+    user_id: i64,
+    conn: &mut diesel::PgConnection,
+) -> QueryResult<usize> {
+    update(
+        contact_consents::table
+            .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
+            .filter(contact_consents::flow.eq(ConsentFlow::CreateAccount.as_str()))
+            .filter(contact_consents::user_id.is_null())
+            .filter(contact_consents::consented_at.ge(since)),
+    )
+    .set(contact_consents::user_id.eq(user_id))
+    .execute(conn)
+}
+
+/// When the most recent `flow` consent for `contact_value` was given: for a sign-up, the rows still
+/// without an account given at/after `since` (the attempt's pending verification); for a sign-in,
+/// `user_id`'s rows. Used to copy the *time consent was actually given* onto the account's
+/// `ContactMethod.consent_history`, rather than the (later) moment the sign-up/sign-in completed.
+pub fn latest_contact_consent_at(
+    contact_value: &str,
+    flow: ConsentFlow,
+    user_id: Option<i64>,
+    since: Option<SystemTime>,
+    conn: &mut PgPooledConnection,
+) -> Option<SystemTime> {
+    let mut query = contact_consents::table
+        .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
+        .filter(contact_consents::flow.eq(flow.as_str()))
+        .into_boxed();
+    query = match user_id {
+        Some(id) => query.filter(contact_consents::user_id.eq(id)),
+        None => query.filter(contact_consents::user_id.is_null()),
+    };
+    if let Some(since) = since {
+        query = query.filter(contact_consents::consented_at.ge(since));
+    }
+    query
+        .select(diesel::dsl::max(contact_consents::consented_at))
+        .first::<Option<SystemTime>>(conn)
+        .ok()
+        .flatten()
+}
+
+/// The sign-in consent recorded together with the code whose `verification_started_at` is
+/// `code_sent_at` -- `None` if that code was sent without the checkbox. The reservation writes the
+/// consent row with exactly the instant it stamps on the code (whole seconds), so this is an
+/// equality match, not a time window: an older attempt's consent can never be mistaken for it.
+pub fn login_consent_for_code(
+    contact_value: &str,
+    user_id: i64,
+    code_sent_at: SystemTime,
+    conn: &mut PgPooledConnection,
+) -> Option<SystemTime> {
+    contact_consents::table
+        .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
+        .filter(contact_consents::flow.eq(ConsentFlow::Login.as_str()))
+        .filter(contact_consents::user_id.eq(user_id))
+        .filter(contact_consents::consented_at.eq(code_sent_at))
+        .select(diesel::dsl::max(contact_consents::consented_at))
+        .first::<Option<SystemTime>>(conn)
+        .ok()
+        .flatten()
 }

@@ -847,7 +847,7 @@ updateFocusedAccountFromUser : User -> Model -> Model
 updateFocusedAccountFromUser updatedUser model =
     case freshFocusedAccount model of
         Just account ->
-            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone, email = updatedUser.email } model.accounts }
+            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone, email = updatedUser.email, hasPassword = updatedUser.hasPassword } model.accounts }
 
         Nothing ->
             model
@@ -2055,6 +2055,7 @@ sendContactLogin req withCode model =
                             , expiresAt = Nothing
                             , deviceName = Nothing
                             , userId = Nothing
+                            , consentToContact = state.loginConsent
                             }
                         )
 
@@ -2066,6 +2067,7 @@ sendContactLogin req withCode model =
                             , expiresAt = Nothing
                             , deviceName = Nothing
                             , userId = Nothing
+                            , consentToContact = state.loginConsent
                             }
                         )
 
@@ -2135,6 +2137,10 @@ sendCreateAccount withCodes model =
                                     , verificationInProgress = Nothing
                                     , consentState = CONTACTCONSENTGRANTED
                                     , consentHistory = []
+
+                                    -- Set by the server: a contact method verified at sign-up is
+                                    -- implicitly a sign-in method.
+                                    , useForSignIn = Nothing
                                     }
 
                         phone : Maybe ContactMethod
@@ -2443,6 +2449,7 @@ sendUpdate req msg model =
                             , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                             , phone = user.phone
                             , email = user.email
+                            , hasPassword = user.hasPassword
                             }
 
                         newModel : Model

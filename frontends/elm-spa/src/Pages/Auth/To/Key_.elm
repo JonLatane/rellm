@@ -632,6 +632,7 @@ accountFromLogin server resp =
                 , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                 , phone = user.phone
                 , email = user.email
+                , hasPassword = user.hasPassword
                 }
 
         _ ->

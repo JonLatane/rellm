@@ -83,6 +83,8 @@ pub struct User {
     pub occasion_count: i32,
     pub media_storage_limit_bytes: Option<i64>,
     pub media_storage_bytes_used: i64,
+    /// Whether the account has a password it can sign in with -- see `User.has_password`.
+    pub has_password: bool,
 }
 
 /// Explicit column list for `users`, excluding `search_text` (a generated tsvector used only for
@@ -113,6 +115,7 @@ pub const USER_COLUMNS: (
     users::occasion_count,
     users::media_storage_limit_bytes,
     users::media_storage_bytes_used,
+    users::has_password,
 ) = (
     users::id,
     users::username,
@@ -138,6 +141,7 @@ pub const USER_COLUMNS: (
     users::occasion_count,
     users::media_storage_limit_bytes,
     users::media_storage_bytes_used,
+    users::has_password,
 );
 
 pub const AUTHOR_COLUMNS: (

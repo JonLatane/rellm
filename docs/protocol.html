@@ -2873,6 +2873,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
         </tr>
+        <tr>
+          <td>consent_to_contact</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Same as <a href="#rellm-SMSLoginRequest"><code>SMSLoginRequest.consent_to_contact</code></a>, for the account's email <code>ContactMethod</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ExpirableToken"></a></p>
@@ -3118,6 +3124,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
+        </tr>
+        <tr>
+          <td>consent_to_contact</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>The person signing in attests that they consent to being sent one-time sign-in codes by SMS (the sign-in form's consent checkbox). Send it on <strong>both</strong> phases. Only matters when the matched account's phone <code>ContactMethod.consent_state</code> is not <code>CONTACT_CONSENT_GRANTED</code> (they unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 -- once the code proves control of the phone number -- records the consent (<code>CONTACT_CONSENT_GRANTED</code>, with a server-timestamped <code>consent_history</code> entry). Without it, a contact method that doesn't consent is sent nothing (the response is unchanged, see <a href="#rellm-LoginRequest"><code>LoginRequest</code></a>). Never changes consent on its own: an unverified phase 2 changes nothing, so it can't be used to grant consent for a number you don't control.</td>
         </tr>
       </tbody>
     </table>
@@ -3798,6 +3810,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>repeated</td>
           <td>Append-only history of every <code>consent_state</code> change, oldest first. Not directly modifiable -- the server appends to it whenever <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> changes <code>consent_state</code>, using the server's own time for <a href="#rellm-ContactConsentChange"><code>ContactConsentChange.changed_at</code></a> regardless of what the client sends. Same owner-or-<code>ADMIN</code>-only visibility as <code>consent_state</code> (blanked to empty for every other viewer).</td>
         </tr>
+        <tr>
+          <td>use_for_sign_in</td>
+          <td><a href="#bool">bool</a></td>
+          <td>optional</td>
+          <td>Whether this contact method can be used to sign in (the SMS/email codes of <a href="#rellm-LoginRequest"><code>LoginRequest</code></a>). Only ever <code>true</code> for a <em>verified</em> contact method: <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> can switch it on only once <code>verified_at</code> is set, and editing <code>value</code> (which un-verifies) switches it off. A contact method verified at <a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a> is made a sign-in method implicitly. Turning it off, or removing/changing the contact method while it is on, is refused with <code>password_required_for_sign_in</code> unless the account has a password (<a href="#rellm-User"><code>User.has_password</code></a>) -- otherwise the account could be left with no way in. Unset (as sent by clients that predate this field) means "leave it as it is" in an <code>UpdateUser</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ContactMethodVerification"></a></p>
@@ -4224,6 +4242,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>repeated</td>
           <td>The target user's own MarketSubscriptions (<code>market.proto</code>), each with its own <code>billing_history</code>. Gated and populated the same way as <code>ai_models</code>/<code>sync_sources</code> (target user themselves, or an Admin, across any <a href="#grpc-api-GetUsers"><code>GetUsers</code></a> listing type, plus <a href="#grpc-api-Login"><code>Login</code></a>/<a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a>/<a href="#grpc-api-GetCurrentUser"><code>GetCurrentUser</code></a>).</td>
+        </tr>
+        <tr>
+          <td>has_password</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether the account has a password it can sign in with. <code>false</code> for an account created without one (a passwordless SMS/email account) until a password is set with <a href="#grpc-api-ResetPassword"><code>ResetPassword</code></a>. While <code>false</code>, a sign-in <a href="#rellm-ContactMethod"><code>ContactMethod</code></a> can't be turned off, changed or removed. Only sent to the user themselves or an <code>ADMIN</code>; <code>true</code> for everyone else (so it's never read as a signal).</td>
         </tr>
         <tr>
           <td>created_at</td>

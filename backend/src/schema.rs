@@ -36,6 +36,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    contact_consents (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        flow -> Varchar,
+        user_id -> Nullable<Int8>,
+        consented_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     contact_verification_sends (id) {
         id -> Int8,
         contact_value -> Varchar,
@@ -601,6 +611,7 @@ diesel::table! {
         occasion_count -> Int4,
         media_storage_limit_bytes -> Nullable<Int8>,
         media_storage_bytes_used -> Int8,
+        has_password -> Bool,
     }
 }
 
@@ -612,6 +623,7 @@ diesel::joinable!(occasion_sync_destinations -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 diesel::joinable!(occasions -> events (event_id));
 diesel::joinable!(occasions -> posts (post_id));
+diesel::joinable!(contact_consents -> users (user_id));
 diesel::joinable!(event_embeddings -> events (event_id));
 diesel::joinable!(events -> posts (post_id));
 diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
@@ -658,6 +670,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     rsvps,
     occasion_sync_destinations,
     occasions,
+    contact_consents,
     contact_verification_sends,
     event_embeddings,
     events,

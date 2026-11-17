@@ -31,6 +31,7 @@ but none of this module's profile-editing machinery.
 import Browser.Dom as Dom
 import Browser.Navigation
 import Components.AIProviders as AIProviders
+import Components.ContactSignIn as ContactSignIn
 import Components.FederatedAuthors exposing (FederatedAuthor)
 import Components.FulfillmentThreads as Fulfillment
 import Components.Markdown as Markdown
@@ -208,6 +209,8 @@ type Msg
     | PhoneSaveClicked
     | GotPhoneSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | PhoneConsentToggled
+      -- "Use for signing in" (`Components.ContactSignIn`): same `UpdateUser` round trip and status as consent.
+    | PhoneSignInToggled
     | GotPhoneConsentSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | PhoneHistoryToggled
     | EmailEditClicked
@@ -217,6 +220,7 @@ type Msg
     | EmailSaveClicked
     | GotEmailSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | EmailConsentToggled
+    | EmailSignInToggled
     | GotEmailConsentSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
     | EmailHistoryToggled
     | StartPhoneVerificationClicked
@@ -2243,6 +2247,7 @@ updateInner shared msg model =
                                         -- copy) already has.
                                         , consentState = freshUser.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
                                         , consentHistory = freshUser.phone |> Maybe.map .consentHistory |> Maybe.withDefault []
+                                        , useForSignIn = freshUser.phone |> Maybe.andThen .useForSignIn
                                         }
                             }
                         )
@@ -2285,6 +2290,30 @@ updateInner shared msg model =
                         (\freshUser ->
                             { freshUser
                                 | phone = freshUser.phone |> Maybe.map (\cm -> { cm | consentState = newConsent })
+                            }
+                        )
+                        |> attemptInActingEpoch model GotPhoneConsentSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        PhoneSignInToggled ->
+            case ( model.resolver.status, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just ( server, account ) ) ->
+                    let
+                        newSignIn : Bool
+                        newSignIn =
+                            not (user.phone |> Maybe.map ContactSignIn.isSignIn |> Maybe.withDefault False)
+                    in
+                    ( { model | phoneConsentStatus = Submitting }
+                    , Users.updateUser shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        user.id
+                        (\freshUser ->
+                            { freshUser
+                                | phone = freshUser.phone |> Maybe.map (\cm -> { cm | useForSignIn = Just newSignIn })
                             }
                         )
                         |> attemptInActingEpoch model GotPhoneConsentSaveResult
@@ -2361,6 +2390,7 @@ updateInner shared msg model =
                                         -- carried forward unchanged here.
                                         , consentState = freshUser.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
                                         , consentHistory = freshUser.email |> Maybe.map .consentHistory |> Maybe.withDefault []
+                                        , useForSignIn = freshUser.email |> Maybe.andThen .useForSignIn
                                         }
                             }
                         )
@@ -2403,6 +2433,30 @@ updateInner shared msg model =
                         (\freshUser ->
                             { freshUser
                                 | email = freshUser.email |> Maybe.map (\cm -> { cm | consentState = newConsent })
+                            }
+                        )
+                        |> attemptInActingEpoch model GotEmailConsentSaveResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        EmailSignInToggled ->
+            case ( model.resolver.status, serverAndAccount shared model ) of
+                ( Resolver.Loaded user, Just ( server, account ) ) ->
+                    let
+                        newSignIn : Bool
+                        newSignIn =
+                            not (user.email |> Maybe.map ContactSignIn.isSignIn |> Maybe.withDefault False)
+                    in
+                    ( { model | emailConsentStatus = Submitting }
+                    , Users.updateUser shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        user.id
+                        (\freshUser ->
+                            { freshUser
+                                | email = freshUser.email |> Maybe.map (\cm -> { cm | useForSignIn = Just newSignIn })
                             }
                         )
                         |> attemptInActingEpoch model GotEmailConsentSaveResult
@@ -4106,7 +4160,21 @@ updateInner shared msg model =
                     ( model, Effect.none )
 
         GotPasswordResetSaveResult (Ok ( maybeAccountsPanelMsg, _ )) ->
-            ( { model | passwordResetEdit = Nothing }, accountsPanelEffect maybeAccountsPanelMsg )
+            -- Setting a password is what unlocks a passwordless account's sign-in contact methods
+            -- (`Components.ContactSignIn.locked`), so reflect it right away rather than leaving Edit /
+            -- Delete / the sign-in checkbox disabled until the next reload.
+            ( { model
+                | passwordResetEdit = Nothing
+                , resolver =
+                    case model.resolver.status of
+                        Resolver.Loaded user ->
+                            withResolvedUser { user | hasPassword = True } model.resolver
+
+                        _ ->
+                            model.resolver
+              }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
 
         GotPasswordResetSaveResult (Err err) ->
             ( { model
@@ -5557,12 +5625,19 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
                 PhoneConsentToggled
                 PhoneHistoryToggled
                 user.phone
+            , ContactSignIn.view
+                { hasPassword = user.hasPassword
+                , methodLabel = "phone number"
+                , busy = model.phoneConsentStatus == Submitting
+                , toggleMsg = PhoneSignInToggled
+                }
+                user.phone
             , if isOwn then
                 phoneVerificationView model.phoneVerification user.phone
 
               else
                 text ""
-            , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm model.resolver.targetHost) "Delete Phone" user.phone
+            , contactMethodDeleteButton (ContactSignIn.locked user.hasPassword user.phone) (\cm -> Shared.ConfirmPhoneDelete cm model.resolver.targetHost) "Delete Phone" user.phone
             , hr [ class "profile-contact-methods-separator" ] []
             , emailView canEdit model.emailEdit user
             , contactMethodConsentView browserTimeZone
@@ -5574,7 +5649,14 @@ contactMethodsSection browserTimeZone canEdit isOwn expanded model user =
                 EmailConsentToggled
                 EmailHistoryToggled
                 user.email
-            , contactMethodDeleteButton (\cm -> Shared.ConfirmEmailDelete cm model.resolver.targetHost) "Delete Email" user.email
+            , ContactSignIn.view
+                { hasPassword = user.hasPassword
+                , methodLabel = "email address"
+                , busy = model.emailConsentStatus == Submitting
+                , toggleMsg = EmailSignInToggled
+                }
+                user.email
+            , contactMethodDeleteButton (ContactSignIn.locked user.hasPassword user.email) (\cm -> Shared.ConfirmEmailDelete cm model.resolver.targetHost) "Delete Email" user.email
             ]
 
 
@@ -5616,7 +5698,7 @@ phoneView canEdit maybeEdit user =
                      ]
                         ++ (user.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
                         ++ (if canEdit then
-                                [ button [ class "profile-edit-button", onClick PhoneEditClicked ] [ text "Edit Phone" ] ]
+                                [ button [ class "profile-edit-button", disabled (ContactSignIn.locked user.hasPassword user.phone), onClick PhoneEditClicked ] [ text "Edit Phone" ] ]
 
                             else
                                 []
@@ -5659,7 +5741,7 @@ emailView canEdit maybeEdit user =
                      ]
                         ++ (user.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
                         ++ (if canEdit then
-                                [ button [ class "profile-edit-button", onClick EmailEditClicked ] [ text "Edit Email" ] ]
+                                [ button [ class "profile-edit-button", disabled (ContactSignIn.locked user.hasPassword user.email), onClick EmailEditClicked ] [ text "Edit Email" ] ]
 
                             else
                                 []
@@ -5931,8 +6013,8 @@ that branch's own doc). Shared with `UI.contactMethodDeleteButton`, the Accounts
 copy -- see `Shared.DeleteConfirmation`'s own doc on why neither one fires the RPC itself. Hidden
 entirely once there's nothing to delete.
 -}
-contactMethodDeleteButton : (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Msg
-contactMethodDeleteButton toConfirmation label maybeContactMethod =
+contactMethodDeleteButton : Bool -> (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Msg
+contactMethodDeleteButton isLocked toConfirmation label maybeContactMethod =
     case maybeContactMethod of
         Nothing ->
             text ""
@@ -5942,6 +6024,10 @@ contactMethodDeleteButton toConfirmation label maybeContactMethod =
                 [ button
                     [ classes [ "profile-delete-button" ]
                     , onClick (SharedMsg (Shared.RequestDelete (toConfirmation contactMethod)))
+
+                    -- A sign-in contact method of a passwordless account can't go -- see
+                    -- `Components.ContactSignIn`.
+                    , disabled isLocked
                     ]
                     [ text label ]
                 ]

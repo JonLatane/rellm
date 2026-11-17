@@ -86,6 +86,7 @@ const User$json = {
     {'1': 'sync_sources', '3': 83, '4': 3, '5': 11, '6': '.rellm.SyncSource', '10': 'syncSources'},
     {'1': 'ai_models', '3': 84, '4': 3, '5': 11, '6': '.rellm.AIModel', '10': 'aiModels'},
     {'1': 'market_subscriptions', '3': 85, '4': 3, '5': 11, '6': '.rellm.MarketSubscription', '10': 'marketSubscriptions'},
+    {'1': 'has_password', '3': 86, '4': 1, '5': 8, '10': 'hasPassword'},
     {'1': 'created_at', '3': 100, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
     {'1': 'updated_at', '3': 101, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 15, '10': 'updatedAt', '17': true},
   ],
@@ -137,15 +138,15 @@ final $typed_data.Uint8List userDescriptor = $convert.base64Decode(
     'VzdGluYXRpb25SEHN5bmNEZXN0aW5hdGlvbnMSNAoMc3luY19zb3VyY2VzGFMgAygLMhEucmVs'
     'bG0uU3luY1NvdXJjZVILc3luY1NvdXJjZXMSKwoJYWlfbW9kZWxzGFQgAygLMg4ucmVsbG0uQU'
     'lNb2RlbFIIYWlNb2RlbHMSTAoUbWFya2V0X3N1YnNjcmlwdGlvbnMYVSADKAsyGS5yZWxsbS5N'
-    'YXJrZXRTdWJzY3JpcHRpb25SE21hcmtldFN1YnNjcmlwdGlvbnMSOQoKY3JlYXRlZF9hdBhkIA'
-    'EoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSCWNyZWF0ZWRBdBI+Cgp1cGRhdGVkX2F0'
-    'GGUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgPUgl1cGRhdGVkQXSIAQFCCAoGX2'
-    'VtYWlsQggKBl9waG9uZUIJCgdfYXZhdGFyQhwKGl9tZWRpYV9zdG9yYWdlX2xpbWl0X2J5dGVz'
-    'QhEKD19mb2xsb3dlcl9jb3VudEISChBfZm9sbG93aW5nX2NvdW50Qg8KDV9mcmllbmRfY291bn'
-    'RCDgoMX2dyb3VwX2NvdW50Qg0KC19wb3N0X2NvdW50QhEKD19yZXNwb25zZV9jb3VudEIOCgxf'
-    'ZXZlbnRfY291bnRCEQoPX29jY2FzaW9uX2NvdW50QhYKFF9jdXJyZW50X3VzZXJfZm9sbG93Qh'
-    '0KG190YXJnZXRfY3VycmVudF91c2VyX2ZvbGxvd0IbChlfY3VycmVudF9ncm91cF9tZW1iZXJz'
-    'aGlwQg0KC191cGRhdGVkX2F0');
+    'YXJrZXRTdWJzY3JpcHRpb25SE21hcmtldFN1YnNjcmlwdGlvbnMSIQoMaGFzX3Bhc3N3b3JkGF'
+    'YgASgIUgtoYXNQYXNzd29yZBI5CgpjcmVhdGVkX2F0GGQgASgLMhouZ29vZ2xlLnByb3RvYnVm'
+    'LlRpbWVzdGFtcFIJY3JlYXRlZEF0Ej4KCnVwZGF0ZWRfYXQYZSABKAsyGi5nb29nbGUucHJvdG'
+    '9idWYuVGltZXN0YW1wSA9SCXVwZGF0ZWRBdIgBAUIICgZfZW1haWxCCAoGX3Bob25lQgkKB19h'
+    'dmF0YXJCHAoaX21lZGlhX3N0b3JhZ2VfbGltaXRfYnl0ZXNCEQoPX2ZvbGxvd2VyX2NvdW50Qh'
+    'IKEF9mb2xsb3dpbmdfY291bnRCDwoNX2ZyaWVuZF9jb3VudEIOCgxfZ3JvdXBfY291bnRCDQoL'
+    'X3Bvc3RfY291bnRCEQoPX3Jlc3BvbnNlX2NvdW50Qg4KDF9ldmVudF9jb3VudEIRCg9fb2NjYX'
+    'Npb25fY291bnRCFgoUX2N1cnJlbnRfdXNlcl9mb2xsb3dCHQobX3RhcmdldF9jdXJyZW50X3Vz'
+    'ZXJfZm9sbG93QhsKGV9jdXJyZW50X2dyb3VwX21lbWJlcnNoaXBCDQoLX3VwZGF0ZWRfYXQ=');
 
 @$core.Deprecated('Use followDescriptor instead')
 const Follow$json = {
@@ -209,11 +210,13 @@ const ContactMethod$json = {
     {'1': 'verification_in_progress', '3': 5, '4': 1, '5': 11, '6': '.rellm.ContactMethodVerification', '9': 2, '10': 'verificationInProgress', '17': true},
     {'1': 'consent_state', '3': 6, '4': 1, '5': 14, '6': '.rellm.ContactConsentState', '10': 'consentState'},
     {'1': 'consent_history', '3': 7, '4': 3, '5': 11, '6': '.rellm.ContactConsentChange', '10': 'consentHistory'},
+    {'1': 'use_for_sign_in', '3': 8, '4': 1, '5': 8, '9': 3, '10': 'useForSignIn', '17': true},
   ],
   '8': [
     {'1': '_value'},
     {'1': '_verified_at'},
     {'1': '_verification_in_progress'},
+    {'1': '_use_for_sign_in'},
   ],
 };
 
@@ -226,8 +229,10 @@ final $typed_data.Uint8List contactMethodDescriptor = $convert.base64Decode(
     'bl9pbl9wcm9ncmVzcxgFIAEoCzIgLnJlbGxtLkNvbnRhY3RNZXRob2RWZXJpZmljYXRpb25IAl'
     'IWdmVyaWZpY2F0aW9uSW5Qcm9ncmVzc4gBARI/Cg1jb25zZW50X3N0YXRlGAYgASgOMhoucmVs'
     'bG0uQ29udGFjdENvbnNlbnRTdGF0ZVIMY29uc2VudFN0YXRlEkQKD2NvbnNlbnRfaGlzdG9yeR'
-    'gHIAMoCzIbLnJlbGxtLkNvbnRhY3RDb25zZW50Q2hhbmdlUg5jb25zZW50SGlzdG9yeUIICgZf'
-    'dmFsdWVCDgoMX3ZlcmlmaWVkX2F0QhsKGV92ZXJpZmljYXRpb25faW5fcHJvZ3Jlc3M=');
+    'gHIAMoCzIbLnJlbGxtLkNvbnRhY3RDb25zZW50Q2hhbmdlUg5jb25zZW50SGlzdG9yeRIqCg91'
+    'c2VfZm9yX3NpZ25faW4YCCABKAhIA1IMdXNlRm9yU2lnbkluiAEBQggKBl92YWx1ZUIOCgxfdm'
+    'VyaWZpZWRfYXRCGwoZX3ZlcmlmaWNhdGlvbl9pbl9wcm9ncmVzc0ISChBfdXNlX2Zvcl9zaWdu'
+    'X2lu');
 
 @$core.Deprecated('Use contactConsentChangeDescriptor instead')
 const ContactConsentChange$json = {

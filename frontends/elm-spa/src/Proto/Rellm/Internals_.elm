@@ -5923,9 +5923,9 @@ type alias Proto__Rellm__CreateThirdPartyRefreshTokenRequest =
 
 -}
 fieldNumbersProto__Rellm__EmailLoginRequest :
-    { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+    { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersProto__Rellm__EmailLoginRequest =
-    { email = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5 }
+    { email = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5, consentToContact = 6 }
 
 
 {-| Default for Proto__Rellm__EmailLoginRequest. Should only be used for 'required' decoders as an initial value.
@@ -5933,7 +5933,13 @@ fieldNumbersProto__Rellm__EmailLoginRequest =
 -}
 defaultProto__Rellm__EmailLoginRequest : Proto__Rellm__EmailLoginRequest
 defaultProto__Rellm__EmailLoginRequest =
-    { email = "", code = Nothing, expiresAt = Nothing, deviceName = Nothing, userId = Nothing }
+    { email = ""
+    , code = Nothing
+    , expiresAt = Nothing
+    , deviceName = Nothing
+    , userId = Nothing
+    , consentToContact = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__EmailLoginRequest` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -5951,6 +5957,7 @@ decodeProto__Rellm__EmailLoginRequest =
             (\a r -> { r | expiresAt = a })
         , Protobuf.Decode.optional 4 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | deviceName = a })
         , Protobuf.Decode.optional 5 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | userId = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | consentToContact = a })
         ]
 
 
@@ -5970,6 +5977,7 @@ encodeProto__Rellm__EmailLoginRequest value =
           )
         , ( 4, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.deviceName )
         , ( 5, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.userId )
+        , ( 6, Protobuf.Encode.bool value.consentToContact )
         ]
 
 
@@ -5982,6 +5990,7 @@ type alias Proto__Rellm__EmailLoginRequest =
     , expiresAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , deviceName : Maybe String
     , userId : Maybe String
+    , consentToContact : Bool
     }
 
 
@@ -5989,9 +5998,9 @@ type alias Proto__Rellm__EmailLoginRequest =
 
 -}
 fieldNumbersProto__Rellm__SMSLoginRequest :
-    { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+    { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersProto__Rellm__SMSLoginRequest =
-    { phoneNumber = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5 }
+    { phoneNumber = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5, consentToContact = 6 }
 
 
 {-| Default for Proto__Rellm__SMSLoginRequest. Should only be used for 'required' decoders as an initial value.
@@ -5999,7 +6008,13 @@ fieldNumbersProto__Rellm__SMSLoginRequest =
 -}
 defaultProto__Rellm__SMSLoginRequest : Proto__Rellm__SMSLoginRequest
 defaultProto__Rellm__SMSLoginRequest =
-    { phoneNumber = "", code = Nothing, expiresAt = Nothing, deviceName = Nothing, userId = Nothing }
+    { phoneNumber = ""
+    , code = Nothing
+    , expiresAt = Nothing
+    , deviceName = Nothing
+    , userId = Nothing
+    , consentToContact = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__SMSLoginRequest` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -6017,6 +6032,7 @@ decodeProto__Rellm__SMSLoginRequest =
             (\a r -> { r | expiresAt = a })
         , Protobuf.Decode.optional 4 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | deviceName = a })
         , Protobuf.Decode.optional 5 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | userId = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | consentToContact = a })
         ]
 
 
@@ -6036,6 +6052,7 @@ encodeProto__Rellm__SMSLoginRequest value =
           )
         , ( 4, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.deviceName )
         , ( 5, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.userId )
+        , ( 6, Protobuf.Encode.bool value.consentToContact )
         ]
 
 
@@ -6048,6 +6065,7 @@ type alias Proto__Rellm__SMSLoginRequest =
     , expiresAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , deviceName : Maybe String
     , userId : Maybe String
+    , consentToContact : Bool
     }
 
 
@@ -6558,6 +6576,7 @@ fieldNumbersProto__Rellm__ContactMethod :
     , verificationInProgress : Int
     , consentState : Int
     , consentHistory : Int
+    , useForSignIn : Int
     }
 fieldNumbersProto__Rellm__ContactMethod =
     { value = 1
@@ -6567,6 +6586,7 @@ fieldNumbersProto__Rellm__ContactMethod =
     , verificationInProgress = 5
     , consentState = 6
     , consentHistory = 7
+    , useForSignIn = 8
     }
 
 
@@ -6582,6 +6602,7 @@ defaultProto__Rellm__ContactMethod =
     , verificationInProgress = Nothing
     , consentState = Proto.Rellm.ContactConsentState.defaultContactConsentState
     , consentHistory = []
+    , useForSignIn = Nothing
     }
 
 
@@ -6612,6 +6633,7 @@ decodeProto__Rellm__ContactMethod =
             decodeProto__Rellm__ContactConsentChange
             .consentHistory
             (\a r -> { r | consentHistory = a })
+        , Protobuf.Decode.optional 8 (Protobuf.Decode.map Just Protobuf.Decode.bool) (\a r -> { r | useForSignIn = a })
         ]
 
 
@@ -6636,6 +6658,7 @@ encodeProto__Rellm__ContactMethod value =
           )
         , ( 6, Proto.Rellm.ContactConsentState.encodeContactConsentState value.consentState )
         , ( 7, (Protobuf.Encode.list encodeProto__Rellm__ContactConsentChange) value.consentHistory )
+        , ( 8, (Maybe.map Protobuf.Encode.bool >> Maybe.withDefault Protobuf.Encode.none) value.useForSignIn )
         ]
 
 
@@ -6650,6 +6673,7 @@ type alias Proto__Rellm__ContactMethod =
     , verificationInProgress : Maybe Proto__Rellm__ContactMethodVerification
     , consentState : Proto.Rellm.ContactConsentState.ContactConsentState
     , consentHistory : List Proto__Rellm__ContactConsentChange
+    , useForSignIn : Maybe Bool
     }
 
 
@@ -6863,6 +6887,7 @@ fieldNumbersProto__Rellm__User :
     , syncSources : Int
     , aiModels : Int
     , marketSubscriptions : Int
+    , hasPassword : Int
     , createdAt : Int
     , updatedAt : Int
     }
@@ -6896,6 +6921,7 @@ fieldNumbersProto__Rellm__User =
     , syncSources = 83
     , aiModels = 84
     , marketSubscriptions = 85
+    , hasPassword = 86
     , createdAt = 100
     , updatedAt = 101
     }
@@ -6935,6 +6961,7 @@ defaultProto__Rellm__User =
     , syncSources = []
     , aiModels = []
     , marketSubscriptions = []
+    , hasPassword = False
     , createdAt = Nothing
     , updatedAt = Nothing
     }
@@ -7028,6 +7055,7 @@ decodeProto__Rellm__User =
             decodeProto__Rellm__MarketSubscription
             .marketSubscriptions
             (\a r -> { r | marketSubscriptions = a })
+        , Protobuf.Decode.optional 86 Protobuf.Decode.bool (\a r -> { r | hasPassword = a })
         , Protobuf.Decode.optional
             100
             (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
@@ -7084,6 +7112,7 @@ encodeProto__Rellm__User value =
         , ( 83, (Protobuf.Encode.list encodeProto__Rellm__SyncSource) value.syncSources )
         , ( 84, (Protobuf.Encode.list encodeProto__Rellm__AIModel) value.aiModels )
         , ( 85, (Protobuf.Encode.list encodeProto__Rellm__MarketSubscription) value.marketSubscriptions )
+        , ( 86, Protobuf.Encode.bool value.hasPassword )
         , ( 100
           , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
                 >> Maybe.withDefault Protobuf.Encode.none
@@ -7132,6 +7161,7 @@ type alias Proto__Rellm__User =
     , syncSources : List Proto__Rellm__SyncSource
     , aiModels : List Proto__Rellm__AIModel
     , marketSubscriptions : List Proto__Rellm__MarketSubscription
+    , hasPassword : Bool
     , createdAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , updatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     }

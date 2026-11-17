@@ -103,6 +103,7 @@ const SMSLoginRequest$json = {
     {'1': 'expires_at', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'expiresAt', '17': true},
     {'1': 'device_name', '3': 4, '4': 1, '5': 9, '9': 2, '10': 'deviceName', '17': true},
     {'1': 'user_id', '3': 5, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
+    {'1': 'consent_to_contact', '3': 6, '4': 1, '5': 8, '10': 'consentToContact'},
   ],
   '8': [
     {'1': '_code'},
@@ -117,8 +118,9 @@ final $typed_data.Uint8List sMSLoginRequestDescriptor = $convert.base64Decode(
     'Cg9TTVNMb2dpblJlcXVlc3QSIQoMcGhvbmVfbnVtYmVyGAEgASgJUgtwaG9uZU51bWJlchIXCg'
     'Rjb2RlGAIgASgJSABSBGNvZGWIAQESPgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90'
     'b2J1Zi5UaW1lc3RhbXBIAVIJZXhwaXJlc0F0iAEBEiQKC2RldmljZV9uYW1lGAQgASgJSAJSCm'
-    'RldmljZU5hbWWIAQESHAoHdXNlcl9pZBgFIAEoCUgDUgZ1c2VySWSIAQFCBwoFX2NvZGVCDQoL'
-    'X2V4cGlyZXNfYXRCDgoMX2RldmljZV9uYW1lQgoKCF91c2VyX2lk');
+    'RldmljZU5hbWWIAQESHAoHdXNlcl9pZBgFIAEoCUgDUgZ1c2VySWSIAQESLAoSY29uc2VudF90'
+    'b19jb250YWN0GAYgASgIUhBjb25zZW50VG9Db250YWN0QgcKBV9jb2RlQg0KC19leHBpcmVzX2'
+    'F0Qg4KDF9kZXZpY2VfbmFtZUIKCghfdXNlcl9pZA==');
 
 @$core.Deprecated('Use emailLoginRequestDescriptor instead')
 const EmailLoginRequest$json = {
@@ -129,6 +131,7 @@ const EmailLoginRequest$json = {
     {'1': 'expires_at', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'expiresAt', '17': true},
     {'1': 'device_name', '3': 4, '4': 1, '5': 9, '9': 2, '10': 'deviceName', '17': true},
     {'1': 'user_id', '3': 5, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
+    {'1': 'consent_to_contact', '3': 6, '4': 1, '5': 8, '10': 'consentToContact'},
   ],
   '8': [
     {'1': '_code'},
@@ -143,8 +146,9 @@ final $typed_data.Uint8List emailLoginRequestDescriptor = $convert.base64Decode(
     'ChFFbWFpbExvZ2luUmVxdWVzdBIUCgVlbWFpbBgBIAEoCVIFZW1haWwSFwoEY29kZRgCIAEoCU'
     'gAUgRjb2RliAEBEj4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0'
     'YW1wSAFSCWV4cGlyZXNBdIgBARIkCgtkZXZpY2VfbmFtZRgEIAEoCUgCUgpkZXZpY2VOYW1liA'
-    'EBEhwKB3VzZXJfaWQYBSABKAlIA1IGdXNlcklkiAEBQgcKBV9jb2RlQg0KC19leHBpcmVzX2F0'
-    'Qg4KDF9kZXZpY2VfbmFtZUIKCghfdXNlcl9pZA==');
+    'EBEhwKB3VzZXJfaWQYBSABKAlIA1IGdXNlcklkiAEBEiwKEmNvbnNlbnRfdG9fY29udGFjdBgG'
+    'IAEoCFIQY29uc2VudFRvQ29udGFjdEIHCgVfY29kZUINCgtfZXhwaXJlc19hdEIOCgxfZGV2aW'
+    'NlX25hbWVCCgoIX3VzZXJfaWQ=');
 
 @$core.Deprecated('Use createThirdPartyRefreshTokenRequestDescriptor instead')
 const CreateThirdPartyRefreshTokenRequest$json = {

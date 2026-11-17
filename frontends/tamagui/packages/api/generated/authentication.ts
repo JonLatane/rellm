@@ -146,7 +146,21 @@ export interface SMSLoginRequest {
    * Only needed if (unusually) more than one account has this contact method verified: picks
    * which account to log into. Otherwise ignored.
    */
-  userId?: string | undefined;
+  userId?:
+    | string
+    | undefined;
+  /**
+   * The person signing in attests that they consent to being sent one-time sign-in codes by SMS
+   * (the sign-in form's consent checkbox). Send it on **both** phases. Only matters when the
+   * matched account's phone `ContactMethod.consent_state` is not `CONTACT_CONSENT_GRANTED` (they
+   * unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 --
+   * once the code proves control of the phone number -- records the consent
+   * (`CONTACT_CONSENT_GRANTED`, with a server-timestamped `consent_history` entry). Without it, a
+   * contact method that doesn't consent is sent nothing (the response is unchanged, see
+   * [`LoginRequest`](#rellm-LoginRequest)). Never changes consent on its own: an unverified
+   * phase 2 changes nothing, so it can't be used to grant consent for a number you don't control.
+   */
+  consentToContact: boolean;
 }
 
 /**
@@ -175,7 +189,14 @@ export interface EmailLoginRequest {
    * Only needed if (unusually) more than one account has this contact method verified: picks
    * which account to log into. Otherwise ignored.
    */
-  userId?: string | undefined;
+  userId?:
+    | string
+    | undefined;
+  /**
+   * Same as [`SMSLoginRequest.consent_to_contact`](#rellm-SMSLoginRequest), for the account's
+   * email `ContactMethod`.
+   */
+  consentToContact: boolean;
 }
 
 /**
@@ -735,7 +756,14 @@ export const UsernamePasswordLoginRequest: MessageFns<UsernamePasswordLoginReque
 };
 
 function createBaseSMSLoginRequest(): SMSLoginRequest {
-  return { phoneNumber: "", code: undefined, expiresAt: undefined, deviceName: undefined, userId: undefined };
+  return {
+    phoneNumber: "",
+    code: undefined,
+    expiresAt: undefined,
+    deviceName: undefined,
+    userId: undefined,
+    consentToContact: false,
+  };
 }
 
 export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
@@ -754,6 +782,9 @@ export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
     }
     if (message.userId !== undefined) {
       writer.uint32(42).string(message.userId);
+    }
+    if (message.consentToContact !== false) {
+      writer.uint32(48).bool(message.consentToContact);
     }
     return writer;
   },
@@ -805,6 +836,14 @@ export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
           message.userId = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.consentToContact = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -821,6 +860,7 @@ export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
       expiresAt: isSet(object.expiresAt) ? globalThis.String(object.expiresAt) : undefined,
       deviceName: isSet(object.deviceName) ? globalThis.String(object.deviceName) : undefined,
       userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
+      consentToContact: isSet(object.consentToContact) ? globalThis.Boolean(object.consentToContact) : false,
     };
   },
 
@@ -841,6 +881,9 @@ export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
     if (message.userId !== undefined) {
       obj.userId = message.userId;
     }
+    if (message.consentToContact !== false) {
+      obj.consentToContact = message.consentToContact;
+    }
     return obj;
   },
 
@@ -854,12 +897,20 @@ export const SMSLoginRequest: MessageFns<SMSLoginRequest> = {
     message.expiresAt = object.expiresAt ?? undefined;
     message.deviceName = object.deviceName ?? undefined;
     message.userId = object.userId ?? undefined;
+    message.consentToContact = object.consentToContact ?? false;
     return message;
   },
 };
 
 function createBaseEmailLoginRequest(): EmailLoginRequest {
-  return { email: "", code: undefined, expiresAt: undefined, deviceName: undefined, userId: undefined };
+  return {
+    email: "",
+    code: undefined,
+    expiresAt: undefined,
+    deviceName: undefined,
+    userId: undefined,
+    consentToContact: false,
+  };
 }
 
 export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
@@ -878,6 +929,9 @@ export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
     }
     if (message.userId !== undefined) {
       writer.uint32(42).string(message.userId);
+    }
+    if (message.consentToContact !== false) {
+      writer.uint32(48).bool(message.consentToContact);
     }
     return writer;
   },
@@ -929,6 +983,14 @@ export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
           message.userId = reader.string();
           continue;
         }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.consentToContact = reader.bool();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -945,6 +1007,7 @@ export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
       expiresAt: isSet(object.expiresAt) ? globalThis.String(object.expiresAt) : undefined,
       deviceName: isSet(object.deviceName) ? globalThis.String(object.deviceName) : undefined,
       userId: isSet(object.userId) ? globalThis.String(object.userId) : undefined,
+      consentToContact: isSet(object.consentToContact) ? globalThis.Boolean(object.consentToContact) : false,
     };
   },
 
@@ -965,6 +1028,9 @@ export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
     if (message.userId !== undefined) {
       obj.userId = message.userId;
     }
+    if (message.consentToContact !== false) {
+      obj.consentToContact = message.consentToContact;
+    }
     return obj;
   },
 
@@ -978,6 +1044,7 @@ export const EmailLoginRequest: MessageFns<EmailLoginRequest> = {
     message.expiresAt = object.expiresAt ?? undefined;
     message.deviceName = object.deviceName ?? undefined;
     message.userId = object.userId ?? undefined;
+    message.consentToContact = object.consentToContact ?? false;
     return message;
   },
 };

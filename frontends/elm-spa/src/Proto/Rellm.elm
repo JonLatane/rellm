@@ -4009,7 +4009,8 @@ type alias CreateThirdPartyRefreshTokenRequest =
 {-| The field numbers for the fields of `EmailLoginRequest`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersEmailLoginRequest : { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+fieldNumbersEmailLoginRequest :
+    { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersEmailLoginRequest =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__EmailLoginRequest
 
@@ -4050,6 +4051,12 @@ encodeEmailLoginRequest =
  case-insensitively). Always required. Must be an address the account has verified.
 
 
+### consentToContact
+
+ Same as [`SMSLoginRequest.consent_to_contact`](#rellm-SMSLoginRequest), for the account's
+ email `ContactMethod`.
+
+
 -}
 type alias EmailLoginRequest =
     Proto.Rellm.Internals_.Proto__Rellm__EmailLoginRequest
@@ -4058,7 +4065,8 @@ type alias EmailLoginRequest =
 {-| The field numbers for the fields of `SMSLoginRequest`. This is mostly useful for internals, like documentation generation.
 
 -}
-fieldNumbersSMSLoginRequest : { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+fieldNumbersSMSLoginRequest :
+    { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersSMSLoginRequest =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SMSLoginRequest
 
@@ -4097,6 +4105,19 @@ encodeSMSLoginRequest =
 
  The phone number to be used for login, in E.164 format (`+19195551234`); a leading `tel:` is
  accepted. Always required. Must be a phone number the account has verified.
+
+
+### consentToContact
+
+ The person signing in attests that they consent to being sent one-time sign-in codes by SMS
+ (the sign-in form's consent checkbox). Send it on **both** phases. Only matters when the
+ matched account's phone `ContactMethod.consent_state` is not `CONTACT_CONSENT_GRANTED` (they
+ unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 --
+ once the code proves control of the phone number -- records the consent
+ (`CONTACT_CONSENT_GRANTED`, with a server-timestamped `consent_history` entry). Without it, a
+ contact method that doesn't consent is sent nothing (the response is unchanged, see
+ [`LoginRequest`](#rellm-LoginRequest)). Never changes consent on its own: an unverified
+ phase 2 changes nothing, so it can't be used to grant consent for a number you don't control.
 
 
 -}
@@ -4587,6 +4608,7 @@ fieldNumbersContactMethod :
     , verificationInProgress : Int
     , consentState : Int
     , consentHistory : Int
+    , useForSignIn : Int
     }
 fieldNumbersContactMethod =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__ContactMethod
@@ -4857,6 +4879,7 @@ fieldNumbersUser :
     , syncSources : Int
     , aiModels : Int
     , marketSubscriptions : Int
+    , hasPassword : Int
     , createdAt : Int
     , updatedAt : Int
     }
@@ -4992,6 +5015,15 @@ encodeUser =
  `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
  themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
  [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
+
+
+### hasPassword
+
+ Whether the account has a password it can sign in with. `false` for an account created without
+ one (a passwordless SMS/email account) until a password is set with
+ [`ResetPassword`](#grpc-api-ResetPassword). While `false`, a sign-in
+ [`ContactMethod`](#rellm-ContactMethod) can't be turned off, changed or removed. Only sent to the
+ user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
 
 
 ### createdAt

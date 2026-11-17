@@ -167,6 +167,10 @@ type alias State =
 
     -- The phone number or email typed for an SMS/email login, per `method`.
     , contact : String
+
+    -- The sign-in form's consent checkbox (`consent_to_contact` on the login request): the person
+    -- agrees to be sent a one-time sign-in code. Required before the first phase, and sent on both.
+    , loginConsent : Bool
     , code : String
     , loginChallenge : Maybe Challenge
 
@@ -189,6 +193,7 @@ initial : State
 initial =
     { method = PasswordMethod
     , contact = ""
+    , loginConsent = False
     , code = ""
     , loginChallenge = Nothing
     , createPhone = ""
@@ -207,6 +212,7 @@ initial =
 type Msg
     = MethodSelected LoginMethod
     | ContactChanged String
+    | LoginConsentToggled Bool
     | CodeChanged String
     | CreatePhoneChanged String
     | CreateEmailChanged String
@@ -222,15 +228,19 @@ update : Msg -> State -> State
 update msg state =
     case msg of
         MethodSelected method ->
-            -- Each method has its own kind of contact value, so a half-typed one never carries over.
+            -- Each method has its own kind of contact value (and its own consent: agreeing to a text
+            -- isn't agreeing to an email), so a half-typed one never carries over.
             if method == state.method then
                 state
 
             else
-                { state | method = method, contact = "", code = "", loginChallenge = Nothing }
+                { state | method = method, contact = "", loginConsent = False, code = "", loginChallenge = Nothing }
 
         ContactChanged contact ->
             { state | contact = contact }
+
+        LoginConsentToggled consent ->
+            { state | loginConsent = consent }
 
         CodeChanged code ->
             { state | code = sanitizeCode code }
@@ -380,16 +390,17 @@ emailLooksValid raw =
             False
 
 
-{-| Whether the login form's phone/email field (per `state.method`) can't be submitted yet.
+{-| Whether the login form's phone/email field (per `state.method`) can't be submitted yet: it has to
+look right *and* the consent box has to be checked (we're about to message it).
 -}
 loginContactInvalid : State -> Bool
 loginContactInvalid state =
     case state.method of
         SmsMethod ->
-            not (phoneLooksValid state.contact)
+            not (phoneLooksValid state.contact) || not state.loginConsent
 
         EmailMethod ->
-            not (emailLooksValid state.contact)
+            not (emailLooksValid state.contact) || not state.loginConsent
 
         PasswordMethod ->
             True

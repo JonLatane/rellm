@@ -28,6 +28,7 @@ appearance (dark/light/auto) setting that doesn't belong to it.
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Nav
+import Components.ContactSignIn as ContactSignIn
 import Components.Events as Events
 import Components.MediaMaintenance as MediaMaintenance
 import Components.MediaRenderer as MediaRenderer
@@ -215,6 +216,10 @@ type Msg
     | ContactMethodEmailSaveClicked
     | ContactMethodPhoneConsentToggled
     | ContactMethodEmailConsentToggled
+      -- "Use for signing in" (`Components.ContactSignIn`). Rides the consent toggle's status field and
+      -- `Got*ConsentTaskResult`s: same `UpdateUser` round trip, same refresh of the focused account.
+    | ContactMethodPhoneSignInToggled
+    | ContactMethodEmailSignInToggled
     | ContactMethodStartPhoneVerificationClicked
     | ContactMethodVerifyPhoneCodeClicked
     | GotContactMethodPhoneSaveTaskResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, User ))
@@ -2591,6 +2596,10 @@ sharedUpdate req msg model =
                                         -- same reasoning as `Components.Pages.UserProfilePage.PhoneSaveClicked`.
                                         , consentState = freshUser.phone |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
                                         , consentHistory = freshUser.phone |> Maybe.map .consentHistory |> Maybe.withDefault []
+
+                                        -- The server decides (editing the value switches it off, and
+                                        -- refuses it for a sign-in contact without a password).
+                                        , useForSignIn = freshUser.phone |> Maybe.andThen .useForSignIn
                                         }
                             }
                         )
@@ -2646,6 +2655,7 @@ sharedUpdate req msg model =
                                         -- unchanged here.
                                         , consentState = freshUser.email |> Maybe.map .consentState |> Maybe.withDefault CONTACTCONSENTREVOKED
                                         , consentHistory = freshUser.email |> Maybe.map .consentHistory |> Maybe.withDefault []
+                                        , useForSignIn = freshUser.email |> Maybe.andThen .useForSignIn
                                         }
                             }
                         )
@@ -2761,6 +2771,60 @@ sharedUpdate req msg model =
 
         GotContactMethodEmailConsentTaskResult (Err err) ->
             sharedUpdate req (AccountsPanelMsg (AccountsPanel.GotContactMethodEmailConsentResult (Err err))) model
+
+        ContactMethodPhoneSignInToggled ->
+            case AccountsPanel.freshFocusedAccount model.accounts of
+                Just account ->
+                    let
+                        newSignIn : Bool
+                        newSignIn =
+                            not (account.phone |> Maybe.map ContactSignIn.isSignIn |> Maybe.withDefault False)
+
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | phoneConsentStatus = RellmAccounts.Submitting } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser -> { freshUser | phone = freshUser.phone |> Maybe.map (\cm -> { cm | useForSignIn = Just newSignIn }) })
+                        |> Task.attempt GotContactMethodPhoneConsentTaskResult
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ContactMethodEmailSignInToggled ->
+            case AccountsPanel.freshFocusedAccount model.accounts of
+                Just account ->
+                    let
+                        newSignIn : Bool
+                        newSignIn =
+                            not (account.email |> Maybe.map ContactSignIn.isSignIn |> Maybe.withDefault False)
+
+                        accounts : AccountsPanel.Model
+                        accounts =
+                            model.accounts
+
+                        current : RellmAccounts.RellmContactMethods
+                        current =
+                            AccountsPanel.currentFocusedAccountContactMethods model.accounts
+                    in
+                    ( { model | accounts = { accounts | focusedAccountContactMethods = Just { current | emailConsentStatus = RellmAccounts.Submitting } } }
+                    , Users.updateUser model.accounts
+                        ( Just account.userId, account.server )
+                        account.userId
+                        (\freshUser -> { freshUser | email = freshUser.email |> Maybe.map (\cm -> { cm | useForSignIn = Just newSignIn }) })
+                        |> Task.attempt GotContactMethodEmailConsentTaskResult
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         ContactMethodStartPhoneVerificationClicked ->
             case AccountsPanel.freshFocusedAccount model.accounts of

@@ -95,6 +95,7 @@ pub fn start_contact_method_verification_at(
         current_user.id,
         kind,
         &send_to,
+        false,
     )?;
 
     // Never echo the real code back -- see `ContactMethodVerification.verification_code`'s own

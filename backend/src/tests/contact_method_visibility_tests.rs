@@ -34,6 +34,7 @@ fn contact_method_with_consent(
         verification_in_progress: None,
         consent_state: consent_state as i32,
         consent_history,
+        use_for_sign_in: None,
     })
     .unwrap()
 }
@@ -333,6 +334,7 @@ fn pending_verification_codes_are_never_marshaled_to_any_viewer() {
                 }),
                 consent_state: ContactConsentState::ContactConsentGranted as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             })
             .unwrap()
         };

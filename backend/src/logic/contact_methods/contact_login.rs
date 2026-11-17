@@ -436,6 +436,21 @@ pub fn consent_granted(contact: &ContactMethod) -> bool {
         == ContactConsentState::ContactConsentGranted
 }
 
+/// Records consent on `contact` -- `consent_state` and a `consent_history` entry timestamped `at`
+/// (the server's own time: when the consent was given on the form, from `contact_consents`), same
+/// bookkeeping as `UpdateUser`'s own grant. A no-op if already granted (no duplicate history entry).
+/// The caller persists `contact`.
+pub fn grant_consent(contact: &mut ContactMethod, at: SystemTime) {
+    if consent_granted(contact) {
+        return;
+    }
+    contact.consent_state = ContactConsentState::ContactConsentGranted as i32;
+    contact.consent_history.push(ContactConsentChange {
+        state: ContactConsentState::ContactConsentGranted as i32,
+        changed_at: Some(at.to_proto()),
+    });
+}
+
 /// The `VerificationChallenge` the first phase of a two-phase login/create-account returns.
 pub fn verification_challenge(sent_to: Vec<String>) -> VerificationChallenge {
     let now = SystemTime::now();
@@ -570,8 +585,11 @@ pub fn with_locked_user_contact<T>(
 pub enum SendTarget {
     /// `pending_contact_verifications` -- an account being created (no user yet).
     Pending,
-    /// `verification_in_progress` on this existing user's `kind` contact method.
-    UserContact { user_id: i64, kind: ContactKind },
+    /// `verification_in_progress` on this existing user's `kind` contact method. Needs the
+    /// contact's stored consent, unless `attested_consent`: the requester said (on a sign-in form)
+    /// that they consent to this one-time code, which the caller records on the contact only after
+    /// the code is redeemed.
+    UserContact { user_id: i64, kind: ContactKind, attested_consent: bool },
 }
 
 /// What a reservation overwrote, so a failed send can put it back.
@@ -600,7 +618,10 @@ enum Previous {
 /// `key` is the contact's normalized value (ledger/lock/pending key); `send_to` is where the
 /// message goes (a user's stored spelling, same address modulo case). Errors from the checks are
 /// `verification_recently_sent` / `too_many_verification_requests` / `contact_changed` /
-/// `contact_consent_not_granted`. For `UserContact` returns the stored contact method INCLUDING the
+/// `contact_consent_not_granted`. `consent`, if given, is the sign-up/sign-in form whose checkbox this
+/// send rests on: its `contact_consents` row is written in the SAME reservation transaction (so it
+/// exists before the provider is called, and only for a send that was actually reserved).
+/// For `UserContact` returns the stored contact method INCLUDING the
 /// real code -- blank it before returning it to a client.
 pub fn send_reserved_code(
     base_url: Option<&str>,
@@ -609,9 +630,10 @@ pub fn send_reserved_code(
     send_to: &str,
     target: SendTarget,
     global_cap: Option<i64>,
+    consent: Option<models::ConsentFlow>,
 ) -> Result<Option<ContactMethod>, Status> {
     let code = generate_code();
-    let (previous, reserved) = reserve_send(conn, key, target, &code, global_cap)?;
+    let (previous, reserved) = reserve_send(conn, key, target, &code, global_cap, consent)?;
 
     #[cfg(test)]
     in_flight_hook::run(conn);
@@ -635,6 +657,7 @@ fn reserve_send(
     target: SendTarget,
     code: &str,
     global_cap: Option<i64>,
+    consent: Option<models::ConsentFlow>,
 ) -> Result<(Previous, Option<ContactMethod>), Status> {
     let hour = Duration::from_secs(60 * 60);
     let outcome: Result<Result<(Previous, Option<ContactMethod>), Status>, diesel::result::Error> =
@@ -661,6 +684,15 @@ fn reserve_send(
                 }
                 models::record_contact_verification_send(key, conn)
             };
+            // The consent row, written once the send is certain to be reserved (same transaction as
+            // the ledger row). For a pending signup it must come AFTER the pending row is upserted:
+            // `link_signup_consents_to_user` claims rows given at/after that row's `created_at`.
+            let record_consent = |conn: &mut PgPooledConnection, user_id: Option<i64>, at: SystemTime| -> Result<(), Status> {
+                match consent {
+                    Some(flow) => models::record_contact_consent(key, flow, user_id, at, conn),
+                    None => Ok(()),
+                }
+            };
             let result = match target {
                 SendTarget::Pending => (|| -> Result<_, Status> {
                     let previous = models::find_pending_contact_verification(key, conn)?;
@@ -675,12 +707,13 @@ fn reserve_send(
                     }
                     limits(conn)?;
                     models::upsert_pending_contact_verification(key, &hash_code(key, code), conn)?;
+                    record_consent(conn, None, SystemTime::now())?;
                     Ok((Previous::Pending(previous), None))
                 })(),
-                SendTarget::UserContact { user_id, kind } => {
+                SendTarget::UserContact { user_id, kind, attested_consent } => {
                     let mut previous = None;
                     with_locked_user_contact(conn, user_id, kind, key, |conn, contact| {
-                        if !consent_granted(contact) {
+                        if !consent_granted(contact) && !attested_consent {
                             return Err(Status::new(
                                 Code::FailedPrecondition,
                                 "contact_consent_not_granted",
@@ -693,11 +726,24 @@ fn reserve_send(
                             ));
                         }
                         limits(conn)?;
+                        // One instant for both, whole seconds (all a stored `Timestamp` keeps): the
+                        // consent row is found again by *equality* with the code's start time at
+                        // redemption (`models::login_consent_for_code`), so only the consent that
+                        // went with this very code can match -- no time window to overlap an older
+                        // attempt (and the resend cooldown keeps two sends out of one second).
+                        let sent_at = SystemTime::UNIX_EPOCH
+                            + Duration::from_secs(
+                                SystemTime::now()
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0),
+                            );
+                        record_consent(conn, Some(user_id), sent_at)?;
                         previous = contact.verification_in_progress.clone();
                         contact.supported_by_server = true;
                         contact.verification_in_progress = Some(ContactMethodVerification {
                             verification_code: code.to_string(),
-                            verification_started_at: Some(SystemTime::now().to_proto()),
+                            verification_started_at: Some(sent_at.to_proto()),
                             attempts: 0,
                         });
                         Ok(contact.clone())
@@ -750,7 +796,7 @@ fn undo_reservation(
             });
             outcome.map_err(|e| db_error("undo a pending verification", e))?
         }
-        (SendTarget::UserContact { user_id, kind }, Previous::UserContact(previous)) => {
+        (SendTarget::UserContact { user_id, kind, .. }, Previous::UserContact(previous)) => {
             with_locked_user_contact(conn, user_id, kind, key, |_conn, contact| {
                 let ours = contact
                     .verification_in_progress
@@ -772,21 +818,25 @@ fn undo_reservation(
 /// address (the stored spelling). Returns the stored contact method INCLUDING the real code --
 /// blank it before returning it to a client. Callers gate on consent/provider availability
 /// themselves for good error messages (their handling differs: the authenticated verify RPC reports
-/// each, login must not); the checks are repeated authoritatively under lock.
+/// each, login must not); the checks are repeated authoritatively under lock. `attested_consent`
+/// stands in for the stored consent -- see `SendTarget::UserContact`; only sign-in passes it.
 pub fn begin_user_contact_verification(
     base_url: Option<&str>,
     conn: &mut PgPooledConnection,
     user_id: i64,
     kind: ContactKind,
     value: &str,
+    attested_consent: bool,
 ) -> Result<ContactMethod, Status> {
     send_reserved_code(
         base_url,
         conn,
         value,
         value,
-        SendTarget::UserContact { user_id, kind },
+        SendTarget::UserContact { user_id, kind, attested_consent },
         None,
+        // Sign-in is the only caller that attests consent; keep the evidence of it.
+        attested_consent.then_some(models::ConsentFlow::Login),
     )?
     .ok_or_else(|| Status::new(Code::Internal, "data_error"))
 }
