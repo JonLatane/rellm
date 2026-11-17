@@ -611,6 +611,7 @@ diesel::table! {
         occasion_count -> Int4,
         media_storage_limit_bytes -> Nullable<Int8>,
         media_storage_bytes_used -> Int8,
+        has_password -> Bool,
     }
 }
 

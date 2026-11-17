@@ -367,6 +367,32 @@ same slot `StartContactMethodVerification` uses, so the two share one cooldown/a
 and the login is complete once it matches: `verification_in_progress` is cleared and tokens + the
 `User` are returned exactly as for a password login.
 
+### Sign-in contact methods, and the password behind them
+
+A verified contact method signs you in only if its `ContactMethod.use_for_sign_in` is on (phase 1
+of SMS/email `Login` sends nothing otherwise, like any other non-match). It is switched on:
+
+- implicitly, for every contact method **proven at sign-up** (`CreateAccount`);
+- by the user, via `UpdateUser`, for a contact method that is already *verified* (an unverified one
+  is refused, `contact_must_be_verified_for_sign_in`). Editing the `value` un-verifies a contact
+  method and so switches this off. Unset in an `UpdateUser` means "leave as is", so clients that
+  predate the field don't clear it. (A migration turned it on for every contact method that was
+  already verified, so existing SMS/email logins kept working.)
+
+**An account must always have a way in.** While a contact method is a sign-in method and the account
+has **no password** (`User.has_password` is `false` -- a passwordless account, created by signing up
+with an empty password), `UpdateUser` refuses to turn it off, change its value, or remove it
+(`password_required_for_sign_in`; admins editing someone else's account are held to the same rule).
+Setting a password with `ResetPassword` flips `has_password` and lifts the restriction. The Elm UI
+says this next to the checkbox and disables Edit/Delete for such a contact method (the server is
+the real guard). `has_password` is only sent to the user themselves or an admin. Accounts that were
+created passwordless *before* this column existed are reported as having a password (the two can't
+be told apart), so they aren't protected until they set one.
+
+**Consent time is copied onto the account.** The time consent was given on the sign-up / sign-in form
+(`contact_consents.consented_at`, see below) is what goes into the contact method's `consent_history`
+entry when the account is created / the code is redeemed -- not the later moment of completion.
+
 ### Account creation (`CreateAccountRequest` with `phone`/`email`)
 
 If the matching `CREATE_ACCOUNT_WITH_*` feature is on, supplied contact methods must be proven before

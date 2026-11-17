@@ -4608,6 +4608,7 @@ fieldNumbersContactMethod :
     , verificationInProgress : Int
     , consentState : Int
     , consentHistory : Int
+    , useForSignIn : Int
     }
 fieldNumbersContactMethod =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__ContactMethod
@@ -4878,6 +4879,7 @@ fieldNumbersUser :
     , syncSources : Int
     , aiModels : Int
     , marketSubscriptions : Int
+    , hasPassword : Int
     , createdAt : Int
     , updatedAt : Int
     }
@@ -5013,6 +5015,15 @@ encodeUser =
  `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user
  themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus
  [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
+
+
+### hasPassword
+
+ Whether the account has a password it can sign in with. `false` for an account created without
+ one (a passwordless SMS/email account) until a password is set with
+ [`ResetPassword`](#grpc-api-ResetPassword). While `false`, a sign-in
+ [`ContactMethod`](#rellm-ContactMethod) can't be turned off, changed or removed. Only sent to the
+ user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
 
 
 ### createdAt

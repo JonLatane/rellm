@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use bcrypt::verify;
 use prost_wkt_types::Timestamp;
 use diesel::*;
@@ -162,8 +164,10 @@ fn contact_login(
         _ => None,
     };
 
-    // Accounts that have verified this contact. Only if more than one does is `user_id` needed.
+    // Accounts that have verified this contact *and* use it to sign in. Only if more than one does
+    // is `user_id` needed.
     let mut matches = find_users_with_verified_contact(conn, kind, &value)?;
+    matches.retain(|(_, contact)| contact.use_for_sign_in == Some(true));
     if matches.len() > 1 {
         match requested_user_id {
             Some(wanted) => matches.retain(|(user, _)| user.id == wanted),
@@ -197,13 +201,22 @@ fn contact_login(
             // Judge + record the guess under a lock on the freshly reloaded contact, so two
             // concurrent submissions can't both redeem one code or lose attempt counts.
             let stored_value = contact.value.clone().unwrap_or_else(|| value.clone());
+            // When the sign-in form's consent was given (copied onto the account on redemption).
+            let consented_at = models::latest_contact_consent_at(
+                &value,
+                models::ConsentFlow::Login,
+                Some(user.id),
+                None,
+                conn,
+            )
+            .unwrap_or_else(SystemTime::now);
             let verdict = with_locked_user_contact(conn, user.id, kind, &stored_value, |_conn, contact| {
                 let verdict = check_contact_code(contact, &code);
                 // The code proved control of the contact, so the sign-in form's consent attestation
                 // can now be recorded (same bookkeeping as `UpdateUser`'s grant). Saved with the
                 // cleared code, in the same locked write.
                 if verdict == CodeVerdict::Valid && consent_to_contact {
-                    grant_consent(contact);
+                    grant_consent(contact, consented_at);
                 }
                 Ok(verdict)
             })?

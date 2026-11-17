@@ -250,3 +250,32 @@ pub fn link_signup_consents_to_user(
     .set(contact_consents::user_id.eq(user_id))
     .execute(conn)
 }
+
+/// When the most recent `flow` consent for `contact_value` was given: for a sign-up, the rows still
+/// without an account given at/after `since` (the attempt's pending verification); for a sign-in,
+/// `user_id`'s rows. Used to copy the *time consent was actually given* onto the account's
+/// `ContactMethod.consent_history`, rather than the (later) moment the sign-up/sign-in completed.
+pub fn latest_contact_consent_at(
+    contact_value: &str,
+    flow: ConsentFlow,
+    user_id: Option<i64>,
+    since: Option<SystemTime>,
+    conn: &mut PgPooledConnection,
+) -> Option<SystemTime> {
+    let mut query = contact_consents::table
+        .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
+        .filter(contact_consents::flow.eq(flow.as_str()))
+        .into_boxed();
+    query = match user_id {
+        Some(id) => query.filter(contact_consents::user_id.eq(id)),
+        None => query.filter(contact_consents::user_id.is_null()),
+    };
+    if let Some(since) = since {
+        query = query.filter(contact_consents::consented_at.ge(since));
+    }
+    query
+        .select(diesel::dsl::max(contact_consents::consented_at))
+        .first::<Option<SystemTime>>(conn)
+        .ok()
+        .flatten()
+}

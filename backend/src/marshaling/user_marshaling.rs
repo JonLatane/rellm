@@ -51,6 +51,8 @@ fn scrub_consent_for_viewer(
     if !is_owner_or_admin {
         contact_method.consent_state = ContactConsentState::ContactConsentRevoked as i32;
         contact_method.consent_history = vec![];
+        // How an account signs in is the owner's own business too.
+        contact_method.use_for_sign_in = None;
     }
     contact_method
 }
@@ -121,6 +123,11 @@ impl ToProtoUser for models::User {
             bio: self.bio.to_owned(),
             media_storage_limit_bytes: self.media_storage_limit_bytes.map(|b| b as u64),
             media_storage_bytes_used: self.media_storage_bytes_used as u64,
+            // Only the owner (or an admin) learns whether there's a password; everyone else sees
+            // `true`, so the field is never a signal that an account is passwordless.
+            has_password: self.has_password
+                || !(viewer.map(|v| v.id) == Some(self.id)
+                    || validate_permission(viewer, Permission::Admin).is_ok()),
             // avatar_media_id: self.avatar_media_id.to_owned().map(|id| id.to_proto_id()),
             avatar: media_lookup
                 .map(|ml| ml.get(&self.avatar_media_id.unwrap()).unwrap().to_proto(&None)),

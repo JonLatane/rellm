@@ -23,6 +23,10 @@ fn main() {
         .type_attribute("SubdomainSettings", "#[serde(default)]")
         .type_attribute("SubdomainPurchaseDetails", "#[serde(default)]")
         .type_attribute("CustomCSSConfiguration", "#[serde(default)]")
+        // `users.phone`/`users.email` JSON stored before `use_for_sign_in` existed must still
+        // deserialize (it defaults to `false`; the migration that added it turned it on for every
+        // already-verified contact method).
+        .type_attribute("ContactMethod", "#[serde(default)]")
         // Used for updating servers from 0.5.551 -> 0.5.553+. Can be removed
         // in the distant future.
         // Lets `event_settings` JSON stored before this field existed deserialize

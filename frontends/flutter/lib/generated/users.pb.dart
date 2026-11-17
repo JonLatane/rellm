@@ -59,6 +59,7 @@ class User extends $pb.GeneratedMessage {
     $core.Iterable<$10.SyncSource>? syncSources,
     $core.Iterable<$11.AIModel>? aiModels,
     $core.Iterable<$12.MarketSubscription>? marketSubscriptions,
+    $core.bool? hasPassword,
     $14.Timestamp? createdAt,
     $14.Timestamp? updatedAt,
   }) {
@@ -150,6 +151,9 @@ class User extends $pb.GeneratedMessage {
     if (marketSubscriptions != null) {
       $result.marketSubscriptions.addAll(marketSubscriptions);
     }
+    if (hasPassword != null) {
+      $result.hasPassword = hasPassword;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -192,6 +196,7 @@ class User extends $pb.GeneratedMessage {
     ..pc<$10.SyncSource>(83, _omitFieldNames ? '' : 'syncSources', $pb.PbFieldType.PM, subBuilder: $10.SyncSource.create)
     ..pc<$11.AIModel>(84, _omitFieldNames ? '' : 'aiModels', $pb.PbFieldType.PM, subBuilder: $11.AIModel.create)
     ..pc<$12.MarketSubscription>(85, _omitFieldNames ? '' : 'marketSubscriptions', $pb.PbFieldType.PM, subBuilder: $12.MarketSubscription.create)
+    ..aOB(86, _omitFieldNames ? '' : 'hasPassword')
     ..aOM<$14.Timestamp>(100, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..aOM<$14.Timestamp>(101, _omitFieldNames ? '' : 'updatedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
@@ -522,29 +527,43 @@ class User extends $pb.GeneratedMessage {
   @$pb.TagNumber(85)
   $core.List<$12.MarketSubscription> get marketSubscriptions => $_getList(28);
 
+  /// Whether the account has a password it can sign in with. `false` for an account created without
+  /// one (a passwordless SMS/email account) until a password is set with
+  /// [`ResetPassword`](#grpc-api-ResetPassword). While `false`, a sign-in
+  /// [`ContactMethod`](#rellm-ContactMethod) can't be turned off, changed or removed. Only sent to the
+  /// user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
+  @$pb.TagNumber(86)
+  $core.bool get hasPassword => $_getBF(29);
+  @$pb.TagNumber(86)
+  set hasPassword($core.bool v) { $_setBool(29, v); }
+  @$pb.TagNumber(86)
+  $core.bool hasHasPassword() => $_has(29);
+  @$pb.TagNumber(86)
+  void clearHasPassword() => clearField(86);
+
   /// The time the user was created.
   @$pb.TagNumber(100)
-  $14.Timestamp get createdAt => $_getN(29);
+  $14.Timestamp get createdAt => $_getN(30);
   @$pb.TagNumber(100)
   set createdAt($14.Timestamp v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasCreatedAt() => $_has(29);
+  $core.bool hasCreatedAt() => $_has(30);
   @$pb.TagNumber(100)
   void clearCreatedAt() => clearField(100);
   @$pb.TagNumber(100)
-  $14.Timestamp ensureCreatedAt() => $_ensure(29);
+  $14.Timestamp ensureCreatedAt() => $_ensure(30);
 
   /// The time the user was last updated.
   @$pb.TagNumber(101)
-  $14.Timestamp get updatedAt => $_getN(30);
+  $14.Timestamp get updatedAt => $_getN(31);
   @$pb.TagNumber(101)
   set updatedAt($14.Timestamp v) { setField(101, v); }
   @$pb.TagNumber(101)
-  $core.bool hasUpdatedAt() => $_has(30);
+  $core.bool hasUpdatedAt() => $_has(31);
   @$pb.TagNumber(101)
   void clearUpdatedAt() => clearField(101);
   @$pb.TagNumber(101)
-  $14.Timestamp ensureUpdatedAt() => $_ensure(30);
+  $14.Timestamp ensureUpdatedAt() => $_ensure(31);
 }
 
 /// Model for a user's follow of another user.
@@ -821,6 +840,7 @@ class ContactMethod extends $pb.GeneratedMessage {
     ContactMethodVerification? verificationInProgress,
     ContactConsentState? consentState,
     $core.Iterable<ContactConsentChange>? consentHistory,
+    $core.bool? useForSignIn,
   }) {
     final $result = create();
     if (value != null) {
@@ -844,6 +864,9 @@ class ContactMethod extends $pb.GeneratedMessage {
     if (consentHistory != null) {
       $result.consentHistory.addAll(consentHistory);
     }
+    if (useForSignIn != null) {
+      $result.useForSignIn = useForSignIn;
+    }
     return $result;
   }
   ContactMethod._() : super();
@@ -858,6 +881,7 @@ class ContactMethod extends $pb.GeneratedMessage {
     ..aOM<ContactMethodVerification>(5, _omitFieldNames ? '' : 'verificationInProgress', subBuilder: ContactMethodVerification.create)
     ..e<ContactConsentState>(6, _omitFieldNames ? '' : 'consentState', $pb.PbFieldType.OE, defaultOrMaker: ContactConsentState.CONTACT_CONSENT_REVOKED, valueOf: ContactConsentState.valueOf, enumValues: ContactConsentState.values)
     ..pc<ContactConsentChange>(7, _omitFieldNames ? '' : 'consentHistory', $pb.PbFieldType.PM, subBuilder: ContactConsentChange.create)
+    ..aOB(8, _omitFieldNames ? '' : 'useForSignIn')
     ..hasRequiredFields = false
   ;
 
@@ -983,6 +1007,24 @@ class ContactMethod extends $pb.GeneratedMessage {
   /// other viewer).
   @$pb.TagNumber(7)
   $core.List<ContactConsentChange> get consentHistory => $_getList(6);
+
+  /// Whether this contact method can be used to sign in (the SMS/email codes of
+  /// [`LoginRequest`](#rellm-LoginRequest)). Only ever `true` for a *verified* contact method:
+  /// [`UpdateUser`](#grpc-api-UpdateUser) can switch it on only once `verified_at` is set, and editing
+  /// `value` (which un-verifies) switches it off. A contact method verified at
+  /// [`CreateAccount`](#grpc-api-CreateAccount) is made a sign-in method implicitly. Turning it off, or
+  /// removing/changing the contact method while it is on, is refused with
+  /// `password_required_for_sign_in` unless the account has a password
+  /// ([`User.has_password`](#rellm-User)) -- otherwise the account could be left with no way in.
+  /// Unset (as sent by clients that predate this field) means "leave it as it is" in an `UpdateUser`.
+  @$pb.TagNumber(8)
+  $core.bool get useForSignIn => $_getBF(7);
+  @$pb.TagNumber(8)
+  set useForSignIn($core.bool v) { $_setBool(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasUseForSignIn() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearUseForSignIn() => clearField(8);
 }
 
 /// A single entry in a [`ContactMethod.consent_history`](#rellm-ContactMethod), recording that its

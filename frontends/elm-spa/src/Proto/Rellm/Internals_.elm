@@ -6576,6 +6576,7 @@ fieldNumbersProto__Rellm__ContactMethod :
     , verificationInProgress : Int
     , consentState : Int
     , consentHistory : Int
+    , useForSignIn : Int
     }
 fieldNumbersProto__Rellm__ContactMethod =
     { value = 1
@@ -6585,6 +6586,7 @@ fieldNumbersProto__Rellm__ContactMethod =
     , verificationInProgress = 5
     , consentState = 6
     , consentHistory = 7
+    , useForSignIn = 8
     }
 
 
@@ -6600,6 +6602,7 @@ defaultProto__Rellm__ContactMethod =
     , verificationInProgress = Nothing
     , consentState = Proto.Rellm.ContactConsentState.defaultContactConsentState
     , consentHistory = []
+    , useForSignIn = Nothing
     }
 
 
@@ -6630,6 +6633,7 @@ decodeProto__Rellm__ContactMethod =
             decodeProto__Rellm__ContactConsentChange
             .consentHistory
             (\a r -> { r | consentHistory = a })
+        , Protobuf.Decode.optional 8 (Protobuf.Decode.map Just Protobuf.Decode.bool) (\a r -> { r | useForSignIn = a })
         ]
 
 
@@ -6654,6 +6658,7 @@ encodeProto__Rellm__ContactMethod value =
           )
         , ( 6, Proto.Rellm.ContactConsentState.encodeContactConsentState value.consentState )
         , ( 7, (Protobuf.Encode.list encodeProto__Rellm__ContactConsentChange) value.consentHistory )
+        , ( 8, (Maybe.map Protobuf.Encode.bool >> Maybe.withDefault Protobuf.Encode.none) value.useForSignIn )
         ]
 
 
@@ -6668,6 +6673,7 @@ type alias Proto__Rellm__ContactMethod =
     , verificationInProgress : Maybe Proto__Rellm__ContactMethodVerification
     , consentState : Proto.Rellm.ContactConsentState.ContactConsentState
     , consentHistory : List Proto__Rellm__ContactConsentChange
+    , useForSignIn : Maybe Bool
     }
 
 
@@ -6881,6 +6887,7 @@ fieldNumbersProto__Rellm__User :
     , syncSources : Int
     , aiModels : Int
     , marketSubscriptions : Int
+    , hasPassword : Int
     , createdAt : Int
     , updatedAt : Int
     }
@@ -6914,6 +6921,7 @@ fieldNumbersProto__Rellm__User =
     , syncSources = 83
     , aiModels = 84
     , marketSubscriptions = 85
+    , hasPassword = 86
     , createdAt = 100
     , updatedAt = 101
     }
@@ -6953,6 +6961,7 @@ defaultProto__Rellm__User =
     , syncSources = []
     , aiModels = []
     , marketSubscriptions = []
+    , hasPassword = False
     , createdAt = Nothing
     , updatedAt = Nothing
     }
@@ -7046,6 +7055,7 @@ decodeProto__Rellm__User =
             decodeProto__Rellm__MarketSubscription
             .marketSubscriptions
             (\a r -> { r | marketSubscriptions = a })
+        , Protobuf.Decode.optional 86 Protobuf.Decode.bool (\a r -> { r | hasPassword = a })
         , Protobuf.Decode.optional
             100
             (Protobuf.Decode.map Just Proto.Google.Protobuf.Internals_.decodeProto__Google__Protobuf__Timestamp)
@@ -7102,6 +7112,7 @@ encodeProto__Rellm__User value =
         , ( 83, (Protobuf.Encode.list encodeProto__Rellm__SyncSource) value.syncSources )
         , ( 84, (Protobuf.Encode.list encodeProto__Rellm__AIModel) value.aiModels )
         , ( 85, (Protobuf.Encode.list encodeProto__Rellm__MarketSubscription) value.marketSubscriptions )
+        , ( 86, Protobuf.Encode.bool value.hasPassword )
         , ( 100
           , (Maybe.map Proto.Google.Protobuf.Internals_.encodeProto__Google__Protobuf__Timestamp
                 >> Maybe.withDefault Protobuf.Encode.none
@@ -7150,6 +7161,7 @@ type alias Proto__Rellm__User =
     , syncSources : List Proto__Rellm__SyncSource
     , aiModels : List Proto__Rellm__AIModel
     , marketSubscriptions : List Proto__Rellm__MarketSubscription
+    , hasPassword : Bool
     , createdAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , updatedAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     }

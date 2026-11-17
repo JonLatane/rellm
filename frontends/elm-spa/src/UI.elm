@@ -1,5 +1,6 @@
 module UI exposing (imageOrInitial, layout, pageTitle, themeToggle, webUiToggleRow)
 
+import Components.ContactSignIn as ContactSignIn
 import Components.Events as Events
 import Components.FulfillmentThreads as Fulfillment
 import Components.Markdown as Markdown
@@ -2803,8 +2804,15 @@ contactMethodsMenuItem shared account =
                     Shared.ContactMethodPhoneConsentToggled
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneHistoryToggled)
                     account.phone
+                , ContactSignIn.view
+                    { hasPassword = account.hasPassword
+                    , methodLabel = "phone number"
+                    , busy = contactMethods.phoneConsentStatus == RellmAccounts.Submitting
+                    , toggleMsg = Shared.ContactMethodPhoneSignInToggled
+                    }
+                    account.phone
                 , contactMethodPhoneVerificationView contactMethods account.phone
-                , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
+                , contactMethodDeleteButton (ContactSignIn.locked account.hasPassword account.phone) (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
                 , hr [ class "profile-contact-methods-separator" ] []
                 , contactMethodEmailView account contactMethods
                 , contactMethodConsentView shared
@@ -2815,7 +2823,14 @@ contactMethodsMenuItem shared account =
                     Shared.ContactMethodEmailConsentToggled
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailHistoryToggled)
                     account.email
-                , contactMethodDeleteButton (\cm -> Shared.ConfirmEmailDelete cm account.server) "Delete Email" account.email
+                , ContactSignIn.view
+                    { hasPassword = account.hasPassword
+                    , methodLabel = "email address"
+                    , busy = contactMethods.emailConsentStatus == RellmAccounts.Submitting
+                    , toggleMsg = Shared.ContactMethodEmailSignInToggled
+                    }
+                    account.email
+                , contactMethodDeleteButton (ContactSignIn.locked account.hasPassword account.email) (\cm -> Shared.ConfirmEmailDelete cm account.server) "Delete Email" account.email
                 ]
             ]
         ]
@@ -2882,7 +2897,7 @@ contactMethodPhoneView account contactMethods =
                  , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "tel:" account.phone) ]
                  ]
                     ++ (account.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
-                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneEditClicked) ] [ text "Edit Phone" ] ]
+                    ++ [ button [ class "profile-edit-button", disabled (ContactSignIn.locked account.hasPassword account.phone), onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneEditClicked) ] [ text "Edit Phone" ] ]
                 )
 
 
@@ -2914,7 +2929,7 @@ contactMethodEmailView account contactMethods =
                  , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "mailto:" account.email) ]
                  ]
                     ++ (account.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
-                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailEditClicked) ] [ text "Edit Email" ] ]
+                    ++ [ button [ class "profile-edit-button", disabled (ContactSignIn.locked account.hasPassword account.email), onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailEditClicked) ] [ text "Edit Email" ] ]
                 )
 
 
@@ -3098,8 +3113,8 @@ re-verifying if it's ever added back -- see `Shared.DeleteConfirmation`'s own do
 that page's copy both fire `Shared.ConfirmDelete`'s RPC directly rather than routing through
 `Shared.AccountsPanel.Model`. Hidden entirely once there's nothing to delete.
 -}
-contactMethodDeleteButton : (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Shared.Msg
-contactMethodDeleteButton toConfirmation label maybeContactMethod =
+contactMethodDeleteButton : Bool -> (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Shared.Msg
+contactMethodDeleteButton isLocked toConfirmation label maybeContactMethod =
     case maybeContactMethod of
         Nothing ->
             text ""
@@ -3109,6 +3124,10 @@ contactMethodDeleteButton toConfirmation label maybeContactMethod =
                 [ button
                     [ class "profile-delete-button"
                     , onClick (Shared.RequestDelete (toConfirmation contactMethod))
+
+                    -- A sign-in contact method of a passwordless account can't go (see
+                    -- `Components.ContactSignIn`, whose note under the checkbox says why).
+                    , disabled isLocked
                     ]
                     [ text label ]
                 ]

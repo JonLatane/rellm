@@ -45,6 +45,7 @@ fn phone_contact_method(value: &str) -> ContactMethod {
         verification_in_progress: None,
         consent_state: ContactConsentState::ContactConsentGranted as i32,
         consent_history: vec![],
+        use_for_sign_in: None,
     }
 }
 
@@ -161,6 +162,7 @@ mod update_user_contact_methods {
                 verification_in_progress: None,
                 consent_state: ContactConsentState::ContactConsentRevoked as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -185,6 +187,7 @@ mod update_user_contact_methods {
                 verification_in_progress: None,
                 consent_state: ContactConsentState::ContactConsentRevoked as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             };
             let user = set_user_phone(conn, &user, &verified_phone);
 
@@ -215,6 +218,7 @@ mod update_user_contact_methods {
                 verification_in_progress: None,
                 consent_state: ContactConsentState::ContactConsentRevoked as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             };
             let user = set_user_phone(conn, &user, &verified_phone);
 
@@ -229,6 +233,7 @@ mod update_user_contact_methods {
                 verification_in_progress: None,
                 consent_state: ContactConsentState::ContactConsentRevoked as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");
@@ -259,6 +264,7 @@ mod update_user_contact_methods {
                 verification_in_progress: None,
                 consent_state: ContactConsentState::ContactConsentRevoked as i32,
                 consent_history: vec![],
+                use_for_sign_in: None,
             });
 
             let updated = update_user(request, &user, conn).expect("update should succeed");

@@ -36,7 +36,12 @@ pub fn reset_password(
     let hashed_password = hash(&request.password, DEFAULT_COST).unwrap();
 
     let db_result = update(users::table.find(user_id))
-        .set(users::password_salted_hash.eq(hashed_password))
+        .set((
+            users::password_salted_hash.eq(hashed_password),
+            // Setting a password is what makes a passwordless account's sign-in contact methods
+            // removable (see `update_user`).
+            users::has_password.eq(true),
+        ))
         .execute(conn);
 
     let result = match db_result {

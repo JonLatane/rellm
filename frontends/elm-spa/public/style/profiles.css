@@ -1183,3 +1183,16 @@ input.ai-model-provider-grant-models {
 .federated-original-link:hover {
   text-decoration: underline;
 }
+
+/* "Use for signing in" under a Phone/Email contact method (Components.ContactSignIn), and the note
+   explaining why it's locked when the account has no password. */
+.profile-contact-method-signin {
+  margin-top: 0.4rem;
+}
+
+.profile-contact-method-signin-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  white-space: normal;
+}

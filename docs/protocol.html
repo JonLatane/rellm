@@ -3810,6 +3810,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>repeated</td>
           <td>Append-only history of every <code>consent_state</code> change, oldest first. Not directly modifiable -- the server appends to it whenever <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> changes <code>consent_state</code>, using the server's own time for <a href="#rellm-ContactConsentChange"><code>ContactConsentChange.changed_at</code></a> regardless of what the client sends. Same owner-or-<code>ADMIN</code>-only visibility as <code>consent_state</code> (blanked to empty for every other viewer).</td>
         </tr>
+        <tr>
+          <td>use_for_sign_in</td>
+          <td><a href="#bool">bool</a></td>
+          <td>optional</td>
+          <td>Whether this contact method can be used to sign in (the SMS/email codes of <a href="#rellm-LoginRequest"><code>LoginRequest</code></a>). Only ever <code>true</code> for a <em>verified</em> contact method: <a href="#grpc-api-UpdateUser"><code>UpdateUser</code></a> can switch it on only once <code>verified_at</code> is set, and editing <code>value</code> (which un-verifies) switches it off. A contact method verified at <a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a> is made a sign-in method implicitly. Turning it off, or removing/changing the contact method while it is on, is refused with <code>password_required_for_sign_in</code> unless the account has a password (<a href="#rellm-User"><code>User.has_password</code></a>) -- otherwise the account could be left with no way in. Unset (as sent by clients that predate this field) means "leave it as it is" in an <code>UpdateUser</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ContactMethodVerification"></a></p>
@@ -4236,6 +4242,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSubscription">MarketSubscription</a></td>
           <td>repeated</td>
           <td>The target user's own MarketSubscriptions (<code>market.proto</code>), each with its own <code>billing_history</code>. Gated and populated the same way as <code>ai_models</code>/<code>sync_sources</code> (target user themselves, or an Admin, across any <a href="#grpc-api-GetUsers"><code>GetUsers</code></a> listing type, plus <a href="#grpc-api-Login"><code>Login</code></a>/<a href="#grpc-api-CreateAccount"><code>CreateAccount</code></a>/<a href="#grpc-api-GetCurrentUser"><code>GetCurrentUser</code></a>).</td>
+        </tr>
+        <tr>
+          <td>has_password</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether the account has a password it can sign in with. <code>false</code> for an account created without one (a passwordless SMS/email account) until a password is set with <a href="#grpc-api-ResetPassword"><code>ResetPassword</code></a>. While <code>false</code>, a sign-in <a href="#rellm-ContactMethod"><code>ContactMethod</code></a> can't be turned off, changed or removed. Only sent to the user themselves or an <code>ADMIN</code>; <code>true</code> for everyone else (so it's never read as a signal).</td>
         </tr>
         <tr>
           <td>created_at</td>

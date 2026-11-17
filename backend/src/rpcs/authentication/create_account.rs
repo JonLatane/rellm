@@ -326,6 +326,26 @@ fn insert_account(
     // verified owner), `supported_by_server` (recomputed), and `consent_history` (built here, like
     // `update_user` does). Only `value`, `visibility` and `consent_state` are taken from the
     // request.
+    // When each verified contact's consent was actually given (the checkbox on the sign-up form,
+    // recorded in `contact_consents` when its code was sent) -- copied into its `consent_history`
+    // below instead of the moment the account happens to be created.
+    let consent_given_at: Vec<(ContactKind, SystemTime)> = verified
+        .iter()
+        .filter_map(|c| {
+            let since = models::find_pending_contact_verification(&c.value, conn)
+                .ok()
+                .flatten()
+                .map(|p| p.created_at);
+            models::latest_contact_consent_at(
+                &c.value,
+                models::ConsentFlow::CreateAccount,
+                None,
+                since,
+                conn,
+            )
+            .map(|at| (c.kind, at))
+        })
+        .collect();
     let phone_listed = contact_protocol_listed(conn, ContactKind::Phone);
     let email_listed = contact_protocol_listed(conn, ContactKind::Email);
     let contact_json = |kind: ContactKind, supplied: &Option<ContactMethod>| -> Option<serde_json::Value> {
@@ -346,7 +366,14 @@ fn insert_account(
         } else {
             vec![ContactConsentChange {
                 state: supplied.consent_state,
-                changed_at: Some(now.into()),
+                changed_at: Some(
+                    consent_given_at
+                        .iter()
+                        .find(|(k, _)| *k == kind)
+                        .map(|(_, at)| *at)
+                        .unwrap_or(now)
+                        .into(),
+                ),
             }]
         };
         serde_json::to_value(ContactMethod {
@@ -357,6 +384,8 @@ fn insert_account(
             verification_in_progress: None,
             consent_state: supplied.consent_state,
             consent_history,
+            // A contact method proven at sign-up is implicitly a sign-in method.
+            use_for_sign_in: Some(proven.is_some()),
         })
         .ok()
     };
@@ -421,6 +450,9 @@ fn insert_account(
                     .default_visibility
                     .to_string_visibility()),
                 media_storage_limit_bytes.eq(default_user_media_allocation_bytes),
+                // Passwordless accounts (empty `password`) get a random unusable hash; remember that
+                // so their sign-in contact methods can't be removed until a password is set.
+                has_password.eq(!request.password.is_empty()),
             ))
             .returning(models::USER_COLUMNS)
             .get_result::<models::User>(conn)?;

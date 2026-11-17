@@ -436,17 +436,18 @@ pub fn consent_granted(contact: &ContactMethod) -> bool {
         == ContactConsentState::ContactConsentGranted
 }
 
-/// Records consent on `contact` -- `consent_state` and a server-timestamped `consent_history`
-/// entry, same bookkeeping as `UpdateUser`'s own grant. A no-op if already granted (no duplicate
-/// history entry). The caller persists `contact`.
-pub fn grant_consent(contact: &mut ContactMethod) {
+/// Records consent on `contact` -- `consent_state` and a `consent_history` entry timestamped `at`
+/// (the server's own time: when the consent was given on the form, from `contact_consents`), same
+/// bookkeeping as `UpdateUser`'s own grant. A no-op if already granted (no duplicate history entry).
+/// The caller persists `contact`.
+pub fn grant_consent(contact: &mut ContactMethod, at: SystemTime) {
     if consent_granted(contact) {
         return;
     }
     contact.consent_state = ContactConsentState::ContactConsentGranted as i32;
     contact.consent_history.push(ContactConsentChange {
         state: ContactConsentState::ContactConsentGranted as i32,
-        changed_at: Some(SystemTime::now().to_proto()),
+        changed_at: Some(at.to_proto()),
     });
 }
 
