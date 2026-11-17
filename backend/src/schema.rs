@@ -622,6 +622,7 @@ diesel::joinable!(occasion_sync_destinations -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 diesel::joinable!(occasions -> events (event_id));
 diesel::joinable!(occasions -> posts (post_id));
+diesel::joinable!(contact_consents -> users (user_id));
 diesel::joinable!(event_embeddings -> events (event_id));
 diesel::joinable!(events -> posts (post_id));
 diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
