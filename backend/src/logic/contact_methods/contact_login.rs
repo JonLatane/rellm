@@ -436,6 +436,20 @@ pub fn consent_granted(contact: &ContactMethod) -> bool {
         == ContactConsentState::ContactConsentGranted
 }
 
+/// Records consent on `contact` -- `consent_state` and a server-timestamped `consent_history`
+/// entry, same bookkeeping as `UpdateUser`'s own grant. A no-op if already granted (no duplicate
+/// history entry). The caller persists `contact`.
+pub fn grant_consent(contact: &mut ContactMethod) {
+    if consent_granted(contact) {
+        return;
+    }
+    contact.consent_state = ContactConsentState::ContactConsentGranted as i32;
+    contact.consent_history.push(ContactConsentChange {
+        state: ContactConsentState::ContactConsentGranted as i32,
+        changed_at: Some(SystemTime::now().to_proto()),
+    });
+}
+
 /// The `VerificationChallenge` the first phase of a two-phase login/create-account returns.
 pub fn verification_challenge(sent_to: Vec<String>) -> VerificationChallenge {
     let now = SystemTime::now();
@@ -570,8 +584,11 @@ pub fn with_locked_user_contact<T>(
 pub enum SendTarget {
     /// `pending_contact_verifications` -- an account being created (no user yet).
     Pending,
-    /// `verification_in_progress` on this existing user's `kind` contact method.
-    UserContact { user_id: i64, kind: ContactKind },
+    /// `verification_in_progress` on this existing user's `kind` contact method. Needs the
+    /// contact's stored consent, unless `attested_consent`: the requester said (on a sign-in form)
+    /// that they consent to this one-time code, which the caller records on the contact only after
+    /// the code is redeemed.
+    UserContact { user_id: i64, kind: ContactKind, attested_consent: bool },
 }
 
 /// What a reservation overwrote, so a failed send can put it back.
@@ -677,10 +694,10 @@ fn reserve_send(
                     models::upsert_pending_contact_verification(key, &hash_code(key, code), conn)?;
                     Ok((Previous::Pending(previous), None))
                 })(),
-                SendTarget::UserContact { user_id, kind } => {
+                SendTarget::UserContact { user_id, kind, attested_consent } => {
                     let mut previous = None;
                     with_locked_user_contact(conn, user_id, kind, key, |conn, contact| {
-                        if !consent_granted(contact) {
+                        if !consent_granted(contact) && !attested_consent {
                             return Err(Status::new(
                                 Code::FailedPrecondition,
                                 "contact_consent_not_granted",
@@ -750,7 +767,7 @@ fn undo_reservation(
             });
             outcome.map_err(|e| db_error("undo a pending verification", e))?
         }
-        (SendTarget::UserContact { user_id, kind }, Previous::UserContact(previous)) => {
+        (SendTarget::UserContact { user_id, kind, .. }, Previous::UserContact(previous)) => {
             with_locked_user_contact(conn, user_id, kind, key, |_conn, contact| {
                 let ours = contact
                     .verification_in_progress
@@ -772,20 +789,22 @@ fn undo_reservation(
 /// address (the stored spelling). Returns the stored contact method INCLUDING the real code --
 /// blank it before returning it to a client. Callers gate on consent/provider availability
 /// themselves for good error messages (their handling differs: the authenticated verify RPC reports
-/// each, login must not); the checks are repeated authoritatively under lock.
+/// each, login must not); the checks are repeated authoritatively under lock. `attested_consent`
+/// stands in for the stored consent -- see `SendTarget::UserContact`; only sign-in passes it.
 pub fn begin_user_contact_verification(
     base_url: Option<&str>,
     conn: &mut PgPooledConnection,
     user_id: i64,
     kind: ContactKind,
     value: &str,
+    attested_consent: bool,
 ) -> Result<ContactMethod, Status> {
     send_reserved_code(
         base_url,
         conn,
         value,
         value,
-        SendTarget::UserContact { user_id, kind },
+        SendTarget::UserContact { user_id, kind, attested_consent },
         None,
     )?
     .ok_or_else(|| Status::new(Code::Internal, "data_error"))

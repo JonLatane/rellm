@@ -2873,6 +2873,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td>optional</td>
           <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
         </tr>
+        <tr>
+          <td>consent_to_contact</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Same as <a href="#rellm-SMSLoginRequest"><code>SMSLoginRequest.consent_to_contact</code></a>, for the account's email <code>ContactMethod</code>.</td>
+        </tr>
       </tbody>
     </table>
     <p><a name="rellm-ExpirableToken"></a></p>
@@ -3118,6 +3124,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#string">string</a></td>
           <td>optional</td>
           <td>Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored.</td>
+        </tr>
+        <tr>
+          <td>consent_to_contact</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>The person signing in attests that they consent to being sent one-time sign-in codes by SMS (the sign-in form's consent checkbox). Send it on <strong>both</strong> phases. Only matters when the matched account's phone <code>ContactMethod.consent_state</code> is not <code>CONTACT_CONSENT_GRANTED</code> (they unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 -- once the code proves control of the phone number -- records the consent (<code>CONTACT_CONSENT_GRANTED</code>, with a server-timestamped <code>consent_history</code> entry). Without it, a contact method that doesn't consent is sent nothing (the response is unchanged, see <a href="#rellm-LoginRequest"><code>LoginRequest</code></a>). Never changes consent on its own: an unverified phase 2 changes nothing, so it can't be used to grant consent for a number you don't control.</td>
         </tr>
       </tbody>
     </table>

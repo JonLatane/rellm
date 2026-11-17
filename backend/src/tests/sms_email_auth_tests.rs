@@ -156,6 +156,16 @@ fn stored_email(conn: &mut crate::db_connection::PgPooledConnection, user: &mode
 }
 
 fn sms_login(phone: &str, code: Option<&str>, user_id: Option<String>) -> LoginRequest {
+    sms_login_consent(phone, code, user_id, false)
+}
+
+/// Like `sms_login`, with the sign-in form's `consent_to_contact` checkbox set as given.
+fn sms_login_consent(
+    phone: &str,
+    code: Option<&str>,
+    user_id: Option<String>,
+    consent_to_contact: bool,
+) -> LoginRequest {
     LoginRequest {
         request: Some(login_request::Request::Sms(SmsLoginRequest {
             phone_number: phone.to_string(),
@@ -163,11 +173,22 @@ fn sms_login(phone: &str, code: Option<&str>, user_id: Option<String>) -> LoginR
             expires_at: None,
             device_name: None,
             user_id,
+            consent_to_contact,
         })),
     }
 }
 
 fn email_login(address: &str, code: Option<&str>, user_id: Option<String>) -> LoginRequest {
+    email_login_consent(address, code, user_id, false)
+}
+
+/// Like `email_login`, with the sign-in form's `consent_to_contact` checkbox set as given.
+fn email_login_consent(
+    address: &str,
+    code: Option<&str>,
+    user_id: Option<String>,
+    consent_to_contact: bool,
+) -> LoginRequest {
     LoginRequest {
         request: Some(login_request::Request::Email(EmailLoginRequest {
             email: address.to_string(),
@@ -175,6 +196,7 @@ fn email_login(address: &str, code: Option<&str>, user_id: Option<String>) -> Lo
             expires_at: None,
             device_name: None,
             user_id,
+            consent_to_contact,
         })),
     }
 }
@@ -555,6 +577,155 @@ mod sms_login_spec {
             let code = sms_code(&sms, 0);
             let ok = login_at(Some(&base_url), sms_login(PHONE, Some(&code), second_id), conn).unwrap();
             assert_logged_in(&ok, "sl_multi_b");
+            Ok(())
+        });
+    }
+}
+
+/// The sign-in form's consent checkbox (`consent_to_contact`): it lets a code go to a contact whose
+/// stored consent isn't granted, but consent is only recorded once that code is redeemed.
+mod login_consent_spec {
+    use super::*;
+
+    fn revoked(value: &str) -> ContactMethod {
+        contact(value, ContactConsentState::ContactConsentRevoked, true)
+    }
+
+    #[test]
+    fn email_without_the_checkbox_still_sends_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_email_off");
+            set_user_email(conn, &user, &revoked(EMAIL));
+            login_at(None, email_login_consent(EMAIL, None, None, false), conn).unwrap();
+            assert!(email_capture::sent().is_empty());
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn email_checkbox_sends_and_records_consent_only_after_the_code() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_email_on");
+            set_user_email(conn, &user, &revoked(EMAIL));
+
+            login_at(None, email_login_consent(EMAIL, None, None, true), conn).unwrap();
+            let sent = email_capture::sent();
+            assert_eq!(sent.len(), 1, "the attested one-time code is sent");
+            let code = sent[0].1.clone();
+            // Sending alone grants nothing.
+            let stored = stored_email(conn, &user);
+            assert_eq!(stored.consent_state, ContactConsentState::ContactConsentRevoked as i32);
+            assert!(stored.consent_history.is_empty());
+
+            // A wrong code grants nothing either.
+            let err = login_at(None, email_login_consent(EMAIL, Some("000000"), None, true), conn)
+                .unwrap_err();
+            assert_eq!(err.message(), "incorrect_code");
+            let stored = stored_email(conn, &user);
+            assert_eq!(stored.consent_state, ContactConsentState::ContactConsentRevoked as i32);
+
+            let response =
+                login_at(None, email_login_consent(EMAIL, Some(&code), None, true), conn).unwrap();
+            assert_logged_in(&response, "lc_email_on");
+            let stored = stored_email(conn, &user);
+            assert_eq!(stored.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert_eq!(stored.consent_history.len(), 1);
+            assert_eq!(
+                stored.consent_history[0].state,
+                ContactConsentState::ContactConsentGranted as i32
+            );
+            assert!(stored.consent_history[0].changed_at.is_some());
+            assert!(stored.verification_in_progress.is_none());
+            Ok(())
+        });
+    }
+
+    /// Redeeming a code that was sent *without* the checkbox (or phase 2 without it) records nothing.
+    #[test]
+    fn phase_two_without_the_checkbox_records_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_email_p2");
+            set_user_email(conn, &user, &revoked(EMAIL));
+            login_at(None, email_login_consent(EMAIL, None, None, true), conn).unwrap();
+            let code = email_capture::sent()[0].1.clone();
+            let response =
+                login_at(None, email_login_consent(EMAIL, Some(&code), None, false), conn).unwrap();
+            assert_logged_in(&response, "lc_email_p2");
+            let stored = stored_email(conn, &user);
+            assert_eq!(stored.consent_state, ContactConsentState::ContactConsentRevoked as i32);
+            assert!(stored.consent_history.is_empty());
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn already_granted_gets_no_duplicate_history() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_email_dup");
+            set_user_email(conn, &user, &verified(EMAIL));
+            login_at(None, email_login_consent(EMAIL, None, None, true), conn).unwrap();
+            let code = email_capture::sent()[0].1.clone();
+            login_at(None, email_login_consent(EMAIL, Some(&code), None, true), conn).unwrap();
+            assert!(stored_email(conn, &user).consent_history.is_empty());
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn sms_checkbox_sends_and_records_consent_after_the_code() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_sms_on");
+            set_user_phone(conn, &user, &revoked(PHONE));
+            let (base_url, sms) = sms_mock();
+
+            // Without the checkbox: nothing is texted.
+            login_at(Some(&base_url), sms_login_consent(PHONE, None, None, false), conn).unwrap();
+            assert_eq!(sms_count(&sms), 0);
+
+            login_at(Some(&base_url), sms_login_consent(PHONE, None, None, true), conn).unwrap();
+            assert_eq!(sms_count(&sms), 1);
+            assert_eq!(
+                stored_phone(conn, &user).consent_state,
+                ContactConsentState::ContactConsentRevoked as i32
+            );
+            let code = sms_code(&sms, 0);
+            let response =
+                login_at(Some(&base_url), sms_login_consent(PHONE, Some(&code), None, true), conn)
+                    .unwrap();
+            assert_logged_in(&response, "lc_sms_on");
+            let stored = stored_phone(conn, &user);
+            assert_eq!(stored.consent_state, ContactConsentState::ContactConsentGranted as i32);
+            assert_eq!(stored.consent_history.len(), 1);
+            Ok(())
+        });
+    }
+
+    /// An unverified contact can't be used to send (or grant anything) even with the checkbox.
+    #[test]
+    fn checkbox_does_not_reach_unverified_or_unknown_contacts() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "lc_unverified");
+            set_user_email(
+                conn,
+                &user,
+                &contact(EMAIL, ContactConsentState::ContactConsentRevoked, false),
+            );
+            for address in [EMAIL, "nobody@example.com"] {
+                login_at(None, email_login_consent(address, None, None, true), conn).unwrap();
+            }
+            assert!(email_capture::sent().is_empty());
             Ok(())
         });
     }
@@ -1721,6 +1892,7 @@ mod locking_spec {
                 user.id,
                 crate::logic::ContactKind::Phone,
                 PHONE,
+                false,
             )
             .unwrap_err();
             assert_eq!(err.message(), "contact_changed");

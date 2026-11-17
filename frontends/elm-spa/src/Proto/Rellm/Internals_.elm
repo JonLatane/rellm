@@ -5923,9 +5923,9 @@ type alias Proto__Rellm__CreateThirdPartyRefreshTokenRequest =
 
 -}
 fieldNumbersProto__Rellm__EmailLoginRequest :
-    { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+    { email : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersProto__Rellm__EmailLoginRequest =
-    { email = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5 }
+    { email = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5, consentToContact = 6 }
 
 
 {-| Default for Proto__Rellm__EmailLoginRequest. Should only be used for 'required' decoders as an initial value.
@@ -5933,7 +5933,13 @@ fieldNumbersProto__Rellm__EmailLoginRequest =
 -}
 defaultProto__Rellm__EmailLoginRequest : Proto__Rellm__EmailLoginRequest
 defaultProto__Rellm__EmailLoginRequest =
-    { email = "", code = Nothing, expiresAt = Nothing, deviceName = Nothing, userId = Nothing }
+    { email = ""
+    , code = Nothing
+    , expiresAt = Nothing
+    , deviceName = Nothing
+    , userId = Nothing
+    , consentToContact = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__EmailLoginRequest` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -5951,6 +5957,7 @@ decodeProto__Rellm__EmailLoginRequest =
             (\a r -> { r | expiresAt = a })
         , Protobuf.Decode.optional 4 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | deviceName = a })
         , Protobuf.Decode.optional 5 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | userId = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | consentToContact = a })
         ]
 
 
@@ -5970,6 +5977,7 @@ encodeProto__Rellm__EmailLoginRequest value =
           )
         , ( 4, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.deviceName )
         , ( 5, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.userId )
+        , ( 6, Protobuf.Encode.bool value.consentToContact )
         ]
 
 
@@ -5982,6 +5990,7 @@ type alias Proto__Rellm__EmailLoginRequest =
     , expiresAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , deviceName : Maybe String
     , userId : Maybe String
+    , consentToContact : Bool
     }
 
 
@@ -5989,9 +5998,9 @@ type alias Proto__Rellm__EmailLoginRequest =
 
 -}
 fieldNumbersProto__Rellm__SMSLoginRequest :
-    { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int }
+    { phoneNumber : Int, code : Int, expiresAt : Int, deviceName : Int, userId : Int, consentToContact : Int }
 fieldNumbersProto__Rellm__SMSLoginRequest =
-    { phoneNumber = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5 }
+    { phoneNumber = 1, code = 2, expiresAt = 3, deviceName = 4, userId = 5, consentToContact = 6 }
 
 
 {-| Default for Proto__Rellm__SMSLoginRequest. Should only be used for 'required' decoders as an initial value.
@@ -5999,7 +6008,13 @@ fieldNumbersProto__Rellm__SMSLoginRequest =
 -}
 defaultProto__Rellm__SMSLoginRequest : Proto__Rellm__SMSLoginRequest
 defaultProto__Rellm__SMSLoginRequest =
-    { phoneNumber = "", code = Nothing, expiresAt = Nothing, deviceName = Nothing, userId = Nothing }
+    { phoneNumber = ""
+    , code = Nothing
+    , expiresAt = Nothing
+    , deviceName = Nothing
+    , userId = Nothing
+    , consentToContact = False
+    }
 
 
 {-| Declares how to decode a `Proto__Rellm__SMSLoginRequest` from Bytes. To actually perform the conversion from Bytes, you need to use Protobuf.Decode.decode from eriktim/elm-protocol-buffers.
@@ -6017,6 +6032,7 @@ decodeProto__Rellm__SMSLoginRequest =
             (\a r -> { r | expiresAt = a })
         , Protobuf.Decode.optional 4 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | deviceName = a })
         , Protobuf.Decode.optional 5 (Protobuf.Decode.map Just Protobuf.Decode.string) (\a r -> { r | userId = a })
+        , Protobuf.Decode.optional 6 Protobuf.Decode.bool (\a r -> { r | consentToContact = a })
         ]
 
 
@@ -6036,6 +6052,7 @@ encodeProto__Rellm__SMSLoginRequest value =
           )
         , ( 4, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.deviceName )
         , ( 5, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.userId )
+        , ( 6, Protobuf.Encode.bool value.consentToContact )
         ]
 
 
@@ -6048,6 +6065,7 @@ type alias Proto__Rellm__SMSLoginRequest =
     , expiresAt : Maybe Proto.Google.Protobuf.Internals_.Proto__Google__Protobuf__Timestamp
     , deviceName : Maybe String
     , userId : Maybe String
+    , consentToContact : Bool
     }
 
 

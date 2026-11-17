@@ -1553,6 +1553,7 @@ a login.
 | expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
 | device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
 | user_id | [string](#string) | optional | Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored. |
+| consent_to_contact | [bool](#bool) |  | Same as [`SMSLoginRequest.consent_to_contact`](#rellm-SMSLoginRequest), for the account&#39;s email `ContactMethod`. |
 
 
 
@@ -1677,6 +1678,7 @@ a login.
 | expires_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | Request an expiration time for the Auth Token returned. By default it will not expire. |
 | device_name | [string](#string) | optional | (Not yet implemented.) The name of the device being used to login. |
 | user_id | [string](#string) | optional | Only needed if (unusually) more than one account has this contact method verified: picks which account to log into. Otherwise ignored. |
+| consent_to_contact | [bool](#bool) |  | The person signing in attests that they consent to being sent one-time sign-in codes by SMS (the sign-in form&#39;s consent checkbox). Send it on **both** phases. Only matters when the matched account&#39;s phone `ContactMethod.consent_state` is not `CONTACT_CONSENT_GRANTED` (they unchecked it, or replied STOP): with it set, phase 1 sends the code anyway, and phase 2 -- once the code proves control of the phone number -- records the consent (`CONTACT_CONSENT_GRANTED`, with a server-timestamped `consent_history` entry). Without it, a contact method that doesn&#39;t consent is sent nothing (the response is unchanged, see [`LoginRequest`](#rellm-LoginRequest)). Never changes consent on its own: an unverified phase 2 changes nothing, so it can&#39;t be used to grant consent for a number you don&#39;t control. |
 
 
 

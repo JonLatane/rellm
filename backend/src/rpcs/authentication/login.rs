@@ -38,6 +38,7 @@ pub fn login_at(
             request.code,
             request.expires_at,
             request.user_id,
+            request.consent_to_contact,
         ),
         Some(login_request::Request::Email(request)) => contact_login(
             base_url,
@@ -47,6 +48,7 @@ pub fn login_at(
             request.code,
             request.expires_at,
             request.user_id,
+            request.consent_to_contact,
         ),
         None => Err(Status::new(Code::InvalidArgument, "login_request_required")),
     }
@@ -128,7 +130,9 @@ fn incorrect_code() -> Status {
 
 /// Two-phase SMS/email login (see `LoginRequest`'s doc). Phase 1 (`code` unset) *always* returns
 /// the same challenge, whether or not a code was actually sent (an account must have the contact
-/// verified, consent granted, and no code sent in the last minute); phase 2 verifies the code.
+/// verified, consent granted *or attested by the request*, and no code sent in the last minute);
+/// phase 2 verifies the code and, if the request attested consent the account doesn't have yet,
+/// records it -- only then, since a valid code is the proof the requester controls the contact.
 fn contact_login(
     base_url: Option<&str>,
     conn: &mut PgPooledConnection,
@@ -137,6 +141,7 @@ fn contact_login(
     code: Option<String>,
     expires_at: Option<Timestamp>,
     requested_user_id: Option<String>,
+    consent_to_contact: bool,
 ) -> Result<RefreshTokenResponse, Status> {
     // Server-wide capability checks -- these say nothing about any particular account.
     if !authentication_feature_enabled(conn, kind.login_feature()) {
@@ -176,7 +181,7 @@ fn contact_login(
 
     match code {
         None => {
-            send_login_code(base_url, conn, kind, &value, matched);
+            send_login_code(base_url, conn, kind, &value, matched, consent_to_contact);
             Ok(RefreshTokenResponse {
                 refresh_token: None,
                 access_token: None,
@@ -193,7 +198,14 @@ fn contact_login(
             // concurrent submissions can't both redeem one code or lose attempt counts.
             let stored_value = contact.value.clone().unwrap_or_else(|| value.clone());
             let verdict = with_locked_user_contact(conn, user.id, kind, &stored_value, |_conn, contact| {
-                Ok(check_contact_code(contact, &code))
+                let verdict = check_contact_code(contact, &code);
+                // The code proved control of the contact, so the sign-in form's consent attestation
+                // can now be recorded (same bookkeeping as `UpdateUser`'s grant). Saved with the
+                // cleared code, in the same locked write.
+                if verdict == CodeVerdict::Valid && consent_to_contact {
+                    grant_consent(contact);
+                }
+                Ok(verdict)
             })?
             .unwrap_or(CodeVerdict::NotStarted);
             if verdict != CodeVerdict::Valid {
@@ -212,8 +224,9 @@ fn contact_login(
     }
 }
 
-/// Phase 1's send: only if there's a matching account whose contact consents to being messaged and
-/// has no code sent in the last minute. Every other outcome (and any send failure) is logged and
+/// Phase 1's send: only if there's a matching account whose contact consents to being messaged
+/// (stored consent, or `consent_to_contact` on this request -- a one-time attestation that is only
+/// recorded once the code is redeemed) and has no code sent in the last minute. Every other outcome (and any send failure) is logged and
 /// otherwise invisible to the caller.
 fn send_login_code(
     base_url: Option<&str>,
@@ -221,12 +234,13 @@ fn send_login_code(
     kind: ContactKind,
     value: &str,
     matched: Option<(models::User, ContactMethod)>,
+    consent_to_contact: bool,
 ) {
     let Some((user, contact)) = matched else {
         log::info!("{:?} login code requested for a contact with no verified account", kind);
         return;
     };
-    if !consent_granted(&contact) {
+    if !consent_granted(&contact) && !consent_to_contact {
         log::info!("{:?} login code not sent for user_id={}: consent not granted", kind, user.id);
         return;
     }
@@ -247,7 +261,7 @@ fn send_login_code(
     }
     // Send to the stored spelling of the value (case preserved for emails).
     let send_to = contact.value.clone().unwrap_or_else(|| value.to_string());
-    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &send_to) {
+    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &send_to, consent_to_contact) {
         log::warn!(
             "{:?} login code could not be sent for user_id={}: {}",
             kind,

@@ -2055,6 +2055,7 @@ sendContactLogin req withCode model =
                             , expiresAt = Nothing
                             , deviceName = Nothing
                             , userId = Nothing
+                            , consentToContact = state.loginConsent
                             }
                         )
 
@@ -2066,6 +2067,7 @@ sendContactLogin req withCode model =
                             , expiresAt = Nothing
                             , deviceName = Nothing
                             , userId = Nothing
+                            , consentToContact = state.loginConsent
                             }
                         )
 

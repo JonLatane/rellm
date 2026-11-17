@@ -302,7 +302,18 @@ Two requests. Phase 1 (no `code`) *always* returns the same `VerificationChallen
 `sent_to` echoing the requested value. A code is only actually sent if an account has that contact
 verified, consent granted, and no code was sent within the last minute -- every other case (unknown
 contact, unverified contact, revoked consent, cooldown, even a provider send failure) is logged
-server-side only. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
+server-side only.
+
+**Consent at sign-in.** The sign-in form shows a consent checkbox (`consent_to_contact` on
+`SMSLoginRequest`/`EmailLoginRequest`, sent on both phases). It only matters when the account's stored
+`consent_state` isn't `CONTACT_CONSENT_GRANTED` (the user unchecked it, or replied STOP): with it
+checked, phase 1 sends the one-time code anyway; with it unchecked that account is sent nothing, as
+above. Consent is **recorded only when the code is redeemed** (phase 2 valid *and* the box checked:
+`consent_state` -> `GRANTED` plus a server-timestamped `consent_history` entry, no duplicate if already
+granted) -- redeeming the code proves control of the contact, so an unauthenticated request can't flip
+someone else's consent. A wrong/expired code, or phase 2 without the box, records nothing. A number
+that replied STOP is still blocked by the SMS provider until it replies START, so that user may
+not receive the code. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
 such account, no code outstanding, wrong, expired, or attempt-exhausted) for the same reason; the
 state is still updated server-side (guess counted; code cleared on expiry, burned on exhaustion). Known
 limits of the anti-enumeration: the SMS/email send makes phase 1 slower for a real account than for

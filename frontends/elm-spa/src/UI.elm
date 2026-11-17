@@ -4101,16 +4101,22 @@ rellmAddAccountServerForm shared currentRoute =
             )
         , collapsible (contactMode && contactState.loginChallenge == Nothing)
             []
-            (ContactAuthView.contactField Shared.AccountsPanelMsg
-                contactState.method
-                contactState.contact
-                submitting
-                (if ContactAuth.loginContactInvalid contactState then
-                    AccountsPanel.NoOp
+            (div []
+                [ ContactAuthView.contactField Shared.AccountsPanelMsg
+                    contactState.method
+                    contactState.contact
+                    submitting
+                    (if ContactAuth.loginContactInvalid contactState then
+                        AccountsPanel.NoOp
 
-                 else
-                    AccountsPanel.SendLoginCodeClicked
-                )
+                     else
+                        AccountsPanel.SendLoginCodeClicked
+                    )
+                , ContactAuthView.loginConsentCheckbox Shared.AccountsPanelMsg
+                    contactState.method
+                    contactState.loginConsent
+                    submitting
+                ]
             )
         , collapsible (contactMode && contactState.loginChallenge /= Nothing)
             []

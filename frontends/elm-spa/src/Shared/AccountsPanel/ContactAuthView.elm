@@ -2,6 +2,7 @@ module Shared.AccountsPanel.ContactAuthView exposing
     ( codeStep
     , contactField
     , createContactFields
+    , loginConsentCheckbox
     , loginMethodChooser
     )
 
@@ -124,6 +125,39 @@ contactField toMsg method current isDisabled enterMsg =
                     ]
                 , p [ class "contact-auth-hint" ] [ text "Include your country code, like +19195551234." ]
                 ]
+
+
+{-| The sign-in form's consent checkbox, under the phone/email field. Checking it is what lets the
+server message a contact method whose stored consent was revoked, and it is recorded once the code is
+redeemed -- see `SMSLoginRequest.consent_to_contact`. Required before the first phase
+(`ContactAuth.loginContactInvalid`).
+-}
+loginConsentCheckbox : (AccountsPanel.Msg -> msg) -> LoginMethod -> Bool -> Bool -> Html msg
+loginConsentCheckbox toMsg method isChecked isDisabled =
+    label [ class "create-contact-consent login-contact-consent" ]
+        [ input
+            [ type_ "checkbox"
+            , checked isChecked
+            , disabled isDisabled
+            , onClick (toMsg (AccountsPanel.ContactAuthMsg (ContactAuth.LoginConsentToggled (not isChecked))))
+            ]
+            []
+        , text
+            (" "
+                ++ (case method of
+                        EmailMethod ->
+                            "I agree to receive a one-time sign-in code by email."
+
+                        _ ->
+                            "I agree to receive a one-time sign-in code by text message. " ++ smsRatesNote
+                   )
+            )
+        ]
+
+
+smsRatesNote : String
+smsRatesNote =
+    "Message and data rates may apply. Reply STOP to opt out."
 
 
 {-| The second step of either flow: "We sent a code to ...", a 6-digit code field per code the
@@ -301,12 +335,14 @@ createContactFields toMsg config =
 -}
 consentText : Bool -> Bool -> String
 consentText phoneTyped emailTyped =
+    -- What's recorded is a general consent to be contacted at that phone/email (the same one the
+    -- profile's checkbox edits), and it covers the sign-in codes sent later too -- say so.
     case ( phoneTyped, emailTyped ) of
         ( True, True ) ->
-            "I agree to receive a one-time verification text and email."
+            "I agree to receive verification and sign-in codes by text message and email. " ++ smsRatesNote
 
         ( True, False ) ->
-            "I agree to receive a one-time verification text message."
+            "I agree to receive verification and sign-in codes by text message. " ++ smsRatesNote
 
         _ ->
-            "I agree to receive a one-time verification email."
+            "I agree to receive verification and sign-in codes by email."
