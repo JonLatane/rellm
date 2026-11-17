@@ -687,9 +687,9 @@ fn reserve_send(
             // The consent row, written once the send is certain to be reserved (same transaction as
             // the ledger row). For a pending signup it must come AFTER the pending row is upserted:
             // `link_signup_consents_to_user` claims rows given at/after that row's `created_at`.
-            let record_consent = |conn: &mut PgPooledConnection, user_id: Option<i64>| -> Result<(), Status> {
+            let record_consent = |conn: &mut PgPooledConnection, user_id: Option<i64>, at: SystemTime| -> Result<(), Status> {
                 match consent {
-                    Some(flow) => models::record_contact_consent(key, flow, user_id, conn),
+                    Some(flow) => models::record_contact_consent(key, flow, user_id, at, conn),
                     None => Ok(()),
                 }
             };
@@ -707,7 +707,7 @@ fn reserve_send(
                     }
                     limits(conn)?;
                     models::upsert_pending_contact_verification(key, &hash_code(key, code), conn)?;
-                    record_consent(conn, None)?;
+                    record_consent(conn, None, SystemTime::now())?;
                     Ok((Previous::Pending(previous), None))
                 })(),
                 SendTarget::UserContact { user_id, kind, attested_consent } => {
@@ -726,12 +726,15 @@ fn reserve_send(
                             ));
                         }
                         limits(conn)?;
-                        record_consent(conn, Some(user_id))?;
+                        // One instant for both: the consent row is findable from the code's start
+                        // time at redemption (`models::login_consent_for_code`).
+                        let sent_at = SystemTime::now();
+                        record_consent(conn, Some(user_id), sent_at)?;
                         previous = contact.verification_in_progress.clone();
                         contact.supported_by_server = true;
                         contact.verification_in_progress = Some(ContactMethodVerification {
                             verification_code: code.to_string(),
-                            verification_started_at: Some(SystemTime::now().to_proto()),
+                            verification_started_at: Some(sent_at.to_proto()),
                             attempts: 0,
                         });
                         Ok(contact.clone())

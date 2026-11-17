@@ -2106,6 +2106,83 @@ mod sign_in_method_spec {
     }
 
     #[test]
+    fn resetting_to_an_unusable_password_does_not_unlock_the_sign_in_contact() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = passwordless_account(conn, "si_badpw");
+            for bad in ["", "short"] {
+                let err = crate::rpcs::reset_password(
+                    ResetPasswordRequest { user_id: None, password: bad.to_string() },
+                    &user,
+                    conn,
+                )
+                .unwrap_err();
+                assert_eq!(err.code(), tonic::Code::InvalidArgument);
+            }
+            assert!(!reload(conn, &user).has_password);
+            let remove = update_phone(conn, &user, |u| u.phone = None);
+            assert_eq!(remove.unwrap_err().message(), "password_required_for_sign_in");
+            Ok(())
+        });
+    }
+
+    /// A code can't be redeemed once its contact method has been taken off sign-in.
+    #[test]
+    fn a_code_cannot_be_redeemed_after_sign_in_was_switched_off() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "si_race");
+            set_user_email(conn, &user, &verified(EMAIL));
+            login_at(None, email_login(EMAIL, None, None), conn).unwrap();
+            let code = email_capture::sent()[0].1.clone();
+            // Sign-in is switched off after the code went out (the code itself stays stored).
+            let mut off = stored_email(conn, &user);
+            off.use_for_sign_in = Some(false);
+            set_user_email(conn, &user, &off);
+            let err = login_at(None, email_login(EMAIL, Some(&code), None), conn).unwrap_err();
+            assert_eq!(err.message(), "incorrect_code");
+            Ok(())
+        });
+    }
+
+    /// The copied consent time belongs to the code being redeemed: a code sent without the checkbox,
+    /// redeemed with it later, gets the current time -- not an older attempt's.
+    #[test]
+    fn the_copied_consent_time_is_tied_to_the_code_being_redeemed() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "si_code_time");
+            set_user_email(conn, &user, &verified(EMAIL));
+            // An earlier attempt, with the checkbox (consent row at t0), redeemed.
+            login_at(None, email_login_consent(EMAIL, None, None, true), conn).unwrap();
+            let first = email_capture::sent()[0].1.clone();
+            login_at(None, email_login_consent(EMAIL, Some(&first), None, true), conn).unwrap();
+            let first_row = consent_rows(conn, EMAIL)[0].consented_at;
+            std::thread::sleep(Duration::from_millis(1100));
+            // A new code, sent without the checkbox (stored consent still granted)...
+            login_at(None, email_login(EMAIL, None, None), conn).unwrap();
+            let second = email_capture::sent()[1].1.clone();
+            assert_eq!(consent_rows(conn, EMAIL).len(), 1, "no checkbox, no new row");
+            // ...consent is revoked in between, then the code is redeemed with the box checked.
+            let mut revoked = stored_email(conn, &user);
+            revoked.consent_state = ContactConsentState::ContactConsentRevoked as i32;
+            set_user_email(conn, &user, &revoked);
+            login_at(None, email_login_consent(EMAIL, Some(&second), None, true), conn).unwrap();
+            let history = stored_email(conn, &user).consent_history;
+            let granted_at: SystemTime = history.last().unwrap().changed_at.as_ref().unwrap().to_db();
+            let secs = |t: SystemTime| t.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+            assert!(
+                secs(granted_at) > secs(first_row),
+                "must not reuse the earlier attempt's consent time"
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
     fn signing_in_copies_the_time_the_consent_was_given_onto_the_contact() {
         let mut conn = test_conn();
         conn.test_transaction::<_, tonic::Status, _>(|conn| {

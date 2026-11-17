@@ -33,6 +33,9 @@ pub fn reset_password(
     };
     log::info!("self_delete: {}, admin: {}", self_delete, admin);
 
+    // A password that sign-in would reject mustn't count as "has a password" -- setting one is what
+    // unlocks a passwordless account's sign-in contact methods (see `update_user`).
+    validate_password(&request.password)?;
     let hashed_password = hash(&request.password, DEFAULT_COST).unwrap();
 
     let db_result = update(users::table.find(user_id))

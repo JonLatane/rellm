@@ -4160,7 +4160,21 @@ updateInner shared msg model =
                     ( model, Effect.none )
 
         GotPasswordResetSaveResult (Ok ( maybeAccountsPanelMsg, _ )) ->
-            ( { model | passwordResetEdit = Nothing }, accountsPanelEffect maybeAccountsPanelMsg )
+            -- Setting a password is what unlocks a passwordless account's sign-in contact methods
+            -- (`Components.ContactSignIn.locked`), so reflect it right away rather than leaving Edit /
+            -- Delete / the sign-in checkbox disabled until the next reload.
+            ( { model
+                | passwordResetEdit = Nothing
+                , resolver =
+                    case model.resolver.status of
+                        Resolver.Loaded user ->
+                            withResolvedUser { user | hasPassword = True } model.resolver
+
+                        _ ->
+                            model.resolver
+              }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
 
         GotPasswordResetSaveResult (Err err) ->
             ( { model

@@ -201,16 +201,21 @@ fn contact_login(
             // Judge + record the guess under a lock on the freshly reloaded contact, so two
             // concurrent submissions can't both redeem one code or lose attempt counts.
             let stored_value = contact.value.clone().unwrap_or_else(|| value.clone());
-            // When the sign-in form's consent was given (copied onto the account on redemption).
-            let consented_at = models::latest_contact_consent_at(
-                &value,
-                models::ConsentFlow::Login,
-                Some(user.id),
-                None,
-                conn,
-            )
-            .unwrap_or_else(SystemTime::now);
-            let verdict = with_locked_user_contact(conn, user.id, kind, &stored_value, |_conn, contact| {
+            let verdict = with_locked_user_contact(conn, user.id, kind, &stored_value, |conn, contact| {
+                // Re-checked on the freshly reloaded contact: sign-in may have been switched off
+                // since the lookup above, and a disabled contact mustn't redeem a code.
+                if contact.use_for_sign_in != Some(true) {
+                    return Ok(CodeVerdict::NotStarted);
+                }
+                // When the consent behind the code being redeemed was given -- looked up from that
+                // code's send time, so an older attempt's consent can't be copied. A code sent
+                // without the checkbox (consent attested only now, in phase 2) gets the current time.
+                let consented_at = contact
+                    .verification_in_progress
+                    .as_ref()
+                    .and_then(|v| v.verification_started_at.as_ref())
+                    .and_then(|sent| models::login_consent_for_code(&value, user.id, sent.to_db(), conn))
+                    .unwrap_or_else(SystemTime::now);
                 let verdict = check_contact_code(contact, &code);
                 // The code proved control of the contact, so the sign-in form's consent attestation
                 // can now be recorded (same bookkeeping as `UpdateUser`'s grant). Saved with the
