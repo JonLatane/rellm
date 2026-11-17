@@ -726,9 +726,18 @@ fn reserve_send(
                             ));
                         }
                         limits(conn)?;
-                        // One instant for both: the consent row is findable from the code's start
-                        // time at redemption (`models::login_consent_for_code`).
-                        let sent_at = SystemTime::now();
+                        // One instant for both, whole seconds (all a stored `Timestamp` keeps): the
+                        // consent row is found again by *equality* with the code's start time at
+                        // redemption (`models::login_consent_for_code`), so only the consent that
+                        // went with this very code can match -- no time window to overlap an older
+                        // attempt (and the resend cooldown keeps two sends out of one second).
+                        let sent_at = SystemTime::UNIX_EPOCH
+                            + Duration::from_secs(
+                                SystemTime::now()
+                                    .duration_since(SystemTime::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0),
+                            );
                         record_consent(conn, Some(user_id), sent_at)?;
                         previous = contact.verification_in_progress.clone();
                         contact.supported_by_server = true;

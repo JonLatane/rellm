@@ -282,27 +282,21 @@ pub fn latest_contact_consent_at(
         .flatten()
 }
 
-/// The sign-in consent recorded when the code that was sent at `code_sent_at` (a
-/// `ContactMethodVerification.verification_started_at`, which only has whole seconds) was reserved --
-/// `None` if that code was sent without the checkbox. Ties the consent time copied onto the account
-/// to the code being redeemed rather than to some earlier sign-in attempt.
+/// The sign-in consent recorded together with the code whose `verification_started_at` is
+/// `code_sent_at` -- `None` if that code was sent without the checkbox. The reservation writes the
+/// consent row with exactly the instant it stamps on the code (whole seconds), so this is an
+/// equality match, not a time window: an older attempt's consent can never be mistaken for it.
 pub fn login_consent_for_code(
     contact_value: &str,
     user_id: i64,
     code_sent_at: SystemTime,
     conn: &mut PgPooledConnection,
 ) -> Option<SystemTime> {
-    let secs = code_sent_at
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .ok()?
-        .as_secs();
-    let from = SystemTime::UNIX_EPOCH + Duration::from_secs(secs);
     contact_consents::table
         .filter(contact_consents::contact_value.eq(contact_value.to_lowercase()))
         .filter(contact_consents::flow.eq(ConsentFlow::Login.as_str()))
         .filter(contact_consents::user_id.eq(user_id))
-        .filter(contact_consents::consented_at.ge(from))
-        .filter(contact_consents::consented_at.lt(from + Duration::from_secs(1)))
+        .filter(contact_consents::consented_at.eq(code_sent_at))
         .select(diesel::dsl::max(contact_consents::consented_at))
         .first::<Option<SystemTime>>(conn)
         .ok()
