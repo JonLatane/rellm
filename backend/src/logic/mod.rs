@@ -46,3 +46,5 @@ pub mod subdomains;
 
 pub(crate) use contact_methods::{bird_sms, telnyx_sms, twilio_sms};
 pub(crate) use market::stripe_payments;
+
+pub mod embeddings;

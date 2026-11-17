@@ -63,6 +63,12 @@ message ServerConfiguration {
   // here just to check -- see `rellm.proto`'s own "Federated Markets" doc section.
   MarketSettings market_settings = 25;
 
+  // Search behavior across Posts, Events, Media and People/profiles -- see
+  // [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search
+  // on this server is semantically ranked). Unset on read never happens: servers that predate this
+  // field report the default (`semantic_search_enabled: true`).
+  SearchSettings search_settings = 28;
+
   // If set, enables External CDN support for the server. This means that the
   // non-secure HTTP server (on port 80) will *not* redirect to the secure server,
   // and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -269,7 +275,7 @@ message ClusterConductorState {
   repeated ClusterResourceLock locks = 1;
 
   // How many distinct namespaces may concurrently hold each `ClusterResource`'s lock - e.g. only
-  // one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
+  // one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
   // across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here
   // - including on a cluster that's never had `ConfigureServer` touch `limits` at all - defaults
   // to `1` (see `ClusterTab.elm`'s matching client-side default, shown/edited there as "Browser
@@ -345,6 +351,8 @@ enum ClusterResource {
   CLUSTER_RESOURCE_BROWSER = 0;
   CLUSTER_RESOURCE_FFMPEG = 1;
   CLUSTER_RESOURCE_IMAGEMAGICK = 2;
+  // 3 was `CLUSTER_RESOURCE_EMBEDDINGS`: embedding now happens only in the cluster's model service, not in jobs.
+  reserved 3;
 }
 
 // Useful for setting your Rellm instance up to run underneath a CDN.
@@ -498,6 +506,60 @@ message MarketSettings {
   // "Stripe is not configured" message) without ever exposing `StripeConfig` itself, which stays
   // admin-only.
   bool stripe_configured = 2;
+}
+
+// Search settings for a server. Edited on the Server Information page's Settings tab.
+message SearchSettings {
+  // Whether this server builds and uses text embeddings for search. Defaults to `true`.
+  //
+  // When enabled (and the cluster's embedding service is deployed -- see `embedding_service_available`):
+  // - the `generate_embeddings` background job asks the cluster's embedding service to embed Posts
+  //   (`post_embeddings`), Events (`event_embeddings` -- the Event's Post plus its Occasions'
+  //   times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every
+  //   embedding is made from the very same text Postgres full-text search indexes.
+  // - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
+  //   consider semantically similar results (not just prefix matches) and rerank by fusing the
+  //   full-text rank with embedding similarity.
+  //
+  // Servers and jobs never load an embedding model themselves. When disabled, or when no embedding
+  // service is reachable, the job does nothing and search is plain Postgres full-text search. Existing
+  // embeddings are kept (re-enabling resumes where it left off).
+  bool semantic_search_enabled = 1;
+
+  // The `EmbeddingModel.id` the cluster's embedding service runs (empty if it can't be reached or is
+  // not deployed). Read-only: never a setting, ignored by `ConfigureServer`. Switching models means
+  // redeploying the service; every server then re-embeds in the background, and until a row has been
+  // redone it simply isn't a semantic candidate (full-text search still finds it).
+  string embedding_model = 2;
+
+  // The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`.
+  repeated EmbeddingModel available_models = 3;
+
+  // Always true now (kept for older clients): the model is chosen by the cluster's embedding service.
+  bool model_chosen_by_cluster = 4;
+
+  // Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When
+  // false, semantic search can't work no matter what `semantic_search_enabled` says. Read-only.
+  bool embedding_service_available = 5;
+}
+
+// One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.
+message EmbeddingModel {
+  // Stable identifier, e.g. `multilingual-e5-small`.
+  string id = 1;
+  // Display name.
+  string name = 2;
+  // What it's good at and what it costs, for the picker.
+  string description = 3;
+  // Vector size.
+  uint32 dimensions = 4;
+  // Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI).
+  uint32 download_megabytes = 5;
+  // Whether it understands languages other than English.
+  bool multilingual = 6;
+  // Approximate resident memory with the model loaded, in MB -- the server holds one copy and the
+  // `generate_embeddings` job another while it runs. The number to check on small hardware.
+  uint32 memory_megabytes = 7;
 }
 
 // Settings for a feature (e.g. People, Groups, Posts, Events, Media).

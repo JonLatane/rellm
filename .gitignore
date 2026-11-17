@@ -23,3 +23,4 @@
 # Postgres dumps from deploys/Makefile's dump_backend_postgres/upgrade_backend_postgres. Contain
 # real user data.
 /deploys/backups/
+/backend/src/internal_protos/rellm_internal.rs

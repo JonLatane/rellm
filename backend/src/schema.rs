@@ -84,6 +84,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    event_embeddings (event_id) {
+        event_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     events (post_id) {
         post_id -> Int8,
         info -> Jsonb,
@@ -275,6 +286,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    media_embeddings (media_id) {
+        media_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     media_licenses (id) {
         id -> Int8,
         media_id -> Int8,
@@ -284,6 +306,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(media_embeddings -> media (media_id));
 diesel::joinable!(media_licenses -> media (media_id));
 diesel::joinable!(media_licenses -> users (user_id));
 
@@ -344,6 +367,17 @@ diesel::table! {
         id -> Int8,
         sorted_user_ids -> Array<Nullable<Int8>>,
         created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    post_embeddings (post_id) {
+        post_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
     }
 }
 
@@ -436,6 +470,7 @@ diesel::table! {
         stalwart_config -> Nullable<Jsonb>,
         custom_css_configuration -> Nullable<Jsonb>,
         custom_css -> Nullable<Text>,
+        search_settings -> Nullable<Jsonb>,
     }
 }
 
@@ -494,6 +529,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_profile_embeddings (user_id) {
+        user_id -> Int8,
+        model -> Varchar,
+        document_hash -> Int8,
+        embedding -> Nullable<Bytea>,
+        embedded_at -> Timestamp,
+        checked_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     user_refresh_tokens (id) {
         id -> Int8,
         user_id -> Int8,
@@ -546,6 +592,7 @@ diesel::joinable!(occasion_sync_destinations -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 diesel::joinable!(occasions -> events (event_id));
 diesel::joinable!(occasions -> posts (post_id));
+diesel::joinable!(event_embeddings -> events (event_id));
 diesel::joinable!(events -> posts (post_id));
 diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
 diesel::joinable!(federated_accounts -> users (user_id));
@@ -570,6 +617,7 @@ diesel::joinable!(message_recipients -> messages (message_id));
 diesel::joinable!(message_recipients -> users (user_id));
 diesel::joinable!(messages -> messaging_groups (messaging_group_id));
 diesel::joinable!(messages -> users (from_user_id));
+diesel::joinable!(post_embeddings -> posts (post_id));
 diesel::joinable!(post_sync_destinations -> posts (post_id));
 diesel::joinable!(post_sync_destinations -> sync_destinations (sync_destination_id));
 diesel::joinable!(posts -> sync_sources (sync_source_id));
@@ -581,6 +629,7 @@ diesel::joinable!(user_access_tokens -> user_refresh_tokens (refresh_token_id));
 diesel::joinable!(user_devices -> users (user_id));
 diesel::joinable!(user_posts -> posts (post_id));
 diesel::joinable!(user_posts -> users (user_id));
+diesel::joinable!(user_profile_embeddings -> users (user_id));
 diesel::joinable!(user_refresh_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -589,6 +638,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     rsvps,
     occasion_sync_destinations,
     occasions,
+    event_embeddings,
     events,
     federated_accounts,
     federated_profiles,
@@ -604,12 +654,14 @@ diesel::allow_tables_to_appear_in_same_query!(
     market_subscriptions,
     media,
     media_filter,
+    media_embeddings,
     media_licenses,
     memberships,
     message_reads,
     message_recipients,
     messages,
     messaging_groups,
+    post_embeddings,
     post_sync_destinations,
     posts,
     push_subscriptions,
@@ -619,6 +671,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_access_tokens,
     user_devices,
     user_posts,
+    user_profile_embeddings,
     user_refresh_tokens,
     users,
 );

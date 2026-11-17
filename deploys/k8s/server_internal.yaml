@@ -56,6 +56,32 @@ spec:
         - image: docker.io/jonlatane/rellm:0.5.553
           name: rellm
           env:
+          # Semantic search (optional): these keys of the namespace's `rellm-embedding` Secret exist only after
+          # `rellm deploy create_backend_embedding` (see SEMANTIC_SEARCH.md); without them search is plain full-text.
+            - name: RELLM_EMBEDDING_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-url
+                  optional: true
+            - name: RELLM_EMBEDDING_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-secret
+                  optional: true
+            - name: RELLM_VECTOR_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: vector-service-url
+                  optional: true
+            - name: RELLM_VECTOR_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: vector-service-secret
+                  optional: true
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -154,6 +180,20 @@ spec:
             - bash
             - /opt/background_jobs.sh
           env:
+          # Semantic search (optional): these keys of the namespace's `rellm-embedding` Secret exist only after
+          # `rellm deploy create_backend_embedding` (see SEMANTIC_SEARCH.md); without them search is plain full-text.
+            - name: RELLM_EMBEDDING_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-url
+                  optional: true
+            - name: RELLM_EMBEDDING_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-secret
+                  optional: true
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
