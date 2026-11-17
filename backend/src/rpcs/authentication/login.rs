@@ -261,12 +261,21 @@ fn send_login_code(
     }
     // Send to the stored spelling of the value (case preserved for emails).
     let send_to = contact.value.clone().unwrap_or_else(|| value.to_string());
-    if let Err(e) = begin_user_contact_verification(base_url, conn, user.id, kind, &send_to, consent_to_contact) {
-        log::warn!(
+    match begin_user_contact_verification(base_url, conn, user.id, kind, &send_to, consent_to_contact) {
+        Ok(_) => {
+            // The sign-in form's checkbox is what this message went out on (and it only reaches
+            // the account's own history once the code is redeemed): keep evidence of it now.
+            if consent_to_contact {
+                if let Err(e) = models::record_contact_consent(value, models::ConsentFlow::Login, Some(user.id), conn) {
+                    log::error!("Failed to record sign-in consent for user_id={}: {}", user.id, e.message());
+                }
+            }
+        }
+        Err(e) => log::warn!(
             "{:?} login code could not be sent for user_id={}: {}",
             kind,
             user.id,
             e.message()
-        );
+        ),
     }
 }

@@ -313,7 +313,17 @@ above. Consent is **recorded only when the code is redeemed** (phase 2 valid *an
 granted) -- redeeming the code proves control of the contact, so an unauthenticated request can't flip
 someone else's consent. A wrong/expired code, or phase 2 without the box, records nothing. A number
 that replied STOP is still blocked by the SMS provider until it replies START, so that user may
-not receive the code. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
+not receive the code.
+
+**Evidence of consent (`contact_consents`).** Consent on these forms is given before it can live on a
+`ContactMethod.consent_history` (at sign-up no account exists yet, and may never; at sign-in it is only
+copied onto the account once the code is redeemed). So every time a code is actually *sent* on the
+strength of a checkbox, an append-only `contact_consents` row is written: normalized contact value,
+`flow` (`create_account`/`login`), `user_id` and `consented_at`. Sign-in rows carry the matched account;
+a sign-up row has no `user_id` until the account is created (then it is tied to it, no second row), and
+stays without one if the signup is abandoned. Nothing is written when no message is sent. Unlike the
+hourly send ledger, these rows are kept indefinitely (the `user_id` is nulled if the account is
+deleted); they hold the phone/email, so treat them as PII. Phase 2 (with `code`) fails with `incorrect_code` in *every* failure case (no
 such account, no code outstanding, wrong, expired, or attempt-exhausted) for the same reason; the
 state is still updated server-side (guess counted; code cleared on expiry, burned on exhaustion). Known
 limits of the anti-enumeration: the SMS/email send makes phase 1 slower for a real account than for

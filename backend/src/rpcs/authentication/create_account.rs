@@ -233,6 +233,9 @@ fn send_codes(
             SendTarget::Pending,
             Some(MAX_PENDING_SENDS_PER_HOUR),
         )?;
+        // The code went out on the strength of the consent checkbox; keep evidence of it even if
+        // the signup is never completed (it is tied to the account if it is).
+        models::record_contact_consent(&c.value, models::ConsentFlow::CreateAccount, None, conn)?;
     }
 
     Ok(RefreshTokenResponse {
@@ -421,6 +424,8 @@ fn insert_account(
             ))
             .returning(models::USER_COLUMNS)
             .get_result::<models::User>(conn)?;
+        let verified_values: Vec<String> = verified.iter().map(|c| c.value.clone()).collect();
+        models::link_signup_consents_to_user(&verified_values, user.id, conn)?;
         for c in &verified {
             delete(
                 crate::schema::pending_contact_verifications::table.filter(

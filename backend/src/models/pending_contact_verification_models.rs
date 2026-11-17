@@ -10,7 +10,7 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::schema::{contact_verification_sends, pending_contact_verifications};
+use crate::schema::{contact_consents, contact_verification_sends, pending_contact_verifications};
 
 #[derive(Debug, Queryable, Identifiable, Clone)]
 #[diesel(table_name = pending_contact_verifications)]
@@ -181,4 +181,67 @@ pub fn delete_expired_pending_contact_verifications(
     )
     .execute(conn)
     .map_err(|e| db_error("delete expired", e))
+}
+
+/// The sign-up / sign-in form a `contact_consents` row was given on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsentFlow {
+    CreateAccount,
+    Login,
+}
+
+impl ConsentFlow {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConsentFlow::CreateAccount => "create_account",
+            ConsentFlow::Login => "login",
+        }
+    }
+}
+
+#[derive(Debug, Queryable, Clone)]
+#[diesel(table_name = contact_consents)]
+pub struct ContactConsentRecord {
+    pub id: i64,
+    pub contact_value: String,
+    pub flow: String,
+    pub user_id: Option<i64>,
+    pub consented_at: SystemTime,
+}
+
+/// Appends a `contact_consents` row: the person using the `flow` form consented to be messaged at
+/// `contact_value` (stored lowercased, like the send ledger). `user_id` if the account is known.
+pub fn record_contact_consent(
+    contact_value: &str,
+    flow: ConsentFlow,
+    user_id: Option<i64>,
+    conn: &mut PgPooledConnection,
+) -> Result<(), Status> {
+    insert_into(contact_consents::table)
+        .values((
+            contact_consents::contact_value.eq(contact_value.to_lowercase()),
+            contact_consents::flow.eq(flow.as_str()),
+            contact_consents::user_id.eq(user_id),
+        ))
+        .execute(conn)
+        .map(|_| ())
+        .map_err(|e| db_error("record consent for", e))
+}
+
+/// Ties a just-created account to the sign-up consents recorded for the contact values it verified
+/// (rows still without an account).
+pub fn link_signup_consents_to_user(
+    contact_values: &[String],
+    user_id: i64,
+    conn: &mut diesel::PgConnection,
+) -> QueryResult<usize> {
+    let values: Vec<String> = contact_values.iter().map(|v| v.to_lowercase()).collect();
+    update(
+        contact_consents::table
+            .filter(contact_consents::contact_value.eq_any(values))
+            .filter(contact_consents::flow.eq(ConsentFlow::CreateAccount.as_str()))
+            .filter(contact_consents::user_id.is_null()),
+    )
+    .set(contact_consents::user_id.eq(user_id))
+    .execute(conn)
 }

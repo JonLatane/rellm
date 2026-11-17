@@ -36,6 +36,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    contact_consents (id) {
+        id -> Int8,
+        contact_value -> Varchar,
+        flow -> Varchar,
+        user_id -> Nullable<Int8>,
+        consented_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     contact_verification_sends (id) {
         id -> Int8,
         contact_value -> Varchar,
@@ -658,6 +668,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     rsvps,
     occasion_sync_destinations,
     occasions,
+    contact_consents,
     contact_verification_sends,
     event_embeddings,
     events,

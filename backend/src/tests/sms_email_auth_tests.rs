@@ -16,7 +16,7 @@ use crate::protos::*;
 use crate::rpcs::{
     create_account_at, login_at, start_contact_method_verification_at, verify_contact_method,
 };
-use crate::schema::{pending_contact_verifications, users};
+use crate::schema::{contact_consents, pending_contact_verifications, users};
 use crate::tests::factories::*;
 
 /// A fresh random password for each use -- never a literal (and never printed; see
@@ -137,6 +137,17 @@ fn set_user_email(
         .returning(models::USER_COLUMNS)
         .get_result::<models::User>(conn)
         .expect("failed to set test user email")
+}
+
+fn consent_rows(
+    conn: &mut crate::db_connection::PgPooledConnection,
+    value: &str,
+) -> Vec<models::ContactConsentRecord> {
+    contact_consents::table
+        .filter(contact_consents::contact_value.eq(value.to_lowercase()))
+        .order(contact_consents::id.asc())
+        .load(conn)
+        .unwrap()
 }
 
 fn reload(conn: &mut crate::db_connection::PgPooledConnection, user: &models::User) -> models::User {
@@ -726,6 +737,108 @@ mod login_consent_spec {
                 login_at(None, email_login_consent(address, None, None, true), conn).unwrap();
             }
             assert!(email_capture::sent().is_empty());
+            Ok(())
+        });
+    }
+}
+
+/// `contact_consents`: evidence of consent given on the sign-up / sign-in forms at send time.
+mod consent_record_spec {
+    use super::*;
+
+    #[test]
+    fn sign_in_checkbox_is_recorded_when_the_code_is_sent_even_if_never_redeemed() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let user = create_user(conn, "cr_login");
+            set_user_email(
+                conn,
+                &user,
+                &contact(EMAIL, ContactConsentState::ContactConsentRevoked, true),
+            );
+            // Unchecked: nothing sent, nothing recorded.
+            login_at(None, email_login_consent(EMAIL, None, None, false), conn).unwrap();
+            assert!(consent_rows(conn, EMAIL).is_empty());
+
+            login_at(None, email_login_consent(EMAIL, None, None, true), conn).unwrap();
+            let rows = consent_rows(conn, EMAIL);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].flow, "login");
+            assert_eq!(rows[0].user_id, Some(user.id));
+            // The account itself still has no consent until the code is redeemed.
+            assert_eq!(
+                stored_email(conn, &user).consent_state,
+                ContactConsentState::ContactConsentRevoked as i32
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn sign_in_records_nothing_when_nothing_is_sent() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            // Unknown and unverified contacts get no send, so no consent row.
+            let user = create_user(conn, "cr_unverified");
+            set_user_email(
+                conn,
+                &user,
+                &contact(EMAIL, ContactConsentState::ContactConsentRevoked, false),
+            );
+            for address in [EMAIL, "nobody@example.com"] {
+                login_at(None, email_login_consent(address, None, None, true), conn).unwrap();
+                assert!(consent_rows(conn, address).is_empty());
+            }
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn sign_up_consent_is_recorded_at_send_time_and_tied_to_the_account_on_creation() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (base_url, sms) = sms_mock();
+            let request = account_request("cr_signup", &test_password(), Some(granted(PHONE)), None);
+
+            create_account_at(Some(&base_url), request.clone(), conn).unwrap();
+            let rows = consent_rows(conn, PHONE);
+            assert_eq!(rows.len(), 1, "recorded though no account exists yet");
+            assert_eq!(rows[0].flow, "create_account");
+            assert_eq!(rows[0].user_id, None);
+
+            let code = sms_code(&sms, 0);
+            let done = create_account_at(
+                Some(&base_url),
+                CreateAccountRequest { phone_verification_code: Some(code), ..request },
+                conn,
+            )
+            .unwrap();
+            let user_id = done.user.as_ref().unwrap().id.to_db_id_or_err("id").unwrap();
+            let rows = consent_rows(conn, PHONE);
+            assert_eq!(rows.len(), 1, "completing the signup adds no second row");
+            assert_eq!(rows[0].user_id, Some(user_id));
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn sign_up_without_consent_records_nothing() {
+        let mut conn = test_conn();
+        conn.test_transaction::<_, tonic::Status, _>(|conn| {
+            setup(conn, &ALL_FEATURES);
+            let (base_url, sms) = sms_mock();
+            let request = account_request(
+                "cr_noconsent",
+                &test_password(),
+                Some(contact(PHONE, ContactConsentState::ContactConsentRevoked, false)),
+                None,
+            );
+            create_account_at(Some(&base_url), request, conn).unwrap_err();
+            assert_eq!(sms_count(&sms), 0);
+            assert!(consent_rows(conn, PHONE).is_empty());
             Ok(())
         });
     }
