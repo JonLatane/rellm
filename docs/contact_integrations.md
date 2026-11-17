@@ -268,6 +268,14 @@ silently accepting mail or looking like a transient hook failure Stalwart would 
 
 ## SMS and email login
 
+Rellm has three ways to sign in (and to create an account), all through `LoginRequest` /
+`CreateAccountRequest`: **username + password** (always on), **SMS code** and **email code** (each
+needs its `*_WITH_SMS` / `*_WITH_EMAIL` authentication feature *and* a configured provider -- see
+below). The password path is the default and needs nothing from this page. The Elm account panel
+shows only the paths the server offers; the Tamagui and Flutter apps currently use the password
+path only. Only the SMS/email features are enforced server-side -- `LOGIN_WITH_PASSWORD` and
+`CREATE_ACCOUNT_WITH_PASSWORD` are advisory and the password path can't be switched off.
+
 Verified contact methods double as login credentials. Which flows a server offers is controlled by
 `ServerConfiguration.authentication_features` (`LOGIN_WITH_SMS`, `LOGIN_WITH_EMAIL`,
 `CREATE_ACCOUNT_WITH_SMS`, `CREATE_ACCOUNT_WITH_EMAIL`) *and* by the matching outbound provider
