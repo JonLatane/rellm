@@ -112,7 +112,6 @@ impl ToProtoUser for models::User {
             .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer))
             .map(scrub_verification_code);
 
-        log::info!("user.avatar_media_id={:?}", &self.avatar_media_id);
         let user = User {
             id: self.id.to_proto_id().to_string(),
             username: self.username.to_owned(),
