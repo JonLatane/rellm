@@ -294,6 +294,19 @@ fn reports_check(domain: &str, dmarc: &DmarcStatus, found_at: &Option<String>) -
     }
 }
 
+/// Whether `lookup` resolves to a DKIM record that carries a usable public key: a TXT answer (a
+/// CNAME's target counts -- resolvers follow it) with a non-empty `p=` tag. `p=` with nothing after
+/// it is how a revoked key is published; a CNAME whose target has no TXT record has no key either.
+fn has_usable_dkim_key(lookup: &DnsLookup) -> bool {
+    lookup.txt_records().iter().any(|record| {
+        record.split(';').any(|tag| {
+            tag.split_once('=').is_some_and(|(k, v)| {
+                k.trim().eq_ignore_ascii_case("p") && !v.chars().all(char::is_whitespace)
+            })
+        })
+    })
+}
+
 fn dkim_check(
     domain: &str,
     probes: &[(String, DnsLookup)],
@@ -301,10 +314,26 @@ fn dkim_check(
 ) -> StatusCheck {
     let name = "DKIM";
     let short = |n: &str| n.strip_suffix(&format!(".{domain}")).unwrap_or(n).to_string();
-    let found: Vec<String> = probes.iter().filter(|(_, l)| l.has_txt_or_cname()).map(|(n, _)| short(n)).collect();
+    let usable: Vec<String> = probes.iter().filter(|(_, l)| has_usable_dkim_key(l)).map(|(n, _)| short(n)).collect();
+    let unusable: Vec<String> =
+        probes.iter().filter(|(_, l)| l.has_txt_or_cname() && !has_usable_dkim_key(l)).map(|(n, _)| short(n)).collect();
     let probed: Vec<String> = probes.iter().map(|(n, _)| short(n)).collect();
-    if !found.is_empty() {
-        return make_check(StatusLevel::Ok, name, format!("Signing key found ({}).", found.join(", ")), None);
+    if !usable.is_empty() {
+        return make_check(StatusLevel::Ok, name, format!("Signing key found ({}).", usable.join(", ")), None);
+    }
+    if !unusable.is_empty() {
+        return make_check(
+            StatusLevel::Warning,
+            name,
+            format!(
+                "A DKIM record exists at {} but it has no usable key (it was revoked, or it points to something that has no key). {}",
+                unusable.join(", "),
+                copy::DKIM
+            ),
+            Some(&format!(
+                "Open your email provider's domain-authentication page for `{domain}`, re-add the DKIM records it shows (replacing the old ones), then click Verify there."
+            )),
+        );
     }
     if probes.is_empty() {
         return make_check(StatusLevel::Unknown, name, "Not sure which DKIM key names to look for with your email provider.", None);
@@ -697,6 +726,23 @@ mod tests {
         r.txt.insert("_dmarc.co.uk".into(), vec!["v=DMARC1; p=reject".into()]);
         let status = build_domain_status(&sending("example.co.uk", &["mailgun"]), &[], &r);
         assert!(!status.dmarc.as_ref().unwrap().record_found);
+    }
+
+    #[test]
+    fn dkim_records_without_a_usable_key_are_not_healthy() {
+        let revoked = |txt: &str| {
+            let mut r = FakeResolver::new();
+            r.txt.insert("s1._domainkey.example.com".into(), vec![txt.into()]);
+            let status = build_domain_status(&sending("example.com", &["sendgrid"]), &[], &r);
+            status.checks.iter().find(|c| c.name == "DKIM").unwrap().clone()
+        };
+        let good = revoked("v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GN");
+        assert_eq!(good.level, StatusLevel::Ok as i32, "{}", good.detail);
+        for bad in ["v=DKIM1; k=rsa; p=", "v=DKIM1; p= ;", "just some text"] {
+            let c = revoked(bad);
+            assert_eq!(c.level, StatusLevel::Warning as i32, "{bad}: {}", c.detail);
+            assert!(c.detail.contains("no usable key"), "{}", c.detail);
+        }
     }
 
     #[test]

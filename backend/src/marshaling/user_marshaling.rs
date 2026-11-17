@@ -55,6 +55,18 @@ fn scrub_consent_for_viewer(
     contact_method
 }
 
+/// Blanks the pending `verification_code` on `contact_method` for *every* viewer, the owner
+/// included. The code is a login credential (SMS/email login submits it to get the owner's tokens),
+/// so it must never leave the server -- not through `GetUsers`, `GetCurrentUser` or anywhere else a
+/// `User` is marshaled, however public the contact's `visibility` is. The owner learns it from the
+/// message we send, never from the API.
+fn scrub_verification_code(mut contact_method: ContactMethod) -> ContactMethod {
+    if let Some(verification) = contact_method.verification_in_progress.as_mut() {
+        verification.verification_code = String::new();
+    }
+    contact_method
+}
+
 pub trait ToProtoUser {
     fn to_proto(
         &self,
@@ -88,13 +100,15 @@ impl ToProtoUser for models::User {
             .to_owned()
             .map(|cm| serde_json::from_value(cm).unwrap())
             .filter(|cm| visible_contact_method(cm, self.id, viewer))
-            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer));
+            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer))
+            .map(scrub_verification_code);
         let phone: Option<ContactMethod> = self
             .phone
             .to_owned()
             .map(|cm| serde_json::from_value(cm).unwrap())
             .filter(|cm| visible_contact_method(cm, self.id, viewer))
-            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer));
+            .map(|cm| scrub_consent_for_viewer(cm, self.id, viewer))
+            .map(scrub_verification_code);
 
         log::info!("user.avatar_media_id={:?}", &self.avatar_media_id);
         let user = User {
