@@ -127,6 +127,7 @@
     - [CustomHomePage](#rellm-CustomHomePage)
     - [CustomNavigationTab](#rellm-CustomNavigationTab)
     - [CustomNavigationTabSet](#rellm-CustomNavigationTabSet)
+    - [EmbeddingModel](#rellm-EmbeddingModel)
     - [EventSettings](#rellm-EventSettings)
     - [ExternalCDNConfig](#rellm-ExternalCDNConfig)
     - [FeatureSettings](#rellm-FeatureSettings)
@@ -138,6 +139,7 @@
     - [MediaSettings](#rellm-MediaSettings)
     - [PostSettings](#rellm-PostSettings)
     - [PostmarkConfig](#rellm-PostmarkConfig)
+    - [SearchSettings](#rellm-SearchSettings)
     - [SendgridConfig](#rellm-SendgridConfig)
     - [ServerColors](#rellm-ServerColors)
     - [ServerConfiguration](#rellm-ServerConfiguration)
@@ -3594,7 +3596,7 @@ See `ClusterResources.conductor_state`.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | locks | [ClusterResourceLock](#rellm-ClusterResourceLock) | repeated | Locks currently held by the conductor. Mutations are only made by `FreeClusterResource` and `LockClusterResource`, not `ConfigureServer`. Changes to locks do *not* produce a new ServerConfiguration version. |
-| limits | [ClusterResourceLimit](#rellm-ClusterResourceLimit) | repeated | How many distinct namespaces may concurrently hold each `ClusterResource`&#39;s lock - e.g. only one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here - including on a cluster that&#39;s never had `ConfigureServer` touch `limits` at all - defaults to `1` (see `ClusterTab.elm`&#39;s matching client-side default, shown/edited there as &#34;Browser Instance Limit&#34;/&#34;FFMPEG Process Limit&#34;/&#34;ImageMagick Process Limit&#34;). These are changed by `ConfigureServer` (gated on `EDIT_CLUSTER_SETTINGS`, like the rest of `cluster_resources`) and create a new ServerConfiguration version, unlike `locks` above. |
+| limits | [ClusterResourceLimit](#rellm-ClusterResourceLimit) | repeated | How many distinct namespaces may concurrently hold each `ClusterResource`&#39;s lock - e.g. only one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here - including on a cluster that&#39;s never had `ConfigureServer` touch `limits` at all - defaults to `1` (see `ClusterTab.elm`&#39;s matching client-side default, shown/edited there as &#34;Browser Instance Limit&#34;/&#34;FFMPEG Process Limit&#34;/&#34;ImageMagick Process Limit&#34;). These are changed by `ConfigureServer` (gated on `EDIT_CLUSTER_SETTINGS`, like the rest of `cluster_resources`) and create a new ServerConfiguration version, unlike `locks` above. |
 
 
 
@@ -3759,6 +3761,27 @@ If set, overrides the default tab set for the Elm navigation on a Rellm instance
 | home | [CustomHomePage](#rellm-CustomHomePage) | optional | Overrides the default `/` page. If unset, the default combined Events&#43;Posts feed is used. |
 | tabs | [CustomNavigationTab](#rellm-CustomNavigationTab) | repeated | Overrides the default tab set (`EVENTS_TAB`, `POSTS_TAB`, `PEOPLE_TAB`, `ABOUT_TAB`) entirely. Note: existing `/events`, `/posts`, `/people`, and `/about` paths are reserved for their matching predefined tab - see [`CustomNavigationTab`](#rellm-CustomNavigationTab).path&#39;s own doc. `/` itself is overridden via `home` above instead. |
 | tab_style | [NavigationTabStyle](#rellm-NavigationTabStyle) |  | How every tab (Home excluded - it always shows the server&#39;s own logo/name) is laid out in the Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they link - see `NavigationTabStyle` below. Defaults to `NAVIGATION_TAB_ICON_ONLY` (proto enum value 0) both when `CustomNavigationTabSet` itself is unset and for any config saved before this field existed. |
+
+
+
+
+
+
+<a name="rellm-EmbeddingModel"></a>
+
+### EmbeddingModel
+One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [string](#string) |  | Stable identifier, e.g. `multilingual-e5-small`. |
+| name | [string](#string) |  | Display name. |
+| description | [string](#string) |  | What it&#39;s good at and what it costs, for the picker. |
+| dimensions | [uint32](#uint32) |  | Vector size. |
+| download_megabytes | [uint32](#uint32) |  | Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI). |
+| multilingual | [bool](#bool) |  | Whether it understands languages other than English. |
+| memory_megabytes | [uint32](#uint32) |  | Approximate resident memory with the model loaded, in MB -- the server holds one copy and the `generate_embeddings` job another while it runs. The number to check on small hardware. |
 
 
 
@@ -3999,6 +4022,29 @@ verification state and the Server&#39;s own delivery statistics.
 
 
 
+<a name="rellm-SearchSettings"></a>
+
+### SearchSettings
+Search settings for a server. Edited on the Server Information page&#39;s Settings tab.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| semantic_search_enabled | [bool](#bool) |  | Whether this server builds and uses text embeddings for search. Defaults to `true`.
+
+When enabled (and the cluster&#39;s embedding service is deployed -- see `embedding_service_available`): - the `generate_embeddings` background job asks the cluster&#39;s embedding service to embed Posts (`post_embeddings`), Events (`event_embeddings` -- the Event&#39;s Post plus its Occasions&#39; times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every embedding is made from the very same text Postgres full-text search indexes. - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.
+
+Servers and jobs never load an embedding model themselves. When disabled, or when no embedding service is reachable, the job does nothing and search is plain Postgres full-text search. Existing embeddings are kept (re-enabling resumes where it left off). |
+| embedding_model | [string](#string) |  | The `EmbeddingModel.id` the cluster&#39;s embedding service runs (empty if it can&#39;t be reached or is not deployed). Read-only: never a setting, ignored by `ConfigureServer`. Switching models means redeploying the service; every server then re-embeds in the background, and until a row has been redone it simply isn&#39;t a semantic candidate (full-text search still finds it). |
+| available_models | [EmbeddingModel](#rellm-EmbeddingModel) | repeated | The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`. |
+| model_chosen_by_cluster | [bool](#bool) |  | Always true now (kept for older clients): the model is chosen by the cluster&#39;s embedding service. |
+| embedding_service_available | [bool](#bool) |  | Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When false, semantic search can&#39;t work no matter what `semantic_search_enabled` says. Read-only. |
+
+
+
+
+
+
 <a name="rellm-SendgridConfig"></a>
 
 ### SendgridConfig
@@ -4060,6 +4106,7 @@ Configuration for a Rellm server instance.
 | event_settings | [EventSettings](#rellm-EventSettings) |  | Configuration for events on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_EVENTS_GLOBALLY`. |
 | media_settings | [MediaSettings](#rellm-MediaSettings) |  | Configuration for media on the server. If default visibility is `GLOBAL_PUBLIC`, default_user_permissions *must* contain `PUBLISH_MEDIA_GLOBALLY`. |
 | market_settings | [MarketSettings](#rellm-MarketSettings) |  | Public, non-secret &#34;is this server&#39;s Market open&#34; signal -- unlike `stripe_config` (which holds real credentials and is Admin-only, see that field&#39;s own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server&#39;s Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see `rellm.proto`&#39;s own &#34;Federated Markets&#34; doc section. |
+| search_settings | [SearchSettings](#rellm-SearchSettings) |  | Search behavior across Posts, Events, Media and People/profiles -- see [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search on this server is semantically ranked). Unset on read never happens: servers that predate this field report the default (`semantic_search_enabled: true`). |
 | external_cdn_config | [ExternalCDNConfig](#rellm-ExternalCDNConfig) | optional | If set, enables External CDN support for the server. This means that the non-secure HTTP server (on port 80) will *not* redirect to the secure server, and instead serve up Tamagui Web/Flutter clients directly. This allows you to point Cloudflare&#39;s &#34;CNAME HTTPS Proxy&#34; feature at your Rellm server to serve up HTML/CS/JS and Media files with caching from Cloudflare&#39;s CDN. See ExternalCDNConfig for more details on securing this setup. |
 | cluster_resources | [ClusterResources](#rellm-ClusterResources) | optional | Cluster-internal coordination state - see `ClusterResources`&#39;s own doc. Visible to any logged-in admin (unlike most fields here, this describes infrastructure topology rather than anything end users need, so it&#39;s stripped entirely from [`GetServerConfiguration`](#grpc-api-GetServerConfiguration) for non-admins/anonymous callers); editing it via [`ConfigureServer`](#grpc-api-ConfigureServer) additionally requires the [`EDIT_CLUSTER_SETTINGS`](#rellm-Permission) permission. |
 | private_user_strategy | [PrivateUserStrategy](#rellm-PrivateUserStrategy) |  | Strategy when a user sets their visibility to `PRIVATE`. Defaults to `ACCOUNT_IS_FROZEN`. |
@@ -4192,7 +4239,7 @@ subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscr
 | share_content_from_followers | [bool](#bool) |  | Also show posts/events by users who *follow* the owner (an accepted `Follow` of the owner). |
 | share_content_from_following | [bool](#bool) |  | Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner). |
 | share_content_from_friends | [bool](#bool) |  | Also show posts/events by the owner&#39;s *friends* -- users who follow the owner and whom the owner follows back. |
-| custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The subdomain&#39;s own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain. Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`). `custom_css` is only included in the subscription&#39;s own copy (`GetMarketSubscriptions`), never in `GetServerConfiguration`&#39;s, same as `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet. |
+| custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The subdomain&#39;s own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain. Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`). `custom_css` is never carried in subscription listings (`GetMarketSubscriptions`, `User.market_subscriptions`) or in `GetServerConfiguration`&#39;s copy -- read the text with `GetCustomCSS` on the subdomain&#39;s host, same as `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet. |
 
 
 

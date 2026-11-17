@@ -7,6 +7,15 @@ export
 run:
 	cargo run
 
+# The semantic search services (the `rellm_embeddings` image's binaries, behind cargo features so the server and jobs
+# never contain model code). The model service downloads its model on first run into RELLM_EMBEDDING_CACHE_DIR
+# (default ~/.cache/rellm/embedding_models); it needs RELLM_EMBEDDING_SERVICE_SECRET, or RELLM_EMBEDDING_SERVICE_INSECURE=1.
+# Point the backend at them with RELLM_EMBEDDING_SERVICE_URL / RELLM_VECTOR_SERVICE_URL in .env.
+run_embedding_service:
+	cargo run --features embedding-service --bin embedding_service
+run_vector_service:
+	cargo run --features vector-service --bin vector_search_service
+
 test:
 	cargo test
 

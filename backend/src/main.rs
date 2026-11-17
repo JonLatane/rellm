@@ -39,6 +39,7 @@ pub mod logic;
 pub mod marshaling;
 pub mod object_storage_connection;
 pub mod models;
+pub mod internal_protos;
 pub mod protos;
 pub mod rpcs;
 pub mod schema;
@@ -157,6 +158,11 @@ Supported flags:
             })
             .expect("Failed to load or regenerate server configuration");
     let server_configuration: protos::ServerConfiguration = server_configuration_model.to_proto();
+
+    // Start loading (downloading, the first time) the embedding model for semantic search now, on a
+    // background thread, so the first search doesn't have to wait for it -- see
+    // `logic::embeddings::server_embedder`. Searches are full-text until it's ready.
+    logic::embeddings::apply_semantic_search_setting(&mut conn);
 
     log::info!("Loaded server configuration: {:?}", &server_configuration);
 

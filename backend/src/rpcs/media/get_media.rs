@@ -9,7 +9,7 @@ use crate::models;
 use crate::protos::*;
 use crate::schema::{follows, media, media_filter, users};
 use diesel_full_text_search::{to_tsquery_with_search_config, ts_rank_cd, configuration::TsConfigurationByName, TsVectorExtensions};
-use crate::logic::prefix_tsquery_text;
+use crate::logic::{embeddings, prefix_tsquery_text};
 
 /// Batch-loads every distinct author of `media_rows`, keyed by `user_id` -- see
 /// `ToProtoMedia::to_proto`'s own doc on why each `Media`'s owner is populated here (rather than
@@ -76,6 +76,45 @@ enum ContentTypeFilter {
     Prefix(String),
 }
 
+/// Narrows `query` to the requested `content_type` (exact, or a `type/` prefix); a no-op for `None`.
+fn apply_content_type_filter<'a>(
+    query: media::BoxedQuery<'a, diesel::pg::Pg>,
+    content_type_filter: &Option<ContentTypeFilter>,
+) -> media::BoxedQuery<'a, diesel::pg::Pg> {
+    match content_type_filter {
+        Some(ContentTypeFilter::Exact(content_type)) => query.filter(
+            media::id.eq_any(
+                media_filter::table
+                    .filter(media_filter::content_type.eq(content_type.clone()))
+                    .select(media_filter::id),
+            ),
+        ),
+        Some(ContentTypeFilter::Prefix(prefix)) => query.filter(
+            media::id.eq_any(
+                media_filter::table
+                    .filter(media_filter::content_type.like(format!("{}%", prefix)))
+                    .select(media_filter::id),
+            ),
+        ),
+        None => query,
+    }
+}
+
+/// What server-wide browsing (neither `media_id` nor `user_id`) leaves out: media with no owner, server-generated
+/// media, and profile pictures -- ordinary uploaded `Media`, but not something anyone posted to browse (they'd
+/// otherwise flood an `image/*` listing). Also applied when picking semantic-search candidates, so excluded
+/// rows can't fill the candidate slots and push real matches out.
+fn apply_server_wide_exclusions<'a>(
+    query: media::BoxedQuery<'a, diesel::pg::Pg>,
+) -> media::BoxedQuery<'a, diesel::pg::Pg> {
+    query
+        .filter(media::user_id.is_not_null())
+        .filter(media::generated.eq(false))
+        .filter(diesel::dsl::not(diesel::dsl::exists(
+            users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
+        )))
+}
+
 fn parse_content_type_filter(content_type: &str) -> Result<ContentTypeFilter, Status> {
     let content_type = content_type.trim().to_ascii_lowercase();
     let valid_part = |part: &str| {
@@ -131,37 +170,11 @@ pub fn get_media(
     // Server-wide browsing (neither `media_id` nor `user_id`) is only for pages' feeds -- skip
     // media with no owner (e.g. deleted users' media) and server-generated media, so they don't
     // show up as "videos"/"audio" nobody posted.
-    if requested_media_id.is_none() && requested_user_id.is_none() {
-        // Also skip profile pictures, which are ordinary uploaded `Media` but not something
-        // anyone posted to browse (they'd otherwise flood an `image/*` listing).
-        query = query
-            .filter(media::user_id.is_not_null())
-            .filter(media::generated.eq(false))
-            .filter(diesel::dsl::not(diesel::dsl::exists(
-                users::table.filter(users::avatar_media_id.eq(media::id.nullable())),
-            )));
+    let server_wide = requested_media_id.is_none() && requested_user_id.is_none();
+    if server_wide {
+        query = apply_server_wide_exclusions(query);
     }
-    match content_type_filter {
-        Some(ContentTypeFilter::Exact(content_type)) => {
-            query = query.filter(
-                media::id.eq_any(
-                    media_filter::table
-                        .filter(media_filter::content_type.eq(content_type))
-                        .select(media_filter::id),
-                ),
-            );
-        }
-        Some(ContentTypeFilter::Prefix(prefix)) => {
-            query = query.filter(
-                media::id.eq_any(
-                    media_filter::table
-                        .filter(media_filter::content_type.like(format!("{}%", prefix)))
-                        .select(media_filter::id),
-                ),
-            );
-        }
-        None => {}
-    }
+    query = apply_content_type_filter(query, &content_type_filter);
     if let Some(prefix_query_text) = prefix_query_text.clone() {
         // "simple" to match `media_build_search_text`'s indexing config -- see `get_search_posts`.
         let search_query =
@@ -175,6 +188,78 @@ pub fn get_media(
             .limit(1000)
             .load(conn)
             .map_err(|_| Status::internal("error_loading_media"))?;
+        // Semantic reranking (see `logic::embeddings`): also consider the newest visible media
+        // (of the requested owner/type) that's semantically close to the query without sharing
+        // its words, and fuse the two rankings. The final `query` below still applies visibility.
+        let mut matching_ids = matching_ids;
+        if embeddings::semantic_search_ready(conn) {
+            // First the vector search service, if configured and up: the nearest ids anywhere, kept to the media this
+            // viewer may see with the request's owner/type filters (the same visibility-checked query). `None` when
+            // it's absent, down or still building -- then the Postgres scan below answers (the service is optional).
+            let global = if embeddings::semantic_global_available() {
+                match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Media, search_text.unwrap_or_default()) {
+                    Some(mut nearest) if !nearest.is_empty() => {
+                        let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                        let mut visible = apply_content_type_filter(
+                            query_visible_media!(user, licensed_globally),
+                            &content_type_filter,
+                        )
+                        .filter(media::id.eq_any(&nearest_ids));
+                        if let Some(user_id) = requested_user_id {
+                            visible = visible.filter(media::user_id.eq(user_id));
+                        }
+                        if server_wide {
+                            visible = apply_server_wide_exclusions(visible);
+                        }
+                        let visible: std::collections::HashSet<i64> = visible
+                            .select(media::id)
+                            .load::<i64>(conn)
+                            .map_err(|_| Status::internal("error_loading_media"))?
+                            .into_iter()
+                            .collect();
+                        nearest.retain(|(id, _)| visible.contains(id));
+                        Some(nearest)
+                    }
+                    other => other,
+                }
+            } else {
+                None
+            };
+            let semantic = if global.is_some() {
+                global
+            } else {
+                // Scan the newest visible media (of the requested owner/type) out of Postgres.
+                let mut recent = apply_content_type_filter(
+                    query_visible_media!(user, licensed_globally),
+                    &content_type_filter,
+                );
+                if let Some(user_id) = requested_user_id {
+                    recent = recent.filter(media::user_id.eq(user_id));
+                }
+                if server_wide {
+                    recent = apply_server_wide_exclusions(recent);
+                }
+                let mut scope: Vec<i64> = recent
+                    .order(media::created_at.desc())
+                    .select(media::id)
+                    .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                    .load(conn)
+                    .map_err(|_| Status::internal("error_loading_media"))?;
+                scope.extend(matching_ids.iter().copied());
+                scope.sort_unstable();
+                scope.dedup();
+                embeddings::semantic_ranking(
+                    conn,
+                    embeddings::EmbeddingKind::Media,
+                    search_text.unwrap_or_default(),
+                    &scope,
+                )
+            };
+            if let Some(semantic) = semantic {
+                matching_ids = embeddings::fuse_rankings(&matching_ids, &semantic);
+                matching_ids.truncate(1000);
+            }
+        }
         // Ranked order is applied after loading (below) from this id list's order.
         query = query.filter(media::id.eq_any(matching_ids.clone()));
         return load_page(query, request.page, Some(matching_ids), conn);

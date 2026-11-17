@@ -190,6 +190,7 @@ fn try_resume_subscription(
     };
     match models::resume_market_subscription_and_claim_slot(candidate.id, product.id, conn)? {
         models::ResumeOutcome::Resumed | models::ResumeOutcome::AlreadyActive => {
+            crate::logic::subdomains::invalidate_cache();
             build_subscription(candidate.id, conn).map(Some)
         }
         models::ResumeOutcome::NotResumable => Ok(None),

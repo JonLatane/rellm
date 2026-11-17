@@ -126,14 +126,42 @@ lettre = { version = "0.11.23", default-features = false, features = [
   "webpki-roots",
 ] }
 rrule = "0.14"
+# Local text embeddings (ONNX Runtime) for semantic search/reranking -- see `logic::embeddings`. rustls
+# variants only (no OpenSSL), matching tonic/reqwest above. The model itself is downloaded from
+# Hugging Face on first use (by the `generate_embeddings` job, or the server's own warm-up thread).
+fastembed = { version = "7.7", default-features = false, optional = true, features = [
+  "ort-download-binaries-rustls-tls",
+  "hf-hub-rustls-tls",
+] }
 mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
 atom_syndication = { version = "0.12.10", default-features = false, features = ["builders"] }
 psl = "2"
 
+# In-memory approximate nearest-neighbor index (USearch, C++ via cxx) for the per-namespace
+# `vector_search_service`. Off by default: nothing else needs it, and it adds a C++ build.
+usearch = { version = "2.26", optional = true }
+
 [features]
 static_pq = ["dep:pq-sys"]
+# Builds `vector_search_service` and its tests.
+vector-service = ["dep:usearch"]
+# The ONLY place a text-embedding model is ever loaded: `embedding_service` (the cluster-shared model service) and its
+# tests. The Rellm server and its jobs are built WITHOUT it, so no model code (fastembed / ONNX Runtime) is even linked
+# into them -- they embed by calling that service (see `logic::embeddings::model_service`).
+embedding-service = ["dep:fastembed"]
+
+
+[[bin]]
+name = "vector_search_service"
+path = "src/bin/vector_search_service.rs"
+required-features = ["vector-service"]
+
+[[bin]]
+name = "embedding_service"
+path = "src/bin/embedding_service.rs"
+required-features = ["embedding-service"]
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"

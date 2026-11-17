@@ -41,7 +41,7 @@ pub fn get_posts_for(
     scope: &Option<SubdomainContext>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetPostsResponse, Status> {
-    let only = scope.as_ref().map(|s| s.visible_author_ids(conn)).transpose()?;
+    let only = scope.as_ref().map(|s| s.author_set());
     crate::rpcs::get_posts_scoped(request, user, &only, conn)
 }
 
@@ -51,6 +51,6 @@ pub fn get_events_for(
     scope: &Option<SubdomainContext>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetEventsResponse, Status> {
-    let only = scope.as_ref().map(|s| s.visible_author_ids(conn)).transpose()?;
+    let only = scope.as_ref().map(|s| s.author_set());
     crate::rpcs::get_events_scoped(request, user, &only, conn)
 }

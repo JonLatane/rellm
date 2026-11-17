@@ -5,7 +5,6 @@ use rocket::{http::Status, State};
 use super::RocketState;
 
 use crate::protos::*;
-use crate::rpcs::get_server_configuration_proto;
 use rocket_cache_response::CacheResponse;
 use std::fs;
 use std::str::FromStr;
@@ -19,9 +18,10 @@ use std::str::FromStr;
 #[rocket::get("/")]
 pub async fn main_index(
     state: &State<RocketState>,
+    host: &rocket::http::uri::Host<'_>,
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut conn = state.pool.get().unwrap();
-    let configuration = get_server_configuration_proto(&mut conn).unwrap();
+    let configuration = crate::web::subdomain_web::request_configuration(&mut conn, host);
     let server_info = configuration.server_info.unwrap_or_default();
 
     if server_info.web_user_interface() == WebUserInterface::FlutterWeb {

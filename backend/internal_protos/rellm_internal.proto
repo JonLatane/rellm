@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+// Rellm's *internal* services: how a Rellm server talks to the infrastructure services that run next
+// to it in a cluster. These are not part of the public API (`protos/`), so they are not in the
+// generated docs or the Elm/Tamagui/Flutter clients, and nothing outside a deployment should reach
+// them. Both services authenticate callers with a shared secret in the `x-rellm-internal-secret` gRPC
+// metadata header, and neither should be exposed beyond the cluster network.
+package rellm_internal;
+
+// The cluster-shared model service (`embedding_service` binary): one process per cluster that holds
+// ONE embedding model in memory and embeds text for every namespace's server and `generate_embeddings`
+// job, so the model's RAM is paid once rather than per namespace. Stateless: it stores nothing and
+// never logs text. Because it hosts a single model, every namespace using it uses that model.
+service EmbeddingService {
+  // Which model this service runs.
+  rpc Describe(DescribeRequest) returns (ModelDescription);
+  // Embeds texts with that model. Vectors come back L2-normalized.
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+}
+
+message DescribeRequest {}
+
+message ModelDescription {
+  // An id from the server's model registry (`logic::embeddings::MODELS`), e.g. `multilingual-e5-small`.
+  string model_id = 1;
+  uint32 dimensions = 2;
+}
+
+message EmbedRequest {
+  enum Purpose {
+    // Text being indexed. Models that treat documents and queries differently use their document
+    // prefix (e5: "passage: ").
+    DOCUMENT = 0;
+    // A search query (e5: "query: ").
+    QUERY = 1;
+  }
+  Purpose purpose = 1;
+  repeated string texts = 2;
+  // The model the caller expects. If it isn't the one this service runs the call fails with
+  // `FAILED_PRECONDITION`, so a caller can never mix vectors from two models. Empty means "whatever
+  // you run".
+  string model_id = 3;
+}
+
+message EmbedResponse {
+  // One per request text, in order.
+  repeated Vector vectors = 1;
+  string model_id = 2;
+}
+
+message Vector {
+  repeated float values = 1;
+}
+
+// The per-namespace vector search service (`vector_search_service` binary): one pod per namespace that
+// keeps every embedding of that namespace's Postgres in a USearch (quantized HNSW) index and answers
+// nearest-neighbor queries, so the namespace's servers don't each hold or scan the vectors.
+// It knows nothing about who may see what: it returns the nearest ids and the Rellm server applies its
+// visibility rules to them in Postgres.
+service VectorSearchService {
+  rpc Search(VectorSearchRequest) returns (VectorSearchResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+}
+
+message VectorSearchRequest {
+  // `post`, `event`, `media` or `user_profile` (`EmbeddingKind::name`).
+  string kind = 1;
+  // The model the query vector came from; must be the one this service indexes.
+  string model_id = 2;
+  // L2-normalized, `dimensions` long.
+  repeated float vector = 3;
+  // At most this many matches.
+  uint32 limit = 4;
+  // Drop matches less similar than this (cosine).
+  float min_similarity = 5;
+}
+
+message VectorSearchResponse {
+  // False while the index for this kind is still being built (or the model doesn't match): the
+  // caller should fall back to scanning Postgres for now. `matches` is empty then.
+  bool ready = 1;
+  // Best first.
+  repeated Match matches = 2;
+}
+
+message Match {
+  int64 id = 1;
+  // Cosine similarity (approximate: the index stores quantized vectors).
+  float similarity = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  string model_id = 1;
+  repeated KindStatus kinds = 2;
+}
+
+message KindStatus {
+  string kind = 1;
+  bool ready = 2;
+  uint64 vectors = 3;
+  // Approximate resident memory of this kind's index.
+  uint64 memory_bytes = 4;
+}

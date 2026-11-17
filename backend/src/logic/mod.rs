@@ -54,3 +54,4 @@ pub(crate) use contact_methods::{mailgun_email, sendgrid_email, stalwart_email};
 pub(crate) use market::stripe_payments;
 
 pub mod log_redaction;
+pub mod embeddings;

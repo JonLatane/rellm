@@ -714,6 +714,15 @@ export interface ServerConfiguration {
     | MarketSettings
     | undefined;
   /**
+   * Search behavior across Posts, Events, Media and People/profiles -- see
+   * [`SearchSettings`](#rellm-SearchSettings). Publicly readable (clients can tell whether a search
+   * on this server is semantically ranked). Unset on read never happens: servers that predate this
+   * field report the default (`semantic_search_enabled: true`).
+   */
+  searchSettings:
+    | SearchSettings
+    | undefined;
+  /**
    * If set, enables External CDN support for the server. This means that the
    * non-secure HTTP server (on port 80) will *not* redirect to the secure server,
    * and instead serve up Tamagui Web/Flutter clients directly. This allows you
@@ -898,9 +907,10 @@ export interface SubdomainSettings {
   /**
    * The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
    * Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
-   * `custom_css` is only included in the subscription's own copy (`GetMarketSubscriptions`), never in
-   * `GetServerConfiguration`'s, same as `ServerConfiguration.custom_css_configuration`. On
-   * `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet.
+   * `custom_css` is never carried in subscription listings (`GetMarketSubscriptions`, `User.market_subscriptions`) or in
+   * `GetServerConfiguration`'s copy -- read the text with `GetCustomCSS` on the subdomain's host, same as
+   * `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the
+   * stored stylesheet.
    */
   customCssConfiguration?: CustomCSSConfiguration | undefined;
 }
@@ -992,7 +1002,7 @@ export interface ClusterConductorState {
   locks: ClusterResourceLock[];
   /**
    * How many distinct namespaces may concurrently hold each `ClusterResource`'s lock - e.g. only
-   * one headless browser at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
+   * one headless browser (or embedding run) at a time, but a handful of `ffmpeg`/ImageMagick conversions in parallel
    * across the cluster, since those are far lighter-weight. Any `ClusterResource` not present here
    * - including on a cluster that's never had `ConfigureServer` touch `limits` at all - defaults
    * to `1` (see `ClusterTab.elm`'s matching client-side default, shown/edited there as "Browser
@@ -1246,6 +1256,64 @@ export interface MarketSettings {
    * admin-only.
    */
   stripeConfigured: boolean;
+}
+
+/** Search settings for a server. Edited on the Server Information page's Settings tab. */
+export interface SearchSettings {
+  /**
+   * Whether this server builds and uses text embeddings for search. Defaults to `true`.
+   *
+   * When enabled (and the cluster's embedding service is deployed -- see `embedding_service_available`):
+   * - the `generate_embeddings` background job asks the cluster's embedding service to embed Posts
+   *   (`post_embeddings`), Events (`event_embeddings` -- the Event's Post plus its Occasions'
+   *   times/places), Media (`media_embeddings`) and User profiles (`user_profile_embeddings`). Every
+   *   embedding is made from the very same text Postgres full-text search indexes.
+   * - `TEXT_SEARCH`-style listings in `GetPosts`, `GetEvents`, `GetMedia` and `GetUsers` also
+   *   consider semantically similar results (not just prefix matches) and rerank by fusing the
+   *   full-text rank with embedding similarity.
+   *
+   * Servers and jobs never load an embedding model themselves. When disabled, or when no embedding
+   * service is reachable, the job does nothing and search is plain Postgres full-text search. Existing
+   * embeddings are kept (re-enabling resumes where it left off).
+   */
+  semanticSearchEnabled: boolean;
+  /**
+   * The `EmbeddingModel.id` the cluster's embedding service runs (empty if it can't be reached or is
+   * not deployed). Read-only: never a setting, ignored by `ConfigureServer`. Switching models means
+   * redeploying the service; every server then re-embeds in the background, and until a row has been
+   * redone it simply isn't a semantic candidate (full-text search still finds it).
+   */
+  embeddingModel: string;
+  /** The model in use, described (empty when none). Read-only; ignored by `ConfigureServer`. */
+  availableModels: EmbeddingModel[];
+  /** Always true now (kept for older clients): the model is chosen by the cluster's embedding service. */
+  modelChosenByCluster: boolean;
+  /**
+   * Whether an embedding service is configured for this server (`RELLM_EMBEDDING_SERVICE_URL`). When
+   * false, semantic search can't work no matter what `semantic_search_enabled` says. Read-only.
+   */
+  embeddingServiceAvailable: boolean;
+}
+
+/** One embedding model a server can run for semantic search. See `SearchSettings.embedding_model`. */
+export interface EmbeddingModel {
+  /** Stable identifier, e.g. `multilingual-e5-small`. */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** What it's good at and what it costs, for the picker. */
+  description: string;
+  /** Vector size. */
+  dimensions: number;
+  /** Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI). */
+  downloadMegabytes: number;
+  /** Whether it understands languages other than English. */
+  multilingual: boolean;
+  /**
+   * Approximate resident memory with the model loaded, in MB -- the server holds one copy and the
+   * `generate_embeddings` job another while it runs. The number to check on small hardware.
+   */
+  memoryMegabytes: number;
 }
 
 /**
@@ -1918,6 +1986,7 @@ function createBaseServerConfiguration(): ServerConfiguration {
     eventSettings: undefined,
     mediaSettings: undefined,
     marketSettings: undefined,
+    searchSettings: undefined,
     externalCdnConfig: undefined,
     clusterResources: undefined,
     privateUserStrategy: 0,
@@ -1984,6 +2053,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.marketSettings !== undefined) {
       MarketSettings.encode(message.marketSettings, writer.uint32(202).fork()).join();
+    }
+    if (message.searchSettings !== undefined) {
+      SearchSettings.encode(message.searchSettings, writer.uint32(226).fork()).join();
     }
     if (message.externalCdnConfig !== undefined) {
       ExternalCDNConfig.encode(message.externalCdnConfig, writer.uint32(722).fork()).join();
@@ -2191,6 +2263,14 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
           }
 
           message.marketSettings = MarketSettings.decode(reader, reader.uint32());
+          continue;
+        }
+        case 28: {
+          if (tag !== 226) {
+            break;
+          }
+
+          message.searchSettings = SearchSettings.decode(reader, reader.uint32());
           continue;
         }
         case 90: {
@@ -2442,6 +2522,7 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       eventSettings: isSet(object.eventSettings) ? EventSettings.fromJSON(object.eventSettings) : undefined,
       mediaSettings: isSet(object.mediaSettings) ? MediaSettings.fromJSON(object.mediaSettings) : undefined,
       marketSettings: isSet(object.marketSettings) ? MarketSettings.fromJSON(object.marketSettings) : undefined,
+      searchSettings: isSet(object.searchSettings) ? SearchSettings.fromJSON(object.searchSettings) : undefined,
       externalCdnConfig: isSet(object.externalCdnConfig)
         ? ExternalCDNConfig.fromJSON(object.externalCdnConfig)
         : undefined,
@@ -2522,6 +2603,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
     }
     if (message.marketSettings !== undefined) {
       obj.marketSettings = MarketSettings.toJSON(message.marketSettings);
+    }
+    if (message.searchSettings !== undefined) {
+      obj.searchSettings = SearchSettings.toJSON(message.searchSettings);
     }
     if (message.externalCdnConfig !== undefined) {
       obj.externalCdnConfig = ExternalCDNConfig.toJSON(message.externalCdnConfig);
@@ -2620,6 +2704,9 @@ export const ServerConfiguration: MessageFns<ServerConfiguration> = {
       : undefined;
     message.marketSettings = (object.marketSettings !== undefined && object.marketSettings !== null)
       ? MarketSettings.fromPartial(object.marketSettings)
+      : undefined;
+    message.searchSettings = (object.searchSettings !== undefined && object.searchSettings !== null)
+      ? SearchSettings.fromPartial(object.searchSettings)
       : undefined;
     message.externalCdnConfig = (object.externalCdnConfig !== undefined && object.externalCdnConfig !== null)
       ? ExternalCDNConfig.fromPartial(object.externalCdnConfig)
@@ -4004,6 +4091,308 @@ export const MarketSettings: MessageFns<MarketSettings> = {
     const message = createBaseMarketSettings();
     message.enabled = object.enabled ?? false;
     message.stripeConfigured = object.stripeConfigured ?? false;
+    return message;
+  },
+};
+
+function createBaseSearchSettings(): SearchSettings {
+  return {
+    semanticSearchEnabled: false,
+    embeddingModel: "",
+    availableModels: [],
+    modelChosenByCluster: false,
+    embeddingServiceAvailable: false,
+  };
+}
+
+export const SearchSettings: MessageFns<SearchSettings> = {
+  encode(message: SearchSettings, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.semanticSearchEnabled !== false) {
+      writer.uint32(8).bool(message.semanticSearchEnabled);
+    }
+    if (message.embeddingModel !== "") {
+      writer.uint32(18).string(message.embeddingModel);
+    }
+    for (const v of message.availableModels) {
+      EmbeddingModel.encode(v!, writer.uint32(26).fork()).join();
+    }
+    if (message.modelChosenByCluster !== false) {
+      writer.uint32(32).bool(message.modelChosenByCluster);
+    }
+    if (message.embeddingServiceAvailable !== false) {
+      writer.uint32(40).bool(message.embeddingServiceAvailable);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SearchSettings {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSearchSettings();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.semanticSearchEnabled = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.embeddingModel = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.availableModels.push(EmbeddingModel.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.modelChosenByCluster = reader.bool();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.embeddingServiceAvailable = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SearchSettings {
+    return {
+      semanticSearchEnabled: isSet(object.semanticSearchEnabled)
+        ? globalThis.Boolean(object.semanticSearchEnabled)
+        : false,
+      embeddingModel: isSet(object.embeddingModel) ? globalThis.String(object.embeddingModel) : "",
+      availableModels: globalThis.Array.isArray(object?.availableModels)
+        ? object.availableModels.map((e: any) => EmbeddingModel.fromJSON(e))
+        : [],
+      modelChosenByCluster: isSet(object.modelChosenByCluster)
+        ? globalThis.Boolean(object.modelChosenByCluster)
+        : false,
+      embeddingServiceAvailable: isSet(object.embeddingServiceAvailable)
+        ? globalThis.Boolean(object.embeddingServiceAvailable)
+        : false,
+    };
+  },
+
+  toJSON(message: SearchSettings): unknown {
+    const obj: any = {};
+    if (message.semanticSearchEnabled !== false) {
+      obj.semanticSearchEnabled = message.semanticSearchEnabled;
+    }
+    if (message.embeddingModel !== "") {
+      obj.embeddingModel = message.embeddingModel;
+    }
+    if (message.availableModels?.length) {
+      obj.availableModels = message.availableModels.map((e) => EmbeddingModel.toJSON(e));
+    }
+    if (message.modelChosenByCluster !== false) {
+      obj.modelChosenByCluster = message.modelChosenByCluster;
+    }
+    if (message.embeddingServiceAvailable !== false) {
+      obj.embeddingServiceAvailable = message.embeddingServiceAvailable;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SearchSettings>, I>>(base?: I): SearchSettings {
+    return SearchSettings.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SearchSettings>, I>>(object: I): SearchSettings {
+    const message = createBaseSearchSettings();
+    message.semanticSearchEnabled = object.semanticSearchEnabled ?? false;
+    message.embeddingModel = object.embeddingModel ?? "";
+    message.availableModels = object.availableModels?.map((e) => EmbeddingModel.fromPartial(e)) || [];
+    message.modelChosenByCluster = object.modelChosenByCluster ?? false;
+    message.embeddingServiceAvailable = object.embeddingServiceAvailable ?? false;
+    return message;
+  },
+};
+
+function createBaseEmbeddingModel(): EmbeddingModel {
+  return {
+    id: "",
+    name: "",
+    description: "",
+    dimensions: 0,
+    downloadMegabytes: 0,
+    multilingual: false,
+    memoryMegabytes: 0,
+  };
+}
+
+export const EmbeddingModel: MessageFns<EmbeddingModel> = {
+  encode(message: EmbeddingModel, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    if (message.description !== "") {
+      writer.uint32(26).string(message.description);
+    }
+    if (message.dimensions !== 0) {
+      writer.uint32(32).uint32(message.dimensions);
+    }
+    if (message.downloadMegabytes !== 0) {
+      writer.uint32(40).uint32(message.downloadMegabytes);
+    }
+    if (message.multilingual !== false) {
+      writer.uint32(48).bool(message.multilingual);
+    }
+    if (message.memoryMegabytes !== 0) {
+      writer.uint32(56).uint32(message.memoryMegabytes);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): EmbeddingModel {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEmbeddingModel();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.description = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.dimensions = reader.uint32();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
+            break;
+          }
+
+          message.downloadMegabytes = reader.uint32();
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.multilingual = reader.bool();
+          continue;
+        }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.memoryMegabytes = reader.uint32();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): EmbeddingModel {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+      description: isSet(object.description) ? globalThis.String(object.description) : "",
+      dimensions: isSet(object.dimensions) ? globalThis.Number(object.dimensions) : 0,
+      downloadMegabytes: isSet(object.downloadMegabytes) ? globalThis.Number(object.downloadMegabytes) : 0,
+      multilingual: isSet(object.multilingual) ? globalThis.Boolean(object.multilingual) : false,
+      memoryMegabytes: isSet(object.memoryMegabytes) ? globalThis.Number(object.memoryMegabytes) : 0,
+    };
+  },
+
+  toJSON(message: EmbeddingModel): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    if (message.description !== "") {
+      obj.description = message.description;
+    }
+    if (message.dimensions !== 0) {
+      obj.dimensions = Math.round(message.dimensions);
+    }
+    if (message.downloadMegabytes !== 0) {
+      obj.downloadMegabytes = Math.round(message.downloadMegabytes);
+    }
+    if (message.multilingual !== false) {
+      obj.multilingual = message.multilingual;
+    }
+    if (message.memoryMegabytes !== 0) {
+      obj.memoryMegabytes = Math.round(message.memoryMegabytes);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<EmbeddingModel>, I>>(base?: I): EmbeddingModel {
+    return EmbeddingModel.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<EmbeddingModel>, I>>(object: I): EmbeddingModel {
+    const message = createBaseEmbeddingModel();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    message.description = object.description ?? "";
+    message.dimensions = object.dimensions ?? 0;
+    message.downloadMegabytes = object.downloadMegabytes ?? 0;
+    message.multilingual = object.multilingual ?? false;
+    message.memoryMegabytes = object.memoryMegabytes ?? 0;
     return message;
   },
 };

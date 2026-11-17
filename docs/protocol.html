@@ -412,6 +412,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
             <p><a href="#rellm-CustomNavigationTabSet">CustomNavigationTabSet</a></p>
           </li>
           <li>
+            <p><a href="#rellm-EmbeddingModel">EmbeddingModel</a></p>
+          </li>
+          <li>
             <p><a href="#rellm-EventSettings">EventSettings</a></p>
           </li>
           <li>
@@ -443,6 +446,9 @@ svg { z-index: 99; position: fixed; border: 0px; top: 0px; right: 0; }
           </li>
           <li>
             <p><a href="#rellm-PostmarkConfig">PostmarkConfig</a></p>
+          </li>
+          <li>
+            <p><a href="#rellm-SearchSettings">SearchSettings</a></p>
           </li>
           <li>
             <p><a href="#rellm-SendgridConfig">SendgridConfig</a></p>
@@ -7415,7 +7421,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>limits</td>
           <td><a href="#rellm-ClusterResourceLimit">ClusterResourceLimit</a></td>
           <td>repeated</td>
-          <td>How many distinct namespaces may concurrently hold each <code>ClusterResource</code>'s lock - e.g. only one headless browser at a time, but a handful of <code>ffmpeg</code>/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any <code>ClusterResource</code> not present here - including on a cluster that's never had <code>ConfigureServer</code> touch <code>limits</code> at all - defaults to <code>1</code> (see <code>ClusterTab.elm</code>'s matching client-side default, shown/edited there as "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"). These are changed by <code>ConfigureServer</code> (gated on <code>EDIT_CLUSTER_SETTINGS</code>, like the rest of <code>cluster_resources</code>) and create a new ServerConfiguration version, unlike <code>locks</code> above.</td>
+          <td>How many distinct namespaces may concurrently hold each <code>ClusterResource</code>'s lock - e.g. only one headless browser (or embedding run) at a time, but a handful of <code>ffmpeg</code>/ImageMagick conversions in parallel across the cluster, since those are far lighter-weight. Any <code>ClusterResource</code> not present here - including on a cluster that's never had <code>ConfigureServer</code> touch <code>limits</code> at all - defaults to <code>1</code> (see <code>ClusterTab.elm</code>'s matching client-side default, shown/edited there as "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"). These are changed by <code>ConfigureServer</code> (gated on <code>EDIT_CLUSTER_SETTINGS</code>, like the rest of <code>cluster_resources</code>) and create a new ServerConfiguration version, unlike <code>locks</code> above.</td>
         </tr>
       </tbody>
     </table>
@@ -7734,6 +7740,63 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-NavigationTabStyle">NavigationTabStyle</a></td>
           <td></td>
           <td>How every tab (Home excluded - it always shows the server's own logo/name) is laid out in the Elm nav. Purely cosmetic: it changes nothing about which tabs exist, their order, or where they link - see <code>NavigationTabStyle</code> below. Defaults to <code>NAVIGATION_TAB_ICON_ONLY</code> (proto enum value 0) both when <code>CustomNavigationTabSet</code> itself is unset and for any config saved before this field existed.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a name="rellm-EmbeddingModel"></a></p>
+    <h3 id="embeddingmodel"><a class="anchor" aria-hidden="true" tabindex="-1" href="#embeddingmodel"><span class="octicon octicon-link"></span></a>EmbeddingModel</h3>
+    <p>One embedding model a server can run for semantic search. See <code>SearchSettings.embedding_model</code>.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>id</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Stable identifier, e.g. <code>multilingual-e5-small</code>.</td>
+        </tr>
+        <tr>
+          <td>name</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>Display name.</td>
+        </tr>
+        <tr>
+          <td>description</td>
+          <td><a href="#string">string</a></td>
+          <td></td>
+          <td>What it's good at and what it costs, for the picker.</td>
+        </tr>
+        <tr>
+          <td>dimensions</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Vector size.</td>
+        </tr>
+        <tr>
+          <td>download_megabytes</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Approximate one-time model download, in MB (binary, 1024-based, like the rest of the UI).</td>
+        </tr>
+        <tr>
+          <td>multilingual</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether it understands languages other than English.</td>
+        </tr>
+        <tr>
+          <td>memory_megabytes</td>
+          <td><a href="#uint32">uint32</a></td>
+          <td></td>
+          <td>Approximate resident memory with the model loaded, in MB -- the server holds one copy and the <code>generate_embeddings</code> job another while it runs. The number to check on small hardware.</td>
         </tr>
       </tbody>
     </table>
@@ -8298,6 +8361,35 @@ directory</a> is (<code>{name}</code> denotes a
         </tr>
       </tbody>
     </table>
+    <p><a name="rellm-SearchSettings"></a></p>
+    <h3 id="searchsettings"><a class="anchor" aria-hidden="true" tabindex="-1" href="#searchsettings"><span class="octicon octicon-link"></span></a>SearchSettings</h3>
+    <p>Search settings for a server. Edited on the Server Information page's Settings tab.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Label</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>semantic_search_enabled</td>
+          <td><a href="#bool">bool</a></td>
+          <td></td>
+          <td>Whether this server builds and uses text embeddings for search. Defaults to <code>true</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>When enabled (and the cluster's embedding service is deployed -- see <code>embedding_service_available</code>): - the <code>generate_embeddings</code> background job asks the cluster's embedding service to embed Posts (<code>post_embeddings</code>), Events (<code>event_embeddings</code> -- the Event's Post plus its Occasions' times/places), Media (<code>media_embeddings</code>) and User profiles (<code>user_profile_embeddings</code>). Every embedding is made from the very same text Postgres full-text search indexes. - <code>TEXT_SEARCH</code>-style listings in <code>GetPosts</code>, <code>GetEvents</code>, <code>GetMedia</code> and <code>GetUsers</code> also consider semantically similar results (not just prefix matches) and rerank by fusing the full-text rank with embedding similarity.</p>
+    <p>
+      Servers and jobs never load an embedding model themselves. When disabled, or when no embedding service is reachable, the job does nothing and search is plain Postgres full-text search. Existing embeddings are kept (re-enabling resumes where it left off). |
+      | embedding_model | <a href="#string">string</a> | | The <code>EmbeddingModel.id</code> the cluster's embedding service runs (empty if it can't be reached or is not deployed). Read-only: never a setting, ignored by <code>ConfigureServer</code>. Switching models means redeploying the service; every server then re-embeds in the background, and until a row has been redone it simply isn't a semantic candidate (full-text search still finds it). |
+      | available_models | <a href="#rellm-EmbeddingModel">EmbeddingModel</a> | repeated | The model in use, described (empty when none). Read-only; ignored by <code>ConfigureServer</code>. |
+      | model_chosen_by_cluster | <a href="#bool">bool</a> | | Always true now (kept for older clients): the model is chosen by the cluster's embedding service. |
+      | embedding_service_available | <a href="#bool">bool</a> | | Whether an embedding service is configured for this server (<code>RELLM_EMBEDDING_SERVICE_URL</code>). When false, semantic search can't work no matter what <code>semantic_search_enabled</code> says. Read-only. |
+    </p>
     <p><a name="rellm-SendgridConfig"></a></p>
     <h3 id="sendgridconfig"><a class="anchor" aria-hidden="true" tabindex="-1" href="#sendgridconfig"><span class="octicon octicon-link"></span></a>SendgridConfig</h3>
     <p>
@@ -8477,6 +8569,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-MarketSettings">MarketSettings</a></td>
           <td></td>
           <td>Public, non-secret "is this server's Market open" signal -- unlike <code>stripe_config</code> (which holds real credentials and is Admin-only, see that field's own doc), this is never stripped for a non-admin/unauthenticated caller. Lets a client decide whether to show this server's Market section at all (e.g. when browsing a federated list of servers) without needing to be an admin here just to check -- see <code>rellm.proto</code>'s own "Federated Markets" doc section.</td>
+        </tr>
+        <tr>
+          <td>search_settings</td>
+          <td><a href="#rellm-SearchSettings">SearchSettings</a></td>
+          <td></td>
+          <td>Search behavior across Posts, Events, Media and People/profiles -- see <a href="#rellm-SearchSettings"><code>SearchSettings</code></a>. Publicly readable (clients can tell whether a search on this server is semantically ranked). Unset on read never happens: servers that predate this field report the default (<code>semantic_search_enabled: true</code>).</td>
         </tr>
         <tr>
           <td>external_cdn_config</td>
@@ -8885,7 +8983,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>custom_css_configuration</td>
           <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
           <td>optional</td>
-          <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is only included in the subscription's own copy (<code>GetMarketSubscriptions</code>), never in <code>GetServerConfiguration</code>'s, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveMarketSubscription</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
+          <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is never carried in subscription listings (<code>GetMarketSubscriptions</code>, <code>User.market_subscriptions</code>) or in <code>GetServerConfiguration</code>'s copy -- read the text with <code>GetCustomCSS</code> on the subdomain's host, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveMarketSubscription</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
         </tr>
       </tbody>
     </table>

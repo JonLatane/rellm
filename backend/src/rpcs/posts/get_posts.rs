@@ -12,6 +12,7 @@ use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::*;
+use crate::logic::embeddings;
 use crate::marshaling::*;
 use crate::models;
 use crate::models::get_group;
@@ -65,10 +66,10 @@ fn published_or_created_before(request: &GetPostsRequest) -> Option<std::time::S
 #[derive(Clone, Debug, Default)]
 pub struct AuthorScope {
     pub excluded: Vec<i64>,
-    pub only: Option<Vec<i64>>,
+    pub only: Option<crate::logic::subdomains::AuthorSet>,
 }
 
-fn author_scope(request: &GetPostsRequest, only: &Option<Vec<i64>>) -> Result<AuthorScope, Status> {
+fn author_scope(request: &GetPostsRequest, only: &Option<crate::logic::subdomains::AuthorSet>) -> Result<AuthorScope, Status> {
     Ok(AuthorScope { excluded: excluded_author_db_ids(request)?, only: only.clone() })
 }
 
@@ -91,11 +92,12 @@ macro_rules! exclude_authors {
             .or(posts::user_id.ne_all($excluded.excluded.to_vec()))
             // A subdomain's feed only ever shows its `only` authors (see `AuthorScope`) -- `true` otherwise.
             .and(
-                $excluded
-                    .only
-                    .is_none()
-                    .into_sql::<diesel::sql_types::Bool>()
-                    .or(posts::user_id.eq_any($excluded.only.clone().unwrap_or_default())),
+                // SQL *text*, not a bind parameter: with no subdomain scope (every normal request) it is the literal
+                // `TRUE`, which Postgres folds away at plan time, so ordinary feeds plan exactly as they did before.
+                // On a subdomain it is the owner-and-sharers condition with its `follows` subqueries.
+                diesel::dsl::sql::<diesel::sql_types::Bool>(
+                    &$excluded.only.as_ref().map_or("TRUE".to_string(), |set| set.sql_condition("posts.user_id")),
+                ),
             )
     };
 }
@@ -112,7 +114,7 @@ pub fn get_posts(
 pub fn get_posts_scoped(
     request: GetPostsRequest,
     user: &Option<&models::User>,
-    only: &Option<Vec<i64>>,
+    only: &Option<crate::logic::subdomains::AuthorSet>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetPostsResponse, Status> {
     let cutoff = published_or_created_before(&request);
@@ -462,23 +464,108 @@ fn get_search_posts(
         matching_post_ids = matching_post_ids.filter(posts::sort_published_at.lt(cutoff));
     }
 
-    let result: Vec<MarshalablePost> = posts::table
-        .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
+    // Full-text matches, best first. Ordered by match quality first (best guess at what the user is
+    // looking for), falling back to recency - `COALESCE(published_at, created_at)` - to keep
+    // ordering stable across the (common, with prefix matching) rank ties rather than falling
+    // through to unspecified/DB-natural order.
+    let mut ranked_ids: Vec<i64> = posts::table
         .filter(posts::id.eq_any(matching_post_ids))
-        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
-        // Search results are ordered by match quality first (best guess at what the user is
-        // looking for), falling back to recency - `COALESCE(published_at, created_at)` - to keep
-        // ordering stable across the (common, with prefix matching) rank ties rather than falling
-        // through to unspecified/DB-natural order.
         .order(ts_rank_cd(posts::search_text, rank_query).desc())
         .then_order_by(posts::sort_published_at.desc())
         .then_order_by(posts::id.desc())
-        .limit(PAGE_SIZE)
-        .offset(page_offset(request))
+        .select(posts::id)
+        .limit(SEARCH_CANDIDATE_LIMIT)
+        .load(conn)
+        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?;
+
+    // Semantic reranking (see `logic::embeddings`): also consider posts that are semantically close to the
+    // query even though they share no words with it, and fuse the two rankings. Only ever ids the
+    // visibility-filtered queries return.
+    if embeddings::semantic_search_ready(conn) {
+        // First the vector search service, if it's configured and up: it holds every vector, so take the nearest ids
+        // anywhere, then keep only the ones this viewer may see (the very same visibility-checked query,
+        // restricted to those ids). If it's absent, down or still building this is `None` and the Postgres scan
+        // below answers instead -- the service is optional.
+        let global = if embeddings::semantic_global_available() {
+            match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::Post, search_text) {
+                Some(mut nearest) if !nearest.is_empty() => {
+                    let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
+                    let mut visible = query_visible_posts_unlimited!(user)
+                        .filter(posts::context.eq(request.context().as_str_name()))
+                        .filter(exclude_authors!(excluded))
+                        .filter(posts::id.eq_any(&nearest_ids))
+                        .select(posts::id)
+                        .into_boxed();
+                    if let Some(author_user_id) = author_user_id {
+                        visible = visible.filter(posts::user_id.eq(author_user_id));
+                    }
+                    if let Some(cutoff) = published_or_created_before(request) {
+                        visible = visible.filter(posts::sort_published_at.lt(cutoff));
+                    }
+                    let visible: std::collections::HashSet<i64> = visible
+                        .load::<i64>(conn)
+                        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+                        .into_iter()
+                        .collect();
+                    nearest.retain(|(id, _)| visible.contains(id));
+                    Some(nearest)
+                }
+                other => other,
+            }
+        } else {
+            None
+        };
+        let semantic = if global.is_some() {
+            global
+        } else {
+            // Scan the newest visible posts (plus the full-text matches) out of Postgres.
+            let mut recent = query_visible_posts_unlimited!(user)
+                .filter(posts::context.eq(request.context().as_str_name()))
+                .filter(exclude_authors!(excluded))
+                .order(posts::sort_published_at.desc())
+                .select((posts::id, posts::sort_published_at))
+                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                .into_boxed();
+            if let Some(author_user_id) = author_user_id {
+                recent = recent.filter(posts::user_id.eq(author_user_id));
+            }
+            if let Some(cutoff) = published_or_created_before(request) {
+                recent = recent.filter(posts::sort_published_at.lt(cutoff));
+            }
+            let mut scope: Vec<i64> = recent
+                .load::<(i64, std::time::SystemTime)>(conn)
+                .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            scope.extend(ranked_ids.iter().copied());
+            scope.sort_unstable();
+            scope.dedup();
+            embeddings::semantic_ranking(conn, embeddings::EmbeddingKind::Post, search_text, &scope)
+        };
+        if let Some(semantic) = semantic {
+            ranked_ids = embeddings::fuse_rankings(&ranked_ids, &semantic);
+        }
+    }
+
+    let page_ids: Vec<i64> = ranked_ids
+        .into_iter()
+        .skip(page_offset(request) as usize)
+        .take(PAGE_SIZE as usize)
+        .collect();
+    let mut rows: HashMap<i64, (models::Post, Option<models::Author>)> = posts::table
+        .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
+        .filter(posts::id.eq_any(&page_ids))
+        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
         .load::<(models::Post, Option<models::Author>)>(conn)
         .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+        .into_iter()
+        .map(|row| (row.0.id, row))
+        .collect();
+    let result: Vec<MarshalablePost> = page_ids
         .iter()
-        .map(|(post, author)| MarshalablePost(post.clone(), author.clone(), None, None, vec![]))
+        .filter_map(|id| rows.remove(id))
+        .map(|(post, author)| MarshalablePost(post, author, None, None, vec![]))
         .collect();
 
     Ok(result)

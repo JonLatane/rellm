@@ -46,6 +46,13 @@ pub fn currency_code(currency: u32) -> Result<&'static str, Status> {
     }
 }
 
+/// The inverse of `currency_code`: Stripe's lowercase alpha code -> numeric ISO 4217 (what `market_payments.currency` stores).
+pub fn currency_numeric_code(stripe_currency: &str) -> Option<u32> {
+    [840u32, 978, 826, 124, 36, 392, 756]
+        .into_iter()
+        .find(|numeric| currency_code(*numeric).is_ok_and(|alpha| alpha.eq_ignore_ascii_case(stripe_currency)))
+}
+
 /// Whether `currency` has no minor unit (e.g. Japanese yen has no "cents") -- Stripe's own
 /// zero-decimal currency list (a superset of this); only JPY is reachable through the currencies
 /// `currency_code` actually supports today. `MarketProduct.amount` is still always a plain integer
@@ -344,6 +351,43 @@ pub fn create_off_session_payment_intent_at(
             Status::new(Code::Internal, "stripe_payment_intent_missing_id")
         })?;
     Ok(OffSessionPaymentIntentResult { id })
+}
+
+/// Refunds `payment_intent_id` in full -- for a paid checkout that can't be fulfilled (a subdomain label someone else
+/// took first). The `Idempotency-Key` makes a retried webhook delivery return the *same* refund instead of refunding
+/// twice. Returns the refund's id.
+pub fn refund_payment_intent_at(
+    base_url: &str,
+    secret_key: &str,
+    payment_intent_id: &str,
+    reason_metadata: &str,
+) -> Result<String, Status> {
+    let secret_key = secret_key.to_string();
+    let url = format!("{base_url}/v1/refunds");
+    let idempotency_key = format!("rellm-refund-{payment_intent_id}");
+    let form: Vec<(String, String)> = vec![
+        ("payment_intent".to_string(), payment_intent_id.to_string()),
+        ("metadata[rellm_reason]".to_string(), reason_metadata.to_string()),
+    ];
+    let (status, response_body) = blocking_json_request(
+        move |client| {
+            client
+                .post(url.clone())
+                .bearer_auth(secret_key.clone())
+                .header("Idempotency-Key", idempotency_key.clone())
+                .form(&form)
+        },
+        "stripe_request_failed",
+    )?;
+    if !status.is_success() {
+        log::error!("Stripe refund failed ({}): {:?}", status, response_body);
+        return Err(Status::new(Code::FailedPrecondition, "stripe_refund_failed"));
+    }
+    response_body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| Status::new(Code::Internal, "stripe_refund_missing_id"))
 }
 
 #[cfg(test)]

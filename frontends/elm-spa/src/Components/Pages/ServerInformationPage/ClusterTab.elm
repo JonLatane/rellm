@@ -577,7 +577,7 @@ locksSection time canEdit freeingLock freeLockError locks =
     ]
 
 
-{-| "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit", with "Edit
+{-| "Browser Instance Limit"/"FFMPEG Process Limit"/"ImageMagick Process Limit"", with "Edit
 Limits" below them -- or, while `limitsEdit` is active, `limitsEditView` in their place.
 -}
 limitsSection : Bool -> List ClusterResourceLimit -> Maybe LimitsEdit -> List (Html Msg)

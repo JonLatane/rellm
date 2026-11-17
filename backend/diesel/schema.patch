@@ -71,10 +71,10 @@
 +}
 +
 +diesel::table! {
-     events (post_id) {
-         post_id -> Int8,
-         info -> Jsonb,
-@@ -196,9 +241,6 @@
+     event_embeddings (event_id) {
+         event_id -> Int8,
+         model -> Varchar,
+@@ -207,9 +252,6 @@
  }
  
  diesel::table! {
@@ -84,7 +84,7 @@
      media (id) {
          id -> Int8,
          user_id -> Nullable<Int8>,
-@@ -212,8 +254,23 @@
+@@ -223,8 +265,23 @@
          updated_at -> Timestamp,
          metadata -> Jsonb,
          sizes -> Jsonb,
@@ -109,17 +109,18 @@
      }
  }
  
-@@ -227,6 +284,9 @@
+@@ -249,6 +306,10 @@
      }
  }
  
++diesel::joinable!(media_embeddings -> media (media_id));
 +diesel::joinable!(media_licenses -> media (media_id));
 +diesel::joinable!(media_licenses -> users (user_id));
 +
  diesel::table! {
      memberships (id) {
          id -> Int8,
-@@ -263,7 +323,7 @@
+@@ -285,7 +346,7 @@
  
  diesel::table! {
      use diesel::sql_types::*;
@@ -128,7 +129,7 @@
  
      messages (id) {
          id -> Int8,
-@@ -274,7 +334,7 @@
+@@ -296,7 +357,7 @@
          email_message_id -> Nullable<Varchar>,
          email_object_storage_path -> Nullable<Varchar>,
          created_at -> Timestamp,
@@ -137,7 +138,7 @@
          messaging_group_id -> Int8,
      }
  }
-@@ -288,37 +348,6 @@
+@@ -310,37 +371,6 @@
  }
  
  diesel::table! {
@@ -172,10 +173,10 @@
 -}
 -
 -diesel::table! {
-     post_sync_destinations (post_id, sync_destination_id) {
+     post_embeddings (post_id) {
          post_id -> Int8,
-         sync_destination_id -> Int8,
-@@ -331,7 +360,7 @@
+         model -> Varchar,
+@@ -364,7 +394,7 @@
  
  diesel::table! {
      use diesel::sql_types::*;
@@ -184,7 +185,7 @@
      use super::sql_types::PostMediaLayout;
  
      posts (id) {
-@@ -355,7 +384,7 @@
+@@ -388,7 +418,7 @@
          published_at -> Nullable<Timestamp>,
          last_activity_at -> Timestamp,
          unauthenticated_star_count -> Int8,
@@ -193,10 +194,15 @@
          sort_published_at -> Timestamp,
          post_media_layout -> PostMediaLayout,
          sync_source_id -> Nullable<Int8>,
-@@ -376,23 +405,6 @@
- }
- 
- diesel::table! {
+@@ -404,24 +434,7 @@
+         endpoint -> Varchar,
+         p256dh_key -> Varchar,
+         auth_key -> Varchar,
+-        created_at -> Timestamp,
+-    }
+-}
+-
+-diesel::table! {
 -    rsvps (id) {
 -        id -> Int8,
 -        occasion_id -> Int8,
@@ -208,16 +214,12 @@
 -        public_note -> Varchar,
 -        private_note -> Varchar,
 -        moderation -> Varchar,
--        created_at -> Timestamp,
+         created_at -> Timestamp,
 -        updated_at -> Nullable<Timestamp>,
--    }
--}
--
--diesel::table! {
-     server_configurations (id) {
-         id -> Int8,
-         active -> Bool,
-@@ -494,7 +506,7 @@
+     }
+ }
+ 
+@@ -540,7 +553,7 @@
  
  diesel::table! {
      use diesel::sql_types::*;
@@ -226,7 +228,7 @@
  
      users (id) {
          id -> Int8,
-@@ -517,7 +529,7 @@
+@@ -563,7 +576,7 @@
          response_count -> Int4,
          created_at -> Timestamp,
          updated_at -> Timestamp,
@@ -235,7 +237,7 @@
          friend_count -> Int4,
          occasion_count -> Int4,
          media_storage_limit_bytes -> Nullable<Int8>,
-@@ -528,6 +540,11 @@
+@@ -574,6 +587,11 @@
  diesel::joinable!(ai_provider_grants -> ai_providers (ai_provider_id));
  diesel::joinable!(ai_provider_grants -> users (grantee_id));
  diesel::joinable!(ai_providers -> users (user_id));
@@ -244,19 +246,20 @@
 +diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 +diesel::joinable!(occasions -> events (event_id));
 +diesel::joinable!(occasions -> posts (post_id));
+ diesel::joinable!(event_embeddings -> events (event_id));
  diesel::joinable!(events -> posts (post_id));
  diesel::joinable!(federated_accounts -> federated_servers (federated_server_id));
- diesel::joinable!(federated_accounts -> users (user_id));
-@@ -544,8 +561,6 @@
+@@ -591,9 +609,6 @@
  diesel::joinable!(market_purchases -> users (buyer_id));
  diesel::joinable!(market_subscriptions -> market_products (product_id));
  diesel::joinable!(market_subscriptions -> users (buyer_id));
+-diesel::joinable!(media_embeddings -> media (media_id));
 -diesel::joinable!(media_licenses -> media (media_id));
 -diesel::joinable!(media_licenses -> users (user_id));
  diesel::joinable!(memberships -> groups (group_id));
  diesel::joinable!(memberships -> users (user_id));
  diesel::joinable!(message_reads -> messages (message_id));
-@@ -554,16 +569,11 @@
+@@ -602,17 +617,12 @@
  diesel::joinable!(message_recipients -> users (user_id));
  diesel::joinable!(messages -> messaging_groups (messaging_group_id));
  diesel::joinable!(messages -> users (from_user_id));
@@ -264,6 +267,7 @@
 -diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
 -diesel::joinable!(occasions -> events (event_id));
 -diesel::joinable!(occasions -> posts (post_id));
+ diesel::joinable!(post_embeddings -> posts (post_id));
  diesel::joinable!(post_sync_destinations -> posts (post_id));
  diesel::joinable!(post_sync_destinations -> sync_destinations (sync_destination_id));
  diesel::joinable!(posts -> sync_sources (sync_source_id));
@@ -273,29 +277,31 @@
  diesel::joinable!(sync_destinations -> users (user_id));
  diesel::joinable!(sync_sources -> users (user_id));
  diesel::joinable!(user_access_tokens -> user_refresh_tokens (refresh_token_id));
-@@ -575,6 +585,9 @@
+@@ -625,6 +635,9 @@
  diesel::allow_tables_to_appear_in_same_query!(
      ai_provider_grants,
      ai_providers,
 +    rsvps,
 +    occasion_sync_destinations,
 +    occasions,
+     event_embeddings,
      events,
      federated_accounts,
-     federated_profiles,
-@@ -589,18 +602,16 @@
+@@ -640,6 +653,7 @@
      market_purchases,
      market_subscriptions,
      media,
 +    media_filter,
+     media_embeddings,
      media_licenses,
      memberships,
-     message_reads,
+@@ -647,13 +661,10 @@
      message_recipients,
      messages,
      messaging_groups,
 -    occasion_sync_destinations,
 -    occasions,
+     post_embeddings,
      post_sync_destinations,
      posts,
      push_subscriptions,

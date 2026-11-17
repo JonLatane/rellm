@@ -77,6 +77,17 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .market_settings
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // `available_models` is derived (see `to_proto`), never stored.
+            search_settings: self.search_settings.as_ref().map(|c| {
+                serde_json::to_value(SearchSettings {
+                    embedding_model: String::new(),
+                    available_models: vec![],
+                    model_chosen_by_cluster: false,
+                    embedding_service_available: false,
+                    ..c.clone()
+                })
+                .unwrap()
+            }),
             preferred_verification_apis: Some(crate::logic::verification_apis_to_json(
                 &self
                     .preferred_verification_apis
@@ -341,6 +352,19 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 .and_then(|c| serde_json::from_value::<MarketSettings>(c).ok())
                 .unwrap_or(MarketSettings { enabled: false, stripe_configured: false })
         };
+        // `SearchSettings` -- falls back to the default (semantic search ON) whenever the stored blob
+        // is missing (every server before this column existed), same read-time-fallback convention
+        // as `market_settings`/`media_settings` above. Public, like `market_settings`.
+        let search_settings: SearchSettings = models::search_settings_from_json(self.search_settings.as_ref());
+        // The model is a fact about the cluster's embedding service, never stored or chosen here.
+        let cluster_model = crate::logic::embeddings::cluster_model();
+        let search_settings = SearchSettings {
+            embedding_model: cluster_model.map(|m| m.id.to_string()).unwrap_or_default(),
+            available_models: crate::logic::embeddings::available_models(cluster_model),
+            model_chosen_by_cluster: true,
+            embedding_service_available: crate::logic::embeddings::embedding_service_configured(),
+            ..search_settings
+        };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
         // one (unlike the comment below used to say), stored the same way `Permission` lists are
@@ -424,6 +448,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             custom_tabs: custom_tabs,
             media_settings: Some(media_settings),
             market_settings: Some(market_settings),
+            search_settings: Some(search_settings),
             private_user_strategy: self.private_user_strategy.to_i32_private_user_strategy(),
             authentication_features: self
                 .authentication_features

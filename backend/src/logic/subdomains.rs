@@ -17,7 +17,66 @@ use crate::marshaling::{ToProtoId, ToProtoPurchaseType, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
-use crate::schema::{follows, market_subscriptions};
+use crate::schema::market_subscriptions;
+
+/// A tiny TTL map for the two things every subdomain-aware request would otherwise ask the database for: the
+/// parent's `frontend_host`/`backend_host`, and which subscription (if any) a host resolves to. Entries expire
+/// after `ttl`, and the map is bounded (`MAX_ENTRIES`; cleared when full -- the keys are request-controlled, so it
+/// must never grow without limit). Pure -- the caller passes `now` -- so it is unit-testable.
+pub struct TtlCache<V> {
+    entries: std::collections::HashMap<String, (V, std::time::Instant)>,
+    ttl: std::time::Duration,
+}
+
+impl<V: Clone> TtlCache<V> {
+    pub const MAX_ENTRIES: usize = 1024;
+
+    pub fn new(ttl: std::time::Duration) -> Self {
+        TtlCache { entries: std::collections::HashMap::new(), ttl }
+    }
+
+    pub fn get(&self, key: &str, now: std::time::Instant) -> Option<V> {
+        self.entries
+            .get(key)
+            .filter(|(_, stored_at)| now.saturating_duration_since(*stored_at) < self.ttl)
+            .map(|(value, _)| value.clone())
+    }
+
+    pub fn put(&mut self, key: String, value: V, now: std::time::Instant) {
+        if self.entries.len() >= Self::MAX_ENTRIES {
+            self.entries.clear();
+        }
+        self.entries.insert(key, (value, now));
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+lazy_static::lazy_static! {
+    /// `(frontend_host, backend_host)` of the parent's `ExternalCDNConfig` -- changes only when an admin edits it.
+    static ref CDN_HOSTS: std::sync::Mutex<TtlCache<(String, String)>> =
+        std::sync::Mutex::new(TtlCache::new(std::time::Duration::from_secs(30)));
+    /// Host -> resolved subdomain (`None` = a well-formed label nobody holds). Settings edited through *this*
+    /// process invalidate it at once (`invalidate_cache`); another replica's edits show up within the TTL.
+    static ref RESOLVED: std::sync::Mutex<TtlCache<Option<SubdomainContext>>> =
+        std::sync::Mutex::new(TtlCache::new(std::time::Duration::from_secs(15)));
+}
+
+/// Forgets every cached resolution -- called wherever a subscription's settings, state or label change in this
+/// process (save, cancel, checkout, lapse). Other processes catch up within the cache's TTL.
+pub fn invalidate_cache() {
+    if let Ok(mut resolved) = RESOLVED.lock() {
+        resolved.clear();
+    }
+}
+
+/// Specs share one process and each rewrites subscriptions and server configuration inside a rolled-back
+/// transaction, so a process-wide cache would leak state between them: it is simply off under `cargo test`.
+const fn cache_enabled() -> bool {
+    !cfg!(test)
+}
 
 /// A request's host, as the Tonic layer saw it (`:authority`/`Host`) -- an extension on every Tonic
 /// `Request` (see `servers::tonic::RequestHostLayer`).
@@ -141,7 +200,7 @@ pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnectio
     )
     .set(market_subscriptions::service_terminated_at.eq(Some(SystemTime::now())))
     .execute(conn)
-    .map(|_| ())
+    .map(|_| invalidate_cache())
     .map_err(|e| {
         log::error!("Failed to release a lapsed subdomain label: {:?}", e);
         Status::new(Code::Internal, "failed_to_release_subdomain")
@@ -196,59 +255,63 @@ pub fn resolve_subdomain(
     let Some(host) = host else {
         return Ok(None);
     };
-    let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+    let now = std::time::Instant::now();
+    let cached_hosts = cache_enabled().then(|| CDN_HOSTS.lock().ok().and_then(|c| c.get("", now))).flatten();
+    let (frontend_host, backend_host) = match cached_hosts {
+        Some(hosts) => hosts,
+        None => {
+            let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+            let hosts = (cdn.frontend_host, cdn.backend_host);
+            if cache_enabled() {
+                if let Ok(mut cache) = CDN_HOSTS.lock() {
+                    cache.put(String::new(), hosts.clone(), now);
+                }
+            }
+            hosts
+        }
+    };
     // A subdomain is reached at `<label>.<frontend_host>` (pages) and, for gRPC when the backend is a separate host,
     // at `<label>.<backend_host>` (what `/backend_host` returns on a subdomain) -- so every request carries which
     // server it is for, and the parent and a subdomain are never confused even though they share a backend.
-    let Some(label) = subdomain_label_for_host(host, &cdn.frontend_host)
-        .or_else(|| subdomain_label_for_host(host, &cdn.backend_host))
+    let Some(label) = subdomain_label_for_host(host, &frontend_host)
+        .or_else(|| subdomain_label_for_host(host, &backend_host))
     else {
+        // The parent itself, or a host that isn't one label beneath it: no database work at all.
         return Ok(None);
     };
-    let Some(subscription) = find_active_subdomain_subscription(&label, conn)? else {
-        return Ok(None);
+    if cache_enabled() {
+        if let Some(cached) = RESOLVED.lock().ok().and_then(|c| c.get(&label, now)) {
+            return Ok(cached);
+        }
+    }
+    let resolved = match find_active_subdomain_subscription(&label, conn)? {
+        Some(subscription) => {
+            let owner = models::get_user(subscription.buyer_id, conn)?;
+            let settings = settings_of(&subscription);
+            Some(SubdomainContext { subscription, owner, settings })
+        }
+        None => None,
     };
-    let owner = models::get_user(subscription.buyer_id, conn)?;
-    let settings = settings_of(&subscription);
-    Ok(Some(SubdomainContext { subscription, owner, settings }))
+    if cache_enabled() {
+        if let Ok(mut cache) = RESOLVED.lock() {
+            cache.put(label, resolved.clone(), now);
+        }
+    }
+    Ok(resolved)
 }
 
 impl SubdomainContext {
-    /// The owner's user id plus -- per the `share_content_from_*` toggles -- everyone whose content the
-    /// subdomain also shows (accepted follows only). What `GetPosts`/`GetEvents` are limited to.
-    pub fn visible_author_ids(&self, conn: &mut PgPooledConnection) -> Result<Vec<i64>, Status> {
-        let owner_id = self.owner.id;
-        let passing: Vec<String> = crate::rpcs::PASSING_MODERATIONS.iter().map(|s| s.to_string()).collect();
-        let load = |query: Result<Vec<i64>, diesel::result::Error>| {
-            query.map_err(|e| {
-                log::error!("Failed to load subdomain authors: {:?}", e);
-                Status::new(Code::Internal, "failed_to_load_subdomain_authors")
-            })
-        };
-        // Users who follow the owner / users the owner follows.
-        let followers: Vec<i64> = if self.settings.share_content_from_followers || self.settings.share_content_from_friends {
-            load(
-                follows::table
-                    .filter(follows::target_user_id.eq(owner_id))
-                    .filter(follows::target_user_moderation.eq_any(&passing))
-                    .select(follows::user_id)
-                    .load::<i64>(&mut *conn),
-            )?
-        } else {
-            vec![]
-        };
-        let following: Vec<i64> = if self.settings.share_content_from_following || self.settings.share_content_from_friends {
-            load(
-                follows::table
-                    .filter(follows::user_id.eq(owner_id))
-                    .filter(follows::target_user_moderation.eq_any(&passing))
-                    .select(follows::target_user_id)
-                    .load::<i64>(&mut *conn),
-            )?
-        } else {
-            vec![]
-        };
-        Ok(combine_authors(owner_id, &self.settings, &followers, &following))
+    /// Whose content `GetPosts`/`GetEvents` may show here: the owner plus -- per the `share_content_from_*` toggles --
+    /// followers / people the owner follows / friends. Just a description: it is rendered as SQL subqueries against
+    /// `follows` inside the feed query itself (`AuthorSet::sql_condition`), so a request never loads or ships the id
+    /// lists -- the cost no longer grows with how many followers the owner has.
+    pub fn author_set(&self) -> AuthorSet {
+        AuthorSet {
+            owner_id: self.owner.id,
+            followers: self.settings.share_content_from_followers,
+            following: self.settings.share_content_from_following,
+            friends: self.settings.share_content_from_friends,
+        }
     }
 
     /// The subdomain's own stylesheet configuration, `custom_css` text included (empty if never set) -- what
@@ -355,27 +418,54 @@ fn subdomain_tabs() -> CustomNavigationTabSet {
     }
 }
 
-/// Pure core of `visible_author_ids`: `followers` are users who follow the owner, `following` users the
-/// owner follows. Friends are the intersection. The owner is always first; the result has no duplicates.
-pub fn combine_authors(owner_id: i64, settings: &SubdomainSettings, followers: &[i64], following: &[i64]) -> Vec<i64> {
-    let mut authors = vec![owner_id];
-    let mut add = |ids: &mut dyn Iterator<Item = i64>| {
-        for id in ids {
-            if !authors.contains(&id) {
-                authors.push(id);
-            }
+/// Which authors a subdomain's feeds show -- see `SubdomainContext::author_set`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthorSet {
+    pub owner_id: i64,
+    /// Users with an accepted follow *of* the owner.
+    pub followers: bool,
+    /// Users the owner has an accepted follow of.
+    pub following: bool,
+    /// Users who follow the owner *and* whom the owner follows back.
+    pub friends: bool,
+}
+
+impl AuthorSet {
+    /// A SQL boolean expression, true when `column` (an author id, e.g. `"posts.user_id"`) is in this set. Always
+    /// includes the owner; each enabled toggle adds one `IN (subquery)` over `follows` (accepted follows only --
+    /// `PASSING_MODERATIONS`). The only interpolated values are the owner's integer id and those constant moderation
+    /// names, so there is nothing to inject; the subqueries use their own aliases (`sf`/`sg`) so they never collide
+    /// with the `follows` join the post queries already have.
+    pub fn sql_condition(&self, column: &str) -> String {
+        let owner = self.owner_id;
+        let passing = crate::rpcs::PASSING_MODERATIONS
+            .iter()
+            .map(|m| format!("'{m}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut conditions = vec![format!("{column} = {owner}")];
+        if self.followers {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.user_id FROM follows sf WHERE sf.target_user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}))"
+            ));
         }
-    };
-    if settings.share_content_from_followers {
-        add(&mut followers.iter().copied());
+        if self.following {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.target_user_id FROM follows sf WHERE sf.user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}))"
+            ));
+        }
+        if self.friends {
+            conditions.push(format!(
+                "{column} IN (SELECT sf.user_id FROM follows sf WHERE sf.target_user_id = {owner} \
+                 AND sf.target_user_moderation IN ({passing}) AND EXISTS (SELECT 1 FROM follows sg \
+                 WHERE sg.user_id = {owner} AND sg.target_user_id = sf.user_id \
+                 AND sg.target_user_moderation IN ({passing})))"
+            ));
+        }
+        format!("({})", conditions.join(" OR "))
     }
-    if settings.share_content_from_following {
-        add(&mut following.iter().copied());
-    }
-    if settings.share_content_from_friends {
-        add(&mut followers.iter().copied().filter(|id| following.contains(id)));
-    }
-    authors
 }
 
 #[cfg(test)]
@@ -405,6 +495,25 @@ mod tests {
     }
 
     #[test]
+    fn ttl_cache_expires_is_bounded_and_clears() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let mut cache = TtlCache::new(Duration::from_secs(10));
+        cache.put("jon".to_string(), 1, start);
+        assert_eq!(cache.get("jon", start + Duration::from_secs(9)), Some(1));
+        assert_eq!(cache.get("jon", start + Duration::from_secs(10)), None, "expired");
+        assert_eq!(cache.get("other", start), None);
+        cache.put("jon".to_string(), 2, start);
+        cache.clear();
+        assert_eq!(cache.get("jon", start), None, "cleared");
+        // Bounded: request-controlled keys can't grow it without limit.
+        for i in 0..(TtlCache::<i32>::MAX_ENTRIES + 5) {
+            cache.put(format!("k{i}"), 0, start);
+        }
+        assert!(cache.entries.len() <= TtlCache::<i32>::MAX_ENTRIES);
+    }
+
+    #[test]
     fn valid_labels() {
         assert!(is_valid_label("jon"));
         assert!(is_valid_label("jon-1"));
@@ -416,21 +525,17 @@ mod tests {
     }
 
     #[test]
-    fn authors_follow_the_toggles() {
-        let none = SubdomainSettings::default();
-        assert_eq!(combine_authors(1, &none, &[2, 3], &[3, 4]), vec![1]);
-        let followers = SubdomainSettings { share_content_from_followers: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &followers, &[2, 3], &[3, 4]), vec![1, 2, 3]);
-        let following = SubdomainSettings { share_content_from_following: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &following, &[2, 3], &[3, 4]), vec![1, 3, 4]);
-        let friends = SubdomainSettings { share_content_from_friends: true, ..Default::default() };
-        assert_eq!(combine_authors(1, &friends, &[2, 3], &[3, 4]), vec![1, 3]);
-        let all = SubdomainSettings {
-            share_content_from_followers: true,
-            share_content_from_following: true,
-            share_content_from_friends: true,
-            ..Default::default()
-        };
-        assert_eq!(combine_authors(1, &all, &[2, 3], &[3, 4]), vec![1, 2, 3, 4]);
+    fn author_condition_has_one_subquery_per_enabled_toggle() {
+        let set = |followers, following, friends| AuthorSet { owner_id: 7, followers, following, friends };
+        let none = set(false, false, false).sql_condition("posts.user_id");
+        assert_eq!(none, "(posts.user_id = 7)");
+        assert_eq!(set(true, false, false).sql_condition("posts.user_id").matches("SELECT").count(), 1);
+        assert_eq!(set(true, true, false).sql_condition("posts.user_id").matches("SELECT").count(), 2);
+        let all = set(true, true, true).sql_condition("posts.user_id");
+        assert_eq!(all.matches("IN (SELECT").count(), 3);
+        // Friends are the intersection: a follower the owner follows back.
+        assert!(all.contains("EXISTS (SELECT 1 FROM follows sg"));
+        // Accepted follows only.
+        assert!(all.contains("'UNMODERATED','APPROVED'"));
     }
 }

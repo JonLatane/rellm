@@ -472,15 +472,22 @@ pub fn configure_server(
     // forward) or waits for it -- never lost.
     let result =
         conn.transaction::<models::ServerConfiguration, diesel::result::Error, _>(|conn| {
-            let (carried_css_configuration, carried_css) = server_configurations
-                .filter(active.eq(true))
-                .select((custom_css_configuration, custom_css))
-                .for_update()
-                .first::<(Option<serde_json::Value>, Option<String>)>(conn)
-                .optional()?
-                .unwrap_or_default();
+            let (carried_css_configuration, carried_css, carried_search_settings) =
+                server_configurations
+                    .filter(active.eq(true))
+                    .select((custom_css_configuration, custom_css, search_settings))
+                    .for_update()
+                    .first::<(Option<serde_json::Value>, Option<String>, Option<serde_json::Value>)>(conn)
+                    .optional()?
+                    .unwrap_or_default();
             new_config.custom_css_configuration = carried_css_configuration;
             new_config.custom_css = carried_css;
+            // A client that predates `search_settings` doesn't send it. Keep what's saved rather than
+            // clearing it, which would read as the default (semantic search ON) and quietly turn back
+            // on the model downloads and memory use an admin had switched off.
+            if new_config.search_settings.is_none() {
+                new_config.search_settings = carried_search_settings;
+            }
             update(server_configurations)
                 .set(active.eq(false))
                 .execute(conn)?;
@@ -492,6 +499,9 @@ pub fn configure_server(
         });
     match result {
         Ok(configuration) => {
+            // Apply a changed `search_settings.semantic_search_enabled` right away: start loading the
+            // query model when turned on, free its memory when turned off.
+            crate::logic::embeddings::apply_semantic_search_setting(conn);
             log::info!("ConfigureServer: configuration updated");
             Ok(configuration.to_proto())
         }

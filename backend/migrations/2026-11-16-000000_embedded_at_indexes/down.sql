@@ -1,0 +1,4 @@
+DROP INDEX idx_user_profile_embeddings_embedded_at;
+DROP INDEX idx_media_embeddings_embedded_at;
+DROP INDEX idx_event_embeddings_embedded_at;
+DROP INDEX idx_post_embeddings_embedded_at;

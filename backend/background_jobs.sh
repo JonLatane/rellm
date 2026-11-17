@@ -47,6 +47,7 @@ JOBS=(
   "convert_media_sizes 20 600"
   "renew_market_subscriptions 25 3600"
   "calculate_server_media_usage 30 180"
+  "generate_embeddings 35 300"
   "calculate_server_object_storage_usage random 14400"
 )
 

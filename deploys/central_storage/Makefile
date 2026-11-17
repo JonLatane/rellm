@@ -133,3 +133,31 @@ wait_central_object_storage_ready:
 
 get_central_storage_all:
 	kubectl get all -n $(STORAGE_NAMESPACE)
+
+# Cluster-shared embedding model service (semantic search; see ../k8s/SEMANTIC_SEARCH.md): ONE pod per cluster that
+# holds the text embedding model every namespace's servers and jobs call. Optional -- without it search is plain
+# full-text. Namespaces opt in with `rellm deploy create_backend_embedding` (which copies the shared secret below into
+# the namespace). Its shared secret is randomly generated once and never regenerated if the Secret exists: namespaces
+# hold copies of it, so silently rotating it here would lock every one of them out.
+create_central_embedding_credentials: deploy_central_storage_ensure_namespace
+	@command -v openssl >/dev/null || (echo "openssl is required to generate credentials" >&2 && exit 1)
+	@if kubectl get secret rellm-central-embedding-credentials -n $(STORAGE_NAMESPACE) >/dev/null 2>&1; then \
+		echo "rellm-central-embedding-credentials already exists -- leaving it as-is."; \
+	else \
+		kubectl create secret generic rellm-central-embedding-credentials -n $(STORAGE_NAMESPACE) --from-literal=secret="$$(openssl rand -hex 24)"; \
+	fi
+create_central_embedding: deploy_central_storage_ensure_namespace create_central_embedding_credentials
+	kubectl create -f k8s/k8s-central-embedding-service.yaml --save-config -n $(STORAGE_NAMESPACE)
+update_central_embedding:
+	kubectl apply -f k8s/k8s-central-embedding-service.yaml -n $(STORAGE_NAMESPACE)
+# Removes the service (and its model-cache PVC, which just re-downloads) -- semantic search stops cluster-wide until it
+# is created again. The credentials Secret is kept so namespaces' copies stay valid.
+check_delete_central_embedding_confirmed:
+	@test "$(CONFIRM)" = "$(STORAGE_NAMESPACE)" || (echo "This deletes the cluster's embedding service in $(STORAGE_NAMESPACE) -- semantic search stops for EVERY site on the cluster. Re-run with CONFIRM=$(STORAGE_NAMESPACE)." >&2 && exit 1)
+delete_central_embedding: check_delete_central_embedding_confirmed
+	- kubectl delete -f k8s/k8s-central-embedding-service.yaml -n $(STORAGE_NAMESPACE)
+restart_central_embedding:
+	kubectl rollout restart deployment rellm-central-embedding -n $(STORAGE_NAMESPACE)
+# The first start downloads the model (~300MB), so allow it time.
+wait_central_embedding_ready:
+	kubectl rollout status deployment/rellm-central-embedding -n $(STORAGE_NAMESPACE) --timeout=10m
