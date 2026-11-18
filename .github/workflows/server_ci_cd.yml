@@ -1152,7 +1152,7 @@ jobs:
           tar -xf "$RUNNER_TEMP/rust-macos-arm64-binaries/rust-macos-arm64-binaries.tar" -C backend/target/release
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout, but rooted at a
-      # staging dir that becomes /opt/homebrew/etc/rellm on the installed Mac.
+      # staging dir that becomes the formula's libexec (/opt/homebrew/opt/rellm/libexec) on the installed Mac.
       - name: Assemble /opt/homebrew/etc/rellm package layout
         run: |
           set -euo pipefail
@@ -1232,15 +1232,21 @@ jobs:
             depends_on "libpq"
 
             def install
-              (etc/"rellm").install Dir["*"]
+              # libexec (a per-version Cellar dir), NOT etc: Homebrew never overwrites an
+              # existing, differing file under etc -- it writes "<file>.default" beside it --
+              # so installing the binaries there left every upgrade running the first
+              # version's rellm-server (`rellm version` never changed).
+              libexec.install Dir["*"]
               (bin/"rellm").write <<~SCRIPT
           RELLM_FORMULA_HEADER_EOF
 
           # docs/rellm_homebrew.sh is plain, standalone bash aside from the
-          # @@RELLM_ETC@@ placeholder, which becomes Ruby's `#{etc}` interpolation
+          # @@RELLM_ETC@@/rellm placeholder, which becomes Ruby's `#{opt_libexec}` interpolation
           # here -- Homebrew resolves that to the real install prefix at `brew install`
           # time, so it can't be a fixed value baked in at CI time.
-          sed -e 's/@@RELLM_ETC@@/#{etc}/' -e 's/^/                /' docs/rellm_homebrew.sh >> tap/Formula/rellm.rb
+          # The package dir is `#{opt_libexec}` (stable across upgrades, unlike the versioned
+          # Cellar path); the launcher's "@@RELLM_ETC@@/rellm" prefix becomes exactly that.
+          sed -e 's|@@RELLM_ETC@@/rellm|#{opt_libexec}|g' -e 's/^/                /' docs/rellm_homebrew.sh >> tap/Formula/rellm.rb
 
           cat >> tap/Formula/rellm.rb <<'RELLM_FORMULA_FOOTER_EOF'
               SCRIPT
