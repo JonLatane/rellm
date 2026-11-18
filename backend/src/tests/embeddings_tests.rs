@@ -818,6 +818,11 @@ fn global_mode_media_returns_only_media_the_viewer_may_see() {
 /// Starts the real model service (gRPC, auth and all) in-process on a free port, backed by the fake model, and
 /// returns its URL. Runs on its own thread/runtime for the life of the test process.
 fn start_model_service(secret: Option<&str>) -> String {
+    start_model_service_with(Box::new(FakeEmbedder), secret)
+}
+
+/// `start_model_service`, backed by any model.
+fn start_model_service_with(embedder: embeddings::BoxedEmbedder, secret: Option<&str>) -> String {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let secret = secret.map(str::to_string);
     std::thread::spawn(move || {
@@ -827,7 +832,7 @@ fn start_model_service(secret: Option<&str>) -> String {
             .unwrap()
             .block_on(embeddings::model_service::serve(
                 format!("127.0.0.1:{}", port).parse().unwrap(),
-                Box::new(FakeEmbedder),
+                embedder,
                 secret,
             ))
             .unwrap();
@@ -841,6 +846,108 @@ fn start_model_service(secret: Option<&str>) -> String {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     panic!("the model service didn't start");
+}
+
+/// A model that takes `delay` per text and remembers every text it embedded, in order.
+struct SlowFake {
+    delay: std::time::Duration,
+    seen: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl SlowFake {
+    fn new(delay_ms: u64) -> (Self, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        (SlowFake { delay: std::time::Duration::from_millis(delay_ms), seen: seen.clone() }, seen)
+    }
+}
+
+impl TextEmbedder for SlowFake {
+    fn spec(&self) -> &'static embeddings::ModelSpec {
+        embeddings::default_model()
+    }
+    fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let mut vectors = Vec::new();
+        for text in texts {
+            std::thread::sleep(self.delay);
+            self.seen.lock().unwrap().push(text.clone());
+            vectors.push(FakeEmbedder::vector(text));
+        }
+        Ok(vectors)
+    }
+    fn embed_query(&mut self, text: &str) -> anyhow::Result<Vec<f32>> {
+        Ok(self.embed_documents(&[text.to_string()])?.remove(0))
+    }
+}
+
+/// One raw `Embed` call (documents) with a client-side deadline, the way a job's call is made: how many vectors came back,
+/// or the error (a deadline passing is `Err`, and drops the call on the service).
+fn embed_call(url: &str, texts: Vec<String>, timeout: std::time::Duration) -> Result<usize, tonic::Status> {
+    use crate::internal_protos::{embedding_service_client::EmbeddingServiceClient, EmbedRequest};
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        let channel = tonic::transport::Channel::from_shared(url.to_string()).unwrap().connect().await.unwrap();
+        let mut request = tonic::Request::new(EmbedRequest { purpose: 0, texts, model_id: String::new() });
+        request.set_timeout(timeout);
+        EmbeddingServiceClient::new(channel).embed(request).await.map(|r| r.into_inner().vectors.len())
+    })
+}
+
+fn labelled(prefix: &str, n: usize) -> Vec<String> {
+    (0..n).map(|i| format!("{prefix}{i}")).collect()
+}
+
+#[test]
+fn clients_send_short_calls_and_the_service_still_accepts_long_ones() {
+    use embeddings::model_service::TEXTS_PER_CALL;
+    assert!(TEXTS_PER_CALL <= 16, "a call holds up every other namespace for as long as it takes: keep it short");
+    assert!(TEXTS_PER_CALL <= embeddings::MAX_TEXTS_PER_REQUEST, "what a client sends must be acceptable");
+    // A client from before the change sends 64 at a time; a service from after it must keep serving those during a rollout.
+    let url = start_model_service(None);
+    assert_eq!(embed_call(&url, labelled("old", embeddings::MAX_TEXTS_PER_REQUEST), std::time::Duration::from_secs(30)).unwrap(), embeddings::MAX_TEXTS_PER_REQUEST);
+}
+
+#[test]
+fn a_call_the_client_gave_up_on_stops_being_worked_on() {
+    let (fake, seen) = SlowFake::new(100);
+    let url = start_model_service_with(Box::new(fake), None);
+    // 30 texts would take 3s; the client gives up after 300ms.
+    assert!(embed_call(&url, labelled("t", 30), std::time::Duration::from_millis(300)).is_err());
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    let after_a_second = seen.lock().unwrap().len();
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    let after_two = seen.lock().unwrap().len();
+    assert_eq!(after_a_second, after_two, "the abandoned call kept the model busy (embedded {after_a_second}, then {after_two})");
+    assert!(after_two < 30, "the whole abandoned call was embedded anyway");
+}
+
+#[test]
+fn a_call_abandoned_while_it_waits_never_runs() {
+    let (fake, seen) = SlowFake::new(100);
+    let url = start_model_service_with(Box::new(fake), None);
+    let first_url = url.clone();
+    let first = std::thread::spawn(move || embed_call(&first_url, labelled("a", 10), std::time::Duration::from_secs(20)));
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    // Queued behind the first call (1s of work), and gives up after 200ms.
+    assert!(embed_call(&url, labelled("b", 10), std::time::Duration::from_millis(200)).is_err());
+    assert_eq!(first.join().unwrap().unwrap(), 10);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(*seen.lock().unwrap(), labelled("a", 10), "the abandoned call's texts must never reach the model");
+}
+
+#[test]
+fn callers_are_served_in_the_order_they_arrived() {
+    let (fake, seen) = SlowFake::new(60);
+    let url = start_model_service_with(Box::new(fake), None);
+    let mut calls = Vec::new();
+    for prefix in ["a", "b", "c", "d"] {
+        let url = url.clone();
+        calls.push(std::thread::spawn(move || embed_call(&url, labelled(prefix, 3), std::time::Duration::from_secs(20))));
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    }
+    for call in calls {
+        assert_eq!(call.join().unwrap().unwrap(), 3);
+    }
+    let order: Vec<String> = seen.lock().unwrap().iter().map(|t| t[..1].to_string()).collect();
+    assert_eq!(order.join(""), "aaabbbcccddd", "a later caller overtook an earlier one: {order:?}");
 }
 
 #[test]
