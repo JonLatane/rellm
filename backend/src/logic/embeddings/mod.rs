@@ -73,20 +73,38 @@ pub struct ModelSpec {
     pub min_similarity: f32,
 }
 
-/// The default is EmbeddingGemma 300M (int8) with its Matryoshka (MRL) output cut to the first 384 dimensions: multilingual,
-/// search-tuned, about a third of e5-small's memory, and vectors the size of e5's (half of the full 768). Rellm servers are
-/// not English-only. The trade-off is speed (~5x slower to embed than e5-small) and the Gemma Terms of Use license.
-pub const DEFAULT_MODEL_ID: &str = "embeddinggemma-300m-int8-384";
+/// The default is Microsoft's Harrier OSS v1 270M (int8), its 640-dimension vectors cut to the first 384: multilingual
+/// (94 languages), MIT-licensed, search-tuned (queries carry a task instruction, documents none), under half the memory of
+/// the EmbeddingGemma it replaced as the default (~500MB vs ~1.2GB once serving), and 384-dimension vectors (the same storage as e5-small). Microsoft
+/// doesn't document Matryoshka-style truncation for it; 384 was our choice, checked on `compare_models`. EmbeddingGemma
+/// and the other models stay registered for clusters that pick them (`RELLM_EMBEDDING_SERVICE_MODEL`).
+pub const DEFAULT_MODEL_ID: &str = "harrier-oss-v1-270m-384";
 
 // Download/RAM/threshold figures are measured by `embeddings_tests::with_model::compare_models`.
-pub static MODELS: [ModelSpec; 8] = [
+pub static MODELS: [ModelSpec; 9] = [
     ModelSpec {
         id: DEFAULT_MODEL_ID,
+        name: "Harrier OSS v1 270M (int8, 384 dimensions)",
+        description: "Multilingual (94 languages), search-tuned, 8-bit weights, MIT-licensed, with the vectors cut from 640 to their first 384 dimensions so storage and index memory match e5-small. The default: ~500MB of memory in use while serving, under half of EmbeddingGemma's.",
+        dimensions: 384,
+        download_megabytes: 360,
+        memory_megabytes: 500,
+        multilingual: true,
+        query_prefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ",
+        document_prefix: "",
+        // `compare_models`: R@1 97%, R@3 100%, MRR 0.98 (perfect in English, non-English and cross-language). Unlike
+        // EmbeddingGemma the right answers and the no-answer queries overlap slightly (worst right answer 0.332, best
+        // no-answer 0.354), so there is no clean gap; 0.36 is the best trade (keeps 97% of right answers, rejects every
+        // no-answer query).
+        min_similarity: 0.36,
+    },
+    ModelSpec {
+        id: "embeddinggemma-300m-int8-384",
         name: "EmbeddingGemma 300M (int8, 384 dimensions)",
-        description: "Multilingual (100+ languages), search-tuned, 8-bit weights, with the vectors cut to their first 384 dimensions (Matryoshka representation learning), so storage and index memory match e5-small. The default: ~330MB of memory, a third of e5's. ~5x slower to embed than e5-small.",
+        description: "Multilingual (100+ languages), search-tuned, 8-bit weights, with the vectors cut to their first 384 dimensions (Matryoshka representation learning), so storage and index memory match e5-small. ~1.1GB of memory in use once it has embedded text (the ~330MB figure was measured at idle, before the first request). ~5x slower to embed than e5-small.",
         dimensions: 384,
         download_megabytes: 295,
-        memory_megabytes: 331,
+        memory_megabytes: 1150,
         multilingual: true,
         query_prefix: "task: search result | query: ",
         document_prefix: "title: none | text: ",

@@ -1122,6 +1122,12 @@ mod with_model {
 
         let together = embedder.embed_documents(&texts).expect("a full request must embed");
         assert_eq!(together.len(), texts.len());
+        let dimensions = embeddings::default_model().dimensions as usize;
+        for v in &together {
+            assert_eq!(v.len(), dimensions, "vectors have the registry's dimensions (a longer native vector is cut)");
+            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!((norm - 1.0).abs() < 1e-4, "vectors are unit length (norm {norm})");
+        }
 
         for i in [0, 1, texts.len() / 2, texts.len() - 1] {
             let alone = embedder.embed_documents(&texts[i..=i]).expect("a single text must embed").remove(0);

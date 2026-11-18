@@ -298,7 +298,7 @@ This is how the Rellm author's own cluster runs, and the setup to use if you wan
 | **Traefik** - one `LoadBalancer`/external IP routing every domain by SNI/`Host`, plus plain TCP `:25` for mail | `traefik-ingress` | a `LoadBalancer` per site (~$12/mo each) | [`ingress/`](./ingress/README.md) |
 | **Stalwart** - one internet-facing SMTP server; hands each domain's mail to that site's `rellm` | `rellm-email` | a mail server per site | [`email/`](./email/README.md) |
 | **Central storage** - one Postgres + one Silo (2 PVCs total); each site gets its own database/bucket and a role/user restricted to just that | `rellm-storage` | 2 PVCs per site (DOKS caps a cluster at 15) | [`central_storage/`](./central_storage/README.md) |
-| **Embedding service** (optional) - one model that every site's search and `generate_embeddings` job calls | `rellm-storage` | ~330MB of RAM per site | [Semantic search](#semantic-search-embeddings) |
+| **Embedding service** (optional) - one model that every site's search and `generate_embeddings` job calls | `rellm-storage` | ~0.5GB of RAM, once per cluster | [Semantic search](#semantic-search-embeddings) |
 
 Each site is then just a namespace holding `rellm` (x2), `rellm-jobs`, `rellm-preview-generator`, its `rellm-tls` certificate Secret and its `rellm-central-data` credentials Secret. See the [diagram](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Traefik_Kubernetes_Deployment.svg). Sites deploy from CI by image tag only ([Rolling out manifest changes](#rolling-out-manifest-changes)).
 
