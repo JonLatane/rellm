@@ -1,9 +1,9 @@
 # The cluster-shared embedding model service (backend `embedding_service`): ONE pod per cluster that holds ONE text
 # embedding model in memory and embeds text for every namespace's Rellm servers and `generate_embeddings` jobs,
-# so the model's RAM (~330MB for the default embeddinggemma-300m-int8-384) is paid once instead of once per namespace
+# so the model's RAM (~0.5GB for the default harrier-oss-v1-270m-384, see `resources` below) is paid once instead of once per namespace
 # server/job. Opt-in: see ../../k8s/SEMANTIC_SEARCH.md for how a namespace starts using it.
 #
-# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default embeddinggemma-300m-int8-384); every namespace that
+# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default harrier-oss-v1-270m-384); every namespace that
 #   uses it uses that model, whatever model its admin picked.
 # - It stores nothing and never logs text. Callers authenticate with the shared secret in the
 #   rellm-central-embedding-credentials Secret (key `secret`), sent as `x-rellm-internal-secret`.
@@ -89,7 +89,7 @@ spec:
           command: ["/opt/embedding_service"]
           env:
             - name: RELLM_EMBEDDING_SERVICE_MODEL
-              value: embeddinggemma-300m-int8-384
+              value: harrier-oss-v1-270m-384
             - name: RELLM_EMBEDDING_SERVICE_ADDR
               value: 0.0.0.0:8090
             - name: RELLM_EMBEDDING_THREADS
@@ -107,14 +107,18 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /models
-          # embeddinggemma-300m-int8-384 measured ~330MB resident (see the PR / compare_models; multilingual-e5-small
-          # needs ~980MB); the first start also downloads ~295MB, so give the readiness probe time.
+          # harrier-oss-v1-270m-384, measured on this image's binary (Linux, 2 threads) as it serves requests: ~270MiB
+          # anonymous memory, flat from idle through full 64 x 256-token requests and 8 concurrent ones, plus ~200MiB of
+          # memory-mapped weights (reclaimable page cache), ~510MiB peak in total; it ran fine under a 512MiB limit.
+          # 768Mi leaves margin. (EmbeddingGemma, the previous default, needed ~1.2GiB once it had embedded anything: the
+          # ~330MB in its registry entry was its idle figure.) The first start also downloads ~360MB, so give the
+          # readiness probe time.
           resources:
             requests:
-              memory: 600Mi
+              memory: 512Mi
               cpu: 500m
             limits:
-              memory: 900Mi
+              memory: 768Mi
           # The port opens only after the model has downloaded (first start) and loaded, so liveness checks must wait
           # for that: up to 10 minutes here (120 x 5s), after which the container is restarted.
           startupProbe:

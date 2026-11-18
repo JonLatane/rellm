@@ -133,6 +133,13 @@ fastembed = { version = "7.7", default-features = false, optional = true, featur
   "ort-download-binaries-rustls-tls",
   "hf-hub-rustls-tls",
 ] }
+# fastembed's Hugging Face Hub client (same version and TLS features as its `hf-hub-rustls-tls`): the embedding service
+# uses it directly to fetch models fastembed has no built-in entry for (see `logic/embeddings/local_embedder.rs`).
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "rustls-tls"], optional = true }
+# fastembed's ONNX Runtime binding and tokenizer crate (same versions; fastembed enables the binary download and TLS
+# features): used directly by `OnnxEngine` for models fastembed doesn't know.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std"], optional = true }
+tokenizers = { version = "0.23", default-features = false, features = ["onig"], optional = true }
 mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
@@ -150,7 +157,7 @@ vector-service = ["dep:usearch"]
 # The ONLY place a text-embedding model is ever loaded: `embedding_service` (the cluster-shared model service) and its
 # tests. The Rellm server and its jobs are built WITHOUT it, so no model code (fastembed / ONNX Runtime) is even linked
 # into them -- they embed by calling that service (see `logic::embeddings::model_service`).
-embedding-service = ["dep:fastembed"]
+embedding-service = ["dep:fastembed", "dep:hf-hub", "dep:ort", "dep:tokenizers"]
 
 
 [[bin]]

@@ -31,7 +31,7 @@ pub const SECRET_HEADER: &str = "x-rellm-internal-secret";
 /// (`INVALID_ARGUMENT`) rather than allowed to tie up the one model.
 pub const MAX_TEXTS_PER_REQUEST: usize = 64;
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
-/// Requests allowed to wait for the model at once (it embeds one batch at a time). More are refused with
+/// Requests allowed to wait for the model at once (it embeds one request at a time). More are refused with
 /// `RESOURCE_EXHAUSTED`, so a flood of namespaces degrades to full-text search instead of a growing queue.
 const MAX_WAITING: usize = 32;
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
