@@ -41,6 +41,7 @@ protos: protos_prepare protos_generate
 protos_prepare: fvm_ready
 	fvm dart pub global activate protoc_plugin 21.1.2
 protos_generate: fvm_ready
+	../../protos/check_protoc_version.sh
 	mkdir -p lib/generated
 	PATH="$(CURDIR)/.fvm/flutter_sdk/bin:$(HOME)/.pub-cache/bin:$$PATH" protoc --dart_out=grpc:lib/generated -I../../protos ../../protos/*.proto google/protobuf/timestamp.proto google/protobuf/field_mask.proto google/protobuf/empty.proto
 

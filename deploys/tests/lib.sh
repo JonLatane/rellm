@@ -200,7 +200,7 @@ install_launchers() {
   LAUNCHER_LINUX="$SANDBOX/linux_pkg/bin/rellm"
   LAUNCHER_HOMEBREW="$SANDBOX/brew/rellm"
   # Stub server binaries: `rellm-server --version` prints the release this "package" was built from.
-  STUB_RELEASE="0.5.553-20260101000000-abc1234"
+  STUB_RELEASE="0.5.554-20260101000000-abc1234"
   local stub
   for stub in "$SANDBOX/linux_pkg/rellm-server-amd64" "$SANDBOX/linux_pkg/rellm-server-arm64" "$SANDBOX/etc/rellm/rellm-server"; do
     printf '#!/bin/bash\n[ "${1:-}" = "--version" ] && echo "%s"\n' "$STUB_RELEASE" > "$stub"

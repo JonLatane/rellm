@@ -9,7 +9,11 @@
 #   rellm-central-embedding-credentials Secret (key `secret`), sent as `x-rellm-internal-secret`.
 # - Cluster-internal only: the Service is a ClusterIP, never expose it outside the cluster network. Note that
 #   namespaces' private text is sent to it -- only point namespaces you operate at it.
-# - replicas stays 1: a second pod would load a second copy of the model, defeating the point.
+# - replicas stays 1 in steady state: a second pod would load a second copy of the model, defeating the point. Rollouts
+#   (CI applies this file on every deploy) are RollingUpdate with maxSurge 1 / maxUnavailable 0, so for a moment there
+#   are two pods and the old one keeps serving until the new one is Ready -- no gap in semantic search. The surge pod
+#   shares the ReadWriteOnce model-cache volume with the old one, which only works on the same node, hence the
+#   required podAffinity to itself below (a Recreate strategy was the alternative: simpler, but a gap on every deploy).
 #
 # Create the secret once:
 #   kubectl -n rellm-storage create secret generic rellm-central-embedding-credentials \
@@ -53,7 +57,10 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: rellm-central-embedding
@@ -62,13 +69,22 @@ spec:
       labels:
         app: rellm-central-embedding
     spec:
+      # Keep the rollout's surge pod on the old pod's node, because the model-cache PVC is ReadWriteOnce (see the
+      # header). The very first pod, with no peer yet, is exempt from this rule and schedules anywhere.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: rellm-central-embedding
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: rellm-central-embedding-models
       containers:
         - name: embedding
-          image: docker.io/jonlatane/rellm_embeddings:0.5.553
+          image: docker.io/jonlatane/rellm_embeddings:0.5.554
           imagePullPolicy: IfNotPresent
           command: ["/opt/embedding_service"]
           env:
