@@ -10,19 +10,26 @@
 #   vector    -> deploys/k8s/vector_search_service_central_data.yaml (a namespace's optional deployment/rellm-vector)
 #
 # This is what CI runs. It replaced set_backend_images.sh (`kubectl set image` only), which stays as
-# this script's fallback and as the manual one-off. Safety rails, since this touches production:
+# the manual one-off. Safety rails, since this touches production:
+#   * `replicas` is NEVER written. It's stripped from the applied manifest and the apply is
+#     server-side, so the live replica count is left exactly as it is: a site parked at 0 for a
+#     storage transition stays parked (it still gets the new manifest and image), and an operator's
+#     `stop_backend`/`kubectl scale` can't be undone by a CI deploy, even one racing with it.
+#     (A check-then-apply would have a race; not writing the field has none.) Consequence: changing a
+#     replica count in a manifest is NOT rolled out by CI -- scale by hand.
 #   * Only manifests for namespaces on CENTRAL storage are applied (every CI namespace is). A namespace
 #     with its own Postgres/object storage uses other manifests -- roll those out by hand
 #     (deploys/README.md, "Rolling out manifest changes").
 #   * It only updates what already exists -- the Deployments must have been provisioned by the deploys/
 #     Makefile (server and preview fail if they're missing; embedding and vector are optional and skip).
-#   * If ANY of the component's Deployments is scaled to 0 (a site parked during a storage transition),
-#     it falls back to image-only so applying can't scale the site back up.
 #   * Credentials Secrets and PVC contents are never in these manifests; nothing is deleted (no
 #     `--prune`), so a resource removed from a manifest has to be removed by hand.
 #   * The image in each applied manifest is rewritten to <dockerhub-user>/<image>:<tag>; nothing else
 #     in the manifest is edited besides the ${NAMESPACE}/${STORAGE_NAMESPACE} substitution that
 #     deploys/Makefile also does.
+#   * Server-side apply runs as field manager `rellm-ci` with --force-conflicts: it takes over the
+#     fields it sets (image, env, ...) from earlier `kubectl apply`/`set image` managers, and leaves
+#     the ones it doesn't (replicas) with whoever set them.
 set -euo pipefail
 
 USAGE="Usage: $0 <server|preview|embedding|vector> <namespace> <tag> <dockerhub-user>"
@@ -51,26 +58,18 @@ esac
 [ -f "$FILE" ] || { echo "ERROR: manifest $FILE not found" >&2; exit 1; }
 
 # Check everything first so nothing is applied if a required Deployment is missing.
-SCALED_DOWN=""
 PRESENT=0
 for d in $DEPLOYMENTS; do
-  REPLICAS="$(kubectl get deployment "$d" -n "$NAMESPACE" --ignore-not-found -o 'jsonpath={.spec.replicas}')"
-  if [ -z "$REPLICAS" ]; then
+  if [ -z "$(kubectl get deployment "$d" -n "$NAMESPACE" --ignore-not-found -o 'jsonpath={.metadata.name}')" ]; then
     if [ -n "$OPTIONAL" ]; then echo "$NAMESPACE/$d: not deployed (optional) -- skipping"; continue; fi
     echo "ERROR: deployment/$d doesn't exist in $NAMESPACE -- provision the namespace first (see deploys/README.md); CI only updates what exists." >&2; exit 1
   fi
   PRESENT=$((PRESENT + 1))
-  [ "$REPLICAS" = "0" ] && SCALED_DOWN="$SCALED_DOWN $d"
 done
 [ "$PRESENT" -gt 0 ] || exit 0
 
-if [ -n "$SCALED_DOWN" ]; then
-  echo "$NAMESPACE:${SCALED_DOWN} scaled to 0 -- NOT applying manifests (it would scale back up); bumping the image tag only."
-  exec "$HERE/set_backend_images.sh" "$COMPONENT" "$NAMESPACE" "$TAG" "$DOCKERHUB_USER"
-fi
-
 IMAGE="docker.io/$DOCKERHUB_USER/$IMAGE_NAME:$TAG"
-echo "$NAMESPACE ($COMPONENT): applying $(basename "$FILE") with image $IMAGE"
+echo "$NAMESPACE ($COMPONENT): applying $(basename "$FILE") with image $IMAGE (replicas left as they are)"
 sed -e 's/${NAMESPACE}/'"$NAMESPACE"'/g' -e 's/${STORAGE_NAMESPACE}/'"$STORAGE_NAMESPACE"'/g' "$FILE" \
-  | sed -E "s#(image: )docker\.io/[^/ ]+/$IMAGE_NAME:[^ ]+#\1$IMAGE#" \
-  | kubectl apply -f - -n "$NAMESPACE"
+  | sed -E -e '/^  replicas: [0-9]+$/d' -e "s#(image: )docker\.io/[^/ ]+/$IMAGE_NAME:[^ ]+#\1$IMAGE#" \
+  | kubectl apply --server-side --force-conflicts --field-manager=rellm-ci -f - -n "$NAMESPACE"

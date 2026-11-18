@@ -109,7 +109,7 @@ create_internal_central_data_backend: deploy_ensure_namespace k8s/server_interna
 	kubectl create -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
 # This is how manifest changes (new env vars, ports, replicas, ...) get rolled out by hand. CI applies
 # these same manifests on every deploy (.github/workflows/scripts/apply_backend_manifests.sh), so this is
-# for rolling a change out ahead of a deploy, or onto a site CI skips (scaled down). The manifests'
+# for rolling a change out ahead of a deploy, or to change replica counts (CI never writes them). The manifests'
 # own image tags are just the base version, so this KEEPS whatever images the namespace's
 # Deployments are running right now (CI's `<version>-<sha>` tags) instead of resetting them; pass
 # REPO_IMAGES=1 to deploy the manifests' tags as written instead. Regenerates the per-namespace

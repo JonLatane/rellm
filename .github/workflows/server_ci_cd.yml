@@ -2,8 +2,8 @@
 # server, jobs and preview generator, the cluster's embedding service and each namespace's optional
 # vector service -- at the freshly built image tag (.github/workflows/scripts/apply_backend_manifests.sh).
 # That script only updates Deployments that already exist, never touches credentials Secrets, doesn't
-# prune, and falls back to image-only (.github/workflows/scripts/set_backend_images.sh, i.e.
-# `kubectl set image`) for anything scaled to 0. Manifests CI doesn't apply (namespaces with their own
+# prune, and never writes `replicas` (server-side apply with the field stripped), so a stopped or
+# scaled-down site stays that way. Manifests CI doesn't apply (namespaces with their own
 # Postgres/object storage, central storage's Postgres/object storage, ingress) are still rolled out
 # deliberately (see "Rolling out manifest changes" in deploys/README.md); the manifest_change_notice
 # job flags pushes that need it.

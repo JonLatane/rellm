@@ -168,8 +168,9 @@ CI deploys **apply** the checked-in manifests for the namespaces on central stor
 runs `.github/workflows/scripts/apply_backend_manifests.sh`, which applies the central-data server, preview generator and
 (if deployed) vector manifests per namespace, and this directory's embedding service manifest, with their images set to
 the freshly built tag, so manifest changes and the new image roll out together. It only updates Deployments that already
-exist, never touches credentials Secrets or PVC contents, and never prunes. If a site's Deployments are scaled to 0 (parked
-for a transition) it falls back to an image-only bump (`set_backend_images.sh`), so a site you've scaled down stays down.
+exist, never touches credentials Secrets or PVC contents, and never prunes. It never writes `replicas` (it strips them from
+what it applies and applies server-side), so a site you've scaled to 0 for a transition stays down -- even if you scale it
+while a deploy is running -- and changing a replica count in a manifest is something you roll out by hand.
 Everything else in this directory (central Postgres, object storage, Valkey) and namespaces on their own storage are still
 rolled out deliberately (see "Rolling out manifest changes" in [`../README.md`](../README.md#rolling-out-manifest-changes));
 a CI job warns when a push changes a manifest CI doesn't apply.
