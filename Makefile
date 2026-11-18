@@ -318,8 +318,12 @@ local_object_storage_delete:
 # FULLSTACK DEV/RELEASE-RELATED TARGETS: More in deploys/releases/Makefile
 ############################################################################
 
+# Fails unless `protoc` is the version CI regenerates with (protos/PROTOC_VERSION); see protos/check_protoc_version.sh.
+check_protoc_version:
+	@protos/check_protoc_version.sh
+
 # Update frontend protos and docs
-protos:
+protos: check_protoc_version
 	$(MAKE) -C frontends/flutter protos
 	cd frontends/tamagui && yarn protos
 	$(MAKE) -C frontends/elm-spa protos
