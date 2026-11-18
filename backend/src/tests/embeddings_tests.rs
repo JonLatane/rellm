@@ -882,10 +882,20 @@ impl TextEmbedder for SlowFake {
 /// One raw `Embed` call (documents) with a client-side deadline, the way a job's call is made: how many vectors came back,
 /// or the error (a deadline passing is `Err`, and drops the call on the service).
 fn embed_call(url: &str, texts: Vec<String>, timeout: std::time::Duration) -> Result<usize, tonic::Status> {
+    embed_call_as(url, texts, timeout, crate::internal_protos::embed_request::Purpose::Document)
+}
+
+/// `embed_call` for either purpose (a search query is `Purpose::Query`).
+fn embed_call_as(
+    url: &str,
+    texts: Vec<String>,
+    timeout: std::time::Duration,
+    purpose: crate::internal_protos::embed_request::Purpose,
+) -> Result<usize, tonic::Status> {
     use crate::internal_protos::{embedding_service_client::EmbeddingServiceClient, EmbedRequest};
     tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
         let channel = tonic::transport::Channel::from_shared(url.to_string()).unwrap().connect().await.unwrap();
-        let mut request = tonic::Request::new(EmbedRequest { purpose: 0, texts, model_id: String::new() });
+        let mut request = tonic::Request::new(EmbedRequest { purpose: purpose as i32, texts, model_id: String::new() });
         request.set_timeout(timeout);
         EmbeddingServiceClient::new(channel).embed(request).await.map(|r| r.into_inner().vectors.len())
     })
@@ -993,6 +1003,100 @@ fn a_call_abandoned_while_it_waits_never_runs() {
     assert_eq!(first.join().unwrap().unwrap(), 10);
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(*seen.lock().unwrap(), labelled("a", 10), "the abandoned call's texts must never reach the model");
+}
+
+#[test]
+fn a_search_query_does_not_wait_behind_queued_document_work() {
+    use crate::internal_protos::embed_request::Purpose;
+    let (fake, seen) = SlowFake::new(100);
+    let url = start_model_service_with(Box::new(fake), None);
+    // A backfill call: ten documents, a second of model time.
+    let documents_url = url.clone();
+    let documents = std::thread::spawn(move || embed_call(&documents_url, labelled("d", 10), std::time::Duration::from_secs(20)));
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    let asked = std::time::Instant::now();
+    assert_eq!(embed_call_as(&url, vec!["q".to_string()], std::time::Duration::from_secs(20), Purpose::Query).unwrap(), 1);
+    let waited = asked.elapsed();
+    assert_eq!(documents.join().unwrap().unwrap(), 10, "the documents are still all embedded");
+
+    let order = seen.lock().unwrap().clone();
+    assert_eq!(order.len(), 11);
+    let position = order.iter().position(|t| t == "q").unwrap();
+    assert!(position <= 4, "the query ran after {position} documents instead of ahead of them: {order:?}");
+    assert!(waited < std::time::Duration::from_millis(600), "a query waited {waited:?} behind document work");
+}
+
+fn ask_query(url: &str, text: &str) -> Result<usize, tonic::Status> {
+    embed_call_as(url, vec![text.to_string()], std::time::Duration::from_secs(20), crate::internal_protos::embed_request::Purpose::Query)
+}
+
+#[test]
+fn a_repeated_search_query_is_answered_without_running_the_model_again() {
+    let (fake, seen) = SlowFake::new(150);
+    let url = start_model_service_with(Box::new(fake), None);
+    let first = std::time::Instant::now();
+    ask_query(&url, "xyz").unwrap();
+    let first_took = first.elapsed();
+    let second = std::time::Instant::now();
+    ask_query(&url, "xyz").unwrap();
+    let second_took = second.elapsed();
+    assert_eq!(*seen.lock().unwrap(), vec!["xyz".to_string()], "the model ran again for a query it had already embedded");
+    assert!(second_took < first_took / 2, "the repeat took {second_took:?}, the first {first_took:?}");
+    ask_query(&url, "something else").unwrap();
+    assert_eq!(seen.lock().unwrap().len(), 2, "a different query still runs the model");
+}
+
+#[test]
+fn identical_queries_arriving_together_share_one_run_of_the_model() {
+    let (fake, seen) = SlowFake::new(400);
+    let url = start_model_service_with(Box::new(fake), None);
+    // Five servers answering the same search at once.
+    let calls: Vec<_> = (0..5)
+        .map(|_| {
+            let url = url.clone();
+            let call = std::thread::spawn(move || ask_query(&url, "xyz"));
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            call
+        })
+        .collect();
+    for call in calls {
+        assert_eq!(call.join().unwrap().unwrap(), 1, "every caller gets its vector");
+    }
+    // One snapshot: `assert_eq!` keeps its arguments' temporaries alive while it builds the failure message, so locking `seen`
+    // again there would deadlock instead of reporting the failure.
+    let runs = seen.lock().unwrap().clone();
+    assert_eq!(runs.len(), 1, "five identical queries should cost one run of the model: {runs:?}");
+}
+
+#[test]
+fn documents_and_long_queries_are_not_cached() {
+    let (fake, seen) = SlowFake::new(10);
+    let url = start_model_service_with(Box::new(fake), None);
+    for _ in 0..2 {
+        embed_call(&url, vec!["same document".to_string()], std::time::Duration::from_secs(20)).unwrap();
+    }
+    assert_eq!(seen.lock().unwrap().len(), 2, "documents are unique and would only fill the cache");
+    seen.lock().unwrap().clear();
+    let long = "q".repeat(600);
+    ask_query(&url, &long).unwrap();
+    ask_query(&url, &long).unwrap();
+    assert_eq!(seen.lock().unwrap().len(), 2, "a text that long isn't a search: it isn't kept");
+}
+
+#[test]
+fn a_query_abandoned_before_it_runs_is_skipped() {
+    use crate::internal_protos::embed_request::Purpose;
+    let (fake, seen) = SlowFake::new(150);
+    let url = start_model_service_with(Box::new(fake), None);
+    let documents_url = url.clone();
+    let documents = std::thread::spawn(move || embed_call(&documents_url, labelled("d", 3), std::time::Duration::from_secs(20)));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Waits for the text under way (~100ms more) and gives up after 30ms.
+    assert!(embed_call_as(&url, vec!["gone".to_string()], std::time::Duration::from_millis(30), Purpose::Query).is_err());
+    documents.join().unwrap().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(!seen.lock().unwrap().contains(&"gone".to_string()), "a query nobody was waiting for any more still ran: {:?}", seen.lock().unwrap());
 }
 
 #[test]

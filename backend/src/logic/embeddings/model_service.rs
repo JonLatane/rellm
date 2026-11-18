@@ -12,9 +12,9 @@
 //!     `RELLM_EMBEDDING_SERVICE_INSECURE=1`), `RELLM_EMBEDDING_THREADS`.
 //! Because the service hosts one model, every namespace using it uses that model: the admin's own model choice
 //! is overridden (`SearchSettings.model_chosen_by_cluster`).
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tonic::metadata::MetadataValue;
@@ -308,24 +308,291 @@ pub fn invalidate_cluster_model() {
 // Service side
 // ---------------------------------------------------------------------------------------------
 
+/// Where a text's vector goes. The error is a plain message so that one failed run can be sent to everyone waiting on it.
+type Reply = tokio::sync::oneshot::Sender<Result<Vec<f32>, String>>;
+
+/// A document text for the model. The reply channel is also how the worker learns the request is gone: when the client
+/// gives up, tonic drops the handler's future, the receiver goes with it, and the worker skips the job.
+struct DocumentJob {
+    /// The request it belongs to (see `RequestGuard`).
+    request: u64,
+    text: String,
+    reply: Reply,
+}
+
+/// What the model is waiting to do: search queries first (somebody is waiting on a page), then documents in arrival order.
+#[derive(Default)]
+struct Queues {
+    /// Distinct query texts waiting for the model, oldest first.
+    queries: VecDeque<String>,
+    /// Everyone waiting on each distinct query text, from when it is queued until its vector is ready: identical queries
+    /// (several Rellm servers answering the same search) share one run of the model.
+    query_waiters: HashMap<String, Vec<Reply>>,
+    documents: VecDeque<DocumentJob>,
+    closed: bool,
+}
+
+/// The vectors of recent search queries, so a query asked again (by another server, or the same search repeated) is
+/// answered without the model. Only queries: documents are almost never repeated, and each would sit in memory. Bounded
+/// both ways: a fixed number of entries, and only short texts (a search is a few words; a text of kilobytes is not
+/// worth keeping). Oldest-first eviction. Keyed by the model too, so it can't hand out a vector from another model.
+struct QueryCache {
+    model: &'static str,
+    vectors: HashMap<String, Vec<f32>>,
+    order: VecDeque<String>,
+}
+
+/// Entries kept: about 2048 x (a short text + a 1.5KB vector), a few MB.
+const QUERY_CACHE_ENTRIES: usize = 2048;
+/// Longest query text worth caching.
+const QUERY_CACHE_MAX_TEXT_BYTES: usize = 512;
+
+impl QueryCache {
+    fn get(&self, model: &'static str, text: &str) -> Option<Vec<f32>> {
+        if self.model != model {
+            return None;
+        }
+        self.vectors.get(text).cloned()
+    }
+
+    fn put(&mut self, model: &'static str, text: &str, vector: Vec<f32>) {
+        if text.len() > QUERY_CACHE_MAX_TEXT_BYTES {
+            return;
+        }
+        if self.model != model {
+            self.model = model;
+            self.vectors.clear();
+            self.order.clear();
+        }
+        if self.vectors.contains_key(text) {
+            return;
+        }
+        if self.order.len() >= QUERY_CACHE_ENTRIES {
+            if let Some(oldest) = self.order.pop_front() {
+                self.vectors.remove(&oldest);
+            }
+        }
+        self.order.push_back(text.to_string());
+        self.vectors.insert(text.to_string(), vector);
+    }
+}
+
+/// The model's next piece of work.
+enum Next {
+    Query(String),
+    Document(DocumentJob),
+}
+
+/// The model's work queue and the thread that works through it.
+struct Scheduler {
+    queues: Mutex<Queues>,
+    /// Always locked after `queues` when both are held.
+    cache: Mutex<QueryCache>,
+    wake: Condvar,
+    next_request: std::sync::atomic::AtomicU64,
+}
+
+impl Scheduler {
+    /// The vector for a search query: straight from the cache, or by joining the run of the model that is already queued
+    /// (or under way) for the same text, or by starting one.
+    fn submit_query(&self, model: &'static str, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        let mut guard = self.queues.lock().unwrap();
+        // Checked under the queues lock, like the worker's insert, so a run can't finish between the check and the join.
+        if let Some(vector) = self.cache.lock().unwrap().get(model, &text) {
+            let _ = reply.send(Ok(vector));
+            return receiver;
+        }
+        let queues = &mut *guard;
+        match queues.query_waiters.entry(text) {
+            Entry::Occupied(mut joined) => joined.get_mut().push(reply),
+            Entry::Vacant(first) => {
+                queues.queries.push_back(first.key().clone());
+                first.insert(vec![reply]);
+                self.wake.notify_one();
+            }
+        }
+        receiver
+    }
+
+    fn submit_document(&self, request: u64, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        self.queues.lock().unwrap().documents.push_back(DocumentJob { request, text, reply });
+        self.wake.notify_one();
+        receiver
+    }
+
+    /// Starts tracking one request's jobs (see `RequestGuard`).
+    fn begin(self: &Arc<Self>) -> RequestGuard {
+        RequestGuard {
+            scheduler: self.clone(),
+            id: self.next_request.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            queries: Vec::new(),
+            finished: false,
+        }
+    }
+
+    /// A request ended before its work was done (its client gave up): take its jobs out of the queues now, instead of
+    /// leaving them for the worker to find -- with queries always going first, that could be a long time, and meanwhile
+    /// repeated timeouts and retries would keep adding texts that nobody is waiting for. A query other requests are also
+    /// waiting on stays queued for them.
+    fn cancel(&self, request: u64, query_texts: &[String]) {
+        let mut guard = self.queues.lock().unwrap();
+        let queues = &mut *guard;
+        queues.documents.retain(|job| job.request != request);
+        for text in query_texts {
+            let Some(waiters) = queues.query_waiters.get_mut(text) else { continue };
+            waiters.retain(|reply| !reply.is_closed());
+            if waiters.is_empty() {
+                queues.query_waiters.remove(text);
+                queues.queries.retain(|queued| queued != text);
+            }
+        }
+    }
+
+    /// The next job, blocking until there is one; `None` once the service is gone. Work nobody is waiting for any more (every
+    /// client that asked has given up) is dropped here.
+    fn next(&self) -> Option<Next> {
+        let mut guard = self.queues.lock().unwrap();
+        loop {
+            let queues = &mut *guard;
+            if let Some(text) = queues.queries.pop_front() {
+                let abandoned = queues.query_waiters.get(&text).map_or(true, |waiters| waiters.iter().all(|w| w.is_closed()));
+                if abandoned {
+                    queues.query_waiters.remove(&text);
+                    continue;
+                }
+                return Some(Next::Query(text));
+            }
+            if let Some(job) = queues.documents.pop_front() {
+                if job.reply.is_closed() {
+                    continue;
+                }
+                return Some(Next::Document(job));
+            }
+            if queues.closed {
+                return None;
+            }
+            guard = self.wake.wait(guard).unwrap();
+        }
+    }
+
+    /// A query's run is over: remember a good vector, and answer everyone who was waiting on it.
+    fn finish_query(&self, model: &'static str, text: String, result: Result<Vec<f32>, String>) {
+        let mut queues = self.queues.lock().unwrap();
+        if let Ok(vector) = &result {
+            self.cache.lock().unwrap().put(model, &text, vector.clone());
+        }
+        for reply in queues.query_waiters.remove(&text).unwrap_or_default() {
+            let _ = reply.send(result.clone());
+        }
+    }
+}
+
+/// One request's jobs. Dropped before `finish()` (the handler's future was dropped because the client gave up, or the
+/// request failed), it removes whatever of the request is still queued. Declare it BEFORE the receivers of its jobs so that
+/// they are dropped first: a job whose receiver is gone is how `cancel` tells this request's waiters from other requests'.
+struct RequestGuard {
+    scheduler: Arc<Scheduler>,
+    id: u64,
+    queries: Vec<String>,
+    finished: bool,
+}
+
+impl RequestGuard {
+    fn query(&mut self, model: &'static str, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        self.queries.push(text.clone());
+        self.scheduler.submit_query(model, text)
+    }
+
+    fn document(&mut self, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        self.scheduler.submit_document(self.id, text)
+    }
+
+    /// Everything the request asked for has been answered: nothing to clean up.
+    fn finish(mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.scheduler.cancel(self.id, &self.queries);
+        }
+    }
+}
+
 pub struct EmbeddingServiceImpl {
-    /// A tokio mutex on purpose: it queues waiters first come, first served (a std mutex makes no such promise), and a
-    /// request abandoned while it waits simply leaves the queue instead of running later for nobody.
-    embedder: Arc<tokio::sync::Mutex<BoxedEmbedder>>,
-    /// The last model read from the embedder. Reading it must never wait for the embedder's mutex (held for the whole of
-    /// an inference, which would tie up async workers), so while an inference runs this answers from the cache; a real
-    /// service never changes model, so the cache is never stale.
+    /// Locked by the worker for one text at a time, so `spec()` can read the live model between texts.
+    embedder: Arc<Mutex<BoxedEmbedder>>,
+    scheduler: Arc<Scheduler>,
+    /// The last model read from the embedder. Reading it must never wait for a text to finish being embedded, so while one
+    /// runs this answers from the cache; a real service never changes model, so the cache is never stale.
     spec: Mutex<&'static ModelSpec>,
     secret: Option<String>,
     waiting: Arc<tokio::sync::Semaphore>,
 }
 
+impl Drop for EmbeddingServiceImpl {
+    fn drop(&mut self) {
+        self.scheduler.queues.lock().unwrap().closed = true;
+        self.scheduler.wake.notify_all();
+    }
+}
+
 impl EmbeddingServiceImpl {
     /// `secret: None` disables authentication (only for a service reachable by nothing but trusted callers).
+    ///
+    /// One worker thread runs the model, one text at a time, always taking a waiting search query before any document: with
+    /// the cluster backfilling, a search used to wait behind every document call in the line (15-19s measured), and now waits
+    /// for at most the text being embedded. Documents are served first come, first served, and a request that is abandoned
+    /// (its client timed out) costs nothing: its jobs are skipped.
     pub fn new(embedder: BoxedEmbedder, secret: Option<String>) -> Self {
+        let spec = embedder.spec();
+        let embedder = Arc::new(Mutex::new(embedder));
+        let scheduler = Arc::new(Scheduler {
+            queues: Mutex::new(Queues::default()),
+            cache: Mutex::new(QueryCache { model: spec.id, vectors: HashMap::new(), order: VecDeque::new() }),
+            wake: Condvar::new(),
+            next_request: std::sync::atomic::AtomicU64::new(0),
+        });
+        {
+            let (embedder, scheduler) = (embedder.clone(), scheduler.clone());
+            std::thread::Builder::new()
+                .name("embedding-worker".to_string())
+                .spawn(move || {
+                    let failed = |e: anyhow::Error| {
+                        log::error!("Embedding failed: {:?}", crate::logic::log_redaction::safe_error(&e));
+                        "embedding_failed".to_string()
+                    };
+                    while let Some(next) = scheduler.next() {
+                        match next {
+                            Next::Document(job) => {
+                                let result = {
+                                    let mut embedder = embedder.lock().unwrap();
+                                    embedder
+                                        .embed_documents(std::slice::from_ref(&job.text))
+                                        .and_then(|mut vectors| vectors.pop().ok_or_else(|| anyhow::anyhow!("the model returned no vector")))
+                                };
+                                let _ = job.reply.send(result.map_err(failed));
+                            }
+                            Next::Query(text) => {
+                                let (model, result) = {
+                                    let mut embedder = embedder.lock().unwrap();
+                                    (embedder.spec().id, embedder.embed_query(&text))
+                                };
+                                scheduler.finish_query(model, text, result.map_err(failed));
+                            }
+                        }
+                    }
+                })
+                .expect("starting the embedding worker thread");
+        }
         EmbeddingServiceImpl {
-            spec: Mutex::new(embedder.spec()),
-            embedder: Arc::new(tokio::sync::Mutex::new(embedder)),
+            spec: Mutex::new(spec),
+            embedder,
+            scheduler,
             secret,
             waiting: Arc::new(tokio::sync::Semaphore::new(MAX_WAITING)),
         }
@@ -350,16 +617,6 @@ impl EmbeddingServiceImpl {
             }
             Err(_) => *self.spec.lock().unwrap(),
         }
-    }
-}
-
-/// Sets its flag when dropped: how a request's blocking run learns the client has gone (tonic drops the handler's future
-/// when the client cancels or times out, but a task already running on a blocking thread can't be cancelled from outside).
-struct CancelWhenDropped(Arc<AtomicBool>);
-
-impl Drop for CancelWhenDropped {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
     }
 }
 
@@ -390,33 +647,26 @@ impl EmbeddingService for EmbeddingServiceImpl {
             .try_acquire_owned()
             .map_err(|_| Status::resource_exhausted("embedding_queue_full"))?;
         let purpose = Purpose::try_from(request.purpose).unwrap_or(Purpose::Document);
-        // Wait for the model in line. If the client gives up while we wait (or while we run) this future is dropped:
-        // leaving the line costs nothing, and `cancelled` tells a run already under way to stop at its next text.
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let _cancel_when_dropped = CancelWhenDropped(cancelled.clone());
-        let mut embedder = self.embedder.clone().lock_owned().await;
-        let vectors = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Vec<f32>>> {
-            let mut vectors = Vec::with_capacity(request.texts.len());
-            for text in &request.texts {
-                if cancelled.load(Ordering::Relaxed) {
-                    anyhow::bail!("the client stopped waiting");
-                }
-                vectors.push(match purpose {
-                    Purpose::Document => embedder
-                        .embed_documents(std::slice::from_ref(text))?
-                        .pop()
-                        .ok_or_else(|| anyhow::anyhow!("the model returned no vector"))?,
-                    Purpose::Query => embedder.embed_query(text)?,
-                });
-            }
-            Ok(vectors)
-        })
-        .await
-        .map_err(|_| Status::internal("embedding_task_failed"))?
-        .map_err(|e| {
-            log::error!("Embedding failed: {:?}", crate::logic::log_redaction::safe_error(&e));
-            Status::internal("embedding_failed")
-        })?;
+        // One job per text. If the client gives up, this future is dropped and `replies` with it, which tells the worker to
+        // skip whatever of the request hasn't run yet.
+        let mut guard = self.scheduler.begin(); // declared before `replies`: see `RequestGuard`
+        let replies: Vec<_> = request
+            .texts
+            .into_iter()
+            .map(|text| match purpose {
+                Purpose::Query => guard.query(spec.id, text),
+                Purpose::Document => guard.document(text),
+            })
+            .collect();
+        let mut vectors = Vec::with_capacity(replies.len());
+        for receiver in replies {
+            let vector = receiver
+                .await
+                .map_err(|_| Status::internal("embedding_task_failed"))?
+                .map_err(|message| Status::internal(message))?;
+            vectors.push(vector);
+        }
+        guard.finish();
         Ok(Response::new(EmbedResponse {
             vectors: vectors.into_iter().map(|values| Vector { values }).collect(),
             model_id: spec.id.to_string(),
@@ -430,4 +680,59 @@ pub async fn serve(addr: std::net::SocketAddr, embedder: BoxedEmbedder, secret: 
     log::info!("Embedding service listening on {} (model {}).", addr, service.spec().id);
     Server::builder().add_service(EmbeddingServiceServer::new(service)).serve(addr).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod scheduler_tests {
+    use super::*;
+
+    fn scheduler() -> Arc<Scheduler> {
+        Arc::new(Scheduler {
+            queues: Mutex::new(Queues::default()),
+            cache: Mutex::new(QueryCache { model: "m", vectors: HashMap::new(), order: VecDeque::new() }),
+            wake: Condvar::new(),
+            next_request: std::sync::atomic::AtomicU64::new(0),
+        })
+    }
+
+    fn queued(scheduler: &Scheduler) -> (usize, usize, usize) {
+        let queues = scheduler.queues.lock().unwrap();
+        (queues.documents.len(), queues.queries.len(), queues.query_waiters.len())
+    }
+
+    #[test]
+    fn a_request_that_is_dropped_takes_its_queued_jobs_with_it() {
+        let scheduler = scheduler();
+        let mut gone = scheduler.begin();
+        let mut stays = scheduler.begin();
+        let replies: Vec<_> = (0..5).map(|i| gone.document(format!("gone {i}"))).collect();
+        let kept: Vec<_> = (0..2).map(|i| stays.document(format!("stays {i}"))).collect();
+        let query = gone.query("m", "a query".to_string());
+        assert_eq!(queued(&scheduler), (7, 1, 1));
+
+        // The client gives up: the handler's future is dropped (receivers first, then the guard, as in the handler).
+        drop(replies);
+        drop(query);
+        drop(gone);
+        assert_eq!(queued(&scheduler), (2, 0, 0), "only the request that is still waiting keeps its jobs");
+        drop(kept);
+        stays.finish();
+        assert_eq!(queued(&scheduler), (2, 0, 0), "a finished request leaves nothing to clean up");
+    }
+
+    #[test]
+    fn a_query_other_requests_still_wait_on_stays_queued() {
+        let scheduler = scheduler();
+        let (mut first, mut second) = (scheduler.begin(), scheduler.begin());
+        let first_reply = first.query("m", "xyz".to_string());
+        let second_reply = second.query("m", "xyz".to_string());
+        assert_eq!(queued(&scheduler), (0, 1, 1), "identical queries share one queued run");
+
+        drop(first_reply);
+        drop(first);
+        assert_eq!(queued(&scheduler), (0, 1, 1), "the second request is still waiting on it");
+        drop(second_reply);
+        drop(second);
+        assert_eq!(queued(&scheduler), (0, 0, 0));
+    }
 }
