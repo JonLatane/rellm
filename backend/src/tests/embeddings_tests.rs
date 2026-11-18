@@ -1106,6 +1106,30 @@ mod with_model {
         });
     }
 
+    /// The model service takes up to `MAX_TEXTS_PER_REQUEST` documents per call, and the jobs send full requests while
+    /// backfilling. `embeddinggemma-300m-int8` (the default) is dynamically quantized, which fastembed refuses to batch
+    /// (`batch_size < texts.len()` is an error), so anything over one batch used to fail every call -- and running a whole
+    /// request in one ONNX run is a large memory spike (the 900Mi service was OOMKilled while backfilling). Dynamic quantization also scales each
+    /// batch by its own data range, so a vector must not depend on which other texts shared its batch.
+    #[test]
+    #[ignore = "downloads the embedding model"]
+    fn a_full_request_of_documents_embeds_and_each_vector_matches_embedding_that_text_alone() {
+        use embeddings::TextEmbedder;
+        let mut embedder = embeddings::LocalEmbedder::load(embeddings::default_model(), 2).expect("model loads");
+        let texts: Vec<String> = (0..embeddings::MAX_TEXTS_PER_REQUEST)
+            .map(|i| format!("Document number {i}: {}", "community potluck and puppy adoption day ".repeat(1 + i % 7)))
+            .collect();
+
+        let together = embedder.embed_documents(&texts).expect("a full request must embed");
+        assert_eq!(together.len(), texts.len());
+
+        for i in [0, 1, texts.len() / 2, texts.len() - 1] {
+            let alone = embedder.embed_documents(&texts[i..=i]).expect("a single text must embed").remove(0);
+            let cosine: f32 = alone.iter().zip(&together[i]).map(|(a, b)| a * b).sum();
+            assert!(cosine > 0.9999, "text {i} embeds differently depending on its batch mates (cosine {cosine})");
+        }
+    }
+
     #[test]
     #[ignore = "downloads the embedding model"]
     fn related_text_ranks_above_unrelated_text_and_search_finds_posts_sharing_no_words() {
