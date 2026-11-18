@@ -43,7 +43,7 @@ pub use local_embedder::{fastembed_model, load_embedder_local, model_cache_dir, 
 pub use model_service::{
     cluster_model, cluster_model_blocking, embedding_service_config, embedding_service_configured,
     invalidate_cluster_model, refresh_cluster_model_blocking, ClusterModelTracker,
-    RemoteEmbedder,
+    RemoteEmbedder, MAX_TEXTS_PER_REQUEST,
 };
 pub use index::{install_semantic_index, reset_semantic_index, semantic_index, IndexQuery, PostgresScanIndex, SemanticIndex};
 pub use vector_client::{vector_service_config, RemoteIndex};

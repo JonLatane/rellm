@@ -4,12 +4,29 @@
 //! prefixes) lives in the registry in `mod.rs`; this file only maps a registry id to its `fastembed` model.
 use std::path::PathBuf;
 
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use fastembed::{EmbeddingModel, QuantizationMode, TextEmbedding, TextInitOptions};
 
 use super::{BoxedEmbedder, ModelSpec, TextEmbedder};
 
 // Longer input is truncated by the tokenizer; documents list their most important text first.
 const MAX_TOKENS: usize = 256;
+
+/// Texts per ONNX Runtime run for models that can batch.
+const BATCH_SIZE: usize = 32;
+
+/// Texts per ONNX Runtime run for `model`. A dynamically quantized model (`embeddinggemma-300m-int8`, the default, and
+/// `all-minilm-l6-v2`) can't be batched: fastembed fails any call with more texts than the batch size, because dynamic
+/// quantization scales each batch by its own data range, so a text's vector would depend on which others shared its
+/// batch. It's embedded one text at a time instead, which makes its vector the same wherever it's embedded (a query
+/// embedded alone matches the same text embedded in a document batch) and keeps memory flat: ONNX Runtime's working
+/// set grows with texts-per-run (a 64-text run peaked ~3GB above one text per run in a local measurement), which is the
+/// likely reason the 900Mi service was being OOMKilled while backfilling.
+fn batch_size_for(model: &EmbeddingModel) -> usize {
+    match TextEmbedding::get_quantization_mode(model) {
+        QuantizationMode::Dynamic => 1,
+        _ => BATCH_SIZE,
+    }
+}
 
 /// The `fastembed` model behind a registry id. Every `MODELS` entry has one (a test checks).
 pub fn fastembed_model(id: &str) -> Option<EmbeddingModel> {
@@ -50,6 +67,8 @@ fn normalize(vector: &mut [f32]) {
 pub struct LocalEmbedder {
     inner: TextEmbedding,
     spec: &'static ModelSpec,
+    /// See `batch_size_for`.
+    batch_size: usize,
 }
 
 impl LocalEmbedder {
@@ -57,6 +76,7 @@ impl LocalEmbedder {
     /// first time. ONNX Runtime uses `threads` CPU threads (it would otherwise take every core).
     pub fn load(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<LocalEmbedder> {
         let model = fastembed_model(spec.id).ok_or_else(|| anyhow::anyhow!("no fastembed model for `{}`", spec.id))?;
+        let batch_size = batch_size_for(&model);
         let inner = TextEmbedding::try_new(
             TextInitOptions::new(model)
                 .with_cache_dir(model_cache_dir())
@@ -64,12 +84,17 @@ impl LocalEmbedder {
                 .with_max_length(MAX_TOKENS)
                 .with_show_download_progress(false),
         )?;
-        Ok(LocalEmbedder { inner, spec })
+        Ok(LocalEmbedder { inner, spec, batch_size })
     }
 
     fn embed_with_prefix(&mut self, prefix: &str, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         let prefixed: Vec<String> = texts.iter().map(|t| format!("{}{}", prefix, t)).collect();
-        let mut vectors = self.inner.embed(&prefixed, Some(32))?;
+        // Chunking here (rather than passing a batch size for all of `prefixed`) is what makes a request bigger than one
+        // batch work for dynamically quantized models; see `batch_size_for`.
+        let mut vectors = Vec::with_capacity(prefixed.len());
+        for chunk in prefixed.chunks(self.batch_size) {
+            vectors.extend(self.inner.embed(chunk, Some(self.batch_size))?);
+        }
         // Matryoshka models keep their best information in the leading dimensions, so a registry entry asking for fewer
         // dimensions than the model makes is served by keeping the first N and re-normalizing.
         let dimensions = self.spec.dimensions as usize;
@@ -116,6 +141,17 @@ mod tests {
             format!("{:?}", fastembed_model("embeddinggemma-300m-int8-384")),
             format!("{:?}", fastembed_model("embeddinggemma-300m-int8"))
         );
+    }
+
+    #[test]
+    fn only_dynamically_quantized_models_are_embedded_one_text_at_a_time() {
+        for spec in super::super::MODELS.iter() {
+            let model = fastembed_model(spec.id).unwrap();
+            let dynamic = matches!(TextEmbedding::get_quantization_mode(&model), QuantizationMode::Dynamic);
+            assert_eq!(batch_size_for(&model), if dynamic { 1 } else { BATCH_SIZE }, "{}", spec.id);
+        }
+        // The default model is one of the dynamic ones -- the case that used to fail every request over one batch.
+        assert_eq!(batch_size_for(&fastembed_model(super::super::default_model().id).unwrap()), 1);
     }
 
     #[test]
