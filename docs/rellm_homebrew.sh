@@ -527,9 +527,13 @@ _rellm_deploys_dir="@@RELLM_ETC@@/rellm/opt/deploys"
 # Runs `make` targets from the bundled deploys/Makefile against your own K8s cluster -- args are
 # forwarded as-is, so both targets and VAR=value overrides (e.g. NAMESPACE=my_namespace, required
 # by nearly every target -- see deploys/README.md) just work, same as running `make` by hand.
+#
+# The bundled deploys dir lives in Homebrew's versioned (libexec) package, which each upgrade
+# replaces and `brew cleanup` deletes, so durable output can't go in it: Postgres dumps default to
+# ~/.rellm_backups instead of the Makefile's in-package backups/ (override with PG_BACKUP_DIR=...).
 deploy() {
   . "$_rellm_deploys_dir/distributables.sh"
-  _rellm_deploys_run "$_rellm_deploys_dir" "$@"
+  PG_BACKUP_DIR="${PG_BACKUP_DIR:-$HOME/.rellm_backups}" _rellm_deploys_run "$_rellm_deploys_dir" "$@"
 }
 
 # Used by `completion`'s deploy-target completion below.
