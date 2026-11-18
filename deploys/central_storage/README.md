@@ -166,7 +166,8 @@ three instances is part of the plan.
 
 CI deploys are image-only: `.github/workflows/server_ci_cd.yml` runs
 `.github/workflows/scripts/set_backend_images.sh`, which bumps the image tags of a namespace's
-`rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments and nothing else. It never applies a
+`rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments (plus the cluster's `rellm-central-embedding` and
+any namespace's `rellm-vector`, if deployed) and nothing else. It never applies a
 manifest, so it can't change a namespace's storage wiring, credentials or replica counts -- it behaves
 identically for namespaces on central storage and on their own, and a site you've scaled down for a
 transition stays down. Manifest changes are rolled out deliberately with

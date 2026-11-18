@@ -1,6 +1,7 @@
 # Deploy steps only bump image tags (.github/workflows/scripts/set_backend_images.sh, i.e.
-# `kubectl set image`) -- they never apply deploys/k8s manifests, so a CI deploy can't change a
-# namespace's storage wiring, replica counts or credentials. Manifest changes are rolled out
+# `kubectl set image`) -- for each namespace's server and preview generator (and optional vector
+# service) and the cluster's embedding service. They never apply deploys/k8s manifests, so a CI
+# deploy can't change a namespace's storage wiring, replica counts or credentials. Manifest changes are rolled out
 # deliberately (see "Rolling out manifest changes" in deploys/README.md); the
 # manifest_change_notice job flags pushes that need it.
 name: Server CI/CD
@@ -891,6 +892,44 @@ jobs:
           file: ./deploys/docker/embeddings/Dockerfile
           platforms: linux/amd64
 
+  # The cluster's ONE embedding model service (rellm-storage/rellm-central-embedding). Image tag only like
+  # everything else here; skipped (not failed) when the cluster hasn't set it up. It's a Recreate
+  # Deployment, so semantic search is briefly unavailable cluster-wide while the pod restarts -- search
+  # falls back to full-text meanwhile. Not a gate for the release/namespace deploys: an embedding rollout
+  # problem shows up as this job failing without holding up the sites.
+  deploy_central_embedding:
+    name: Deploy Central Embedding Service
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - test_rust_binaries
+      - push_embeddings
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig with short-lived credentials
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
+
+      - name: Deploy Embedding Service (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh embedding rellm-storage "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      # The first start of a new pod may re-download the model if the PVC was recreated (~300MB).
+      - name: Verify Embedding deployment
+        run: |
+          [ -n "$(kubectl get deployment rellm-central-embedding -n rellm-storage --ignore-not-found -o name)" ] || { echo "Not deployed on this cluster -- nothing to verify."; exit 0; }
+          kubectl rollout status deployment/rellm-central-embedding -n rellm-storage --timeout 10m
+
   deploy_jonlineio_server:
     name: Deploy Jonline.io Server
     if: github.ref == 'refs/heads/main'
@@ -955,6 +994,7 @@ jobs:
     needs:
       - test_rust_binaries
       - push_preview_generator
+      - push_embeddings
     runs-on: ubuntu-26.04
 
     steps:
@@ -975,6 +1015,9 @@ jobs:
 
       - name: Deploy to Jonline.io via DigitalOcean Kubernetes
         run: .github/workflows/scripts/set_backend_images.sh preview jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
   create_github_release:
     name: "GitHub: Release"
@@ -1475,6 +1518,9 @@ jobs:
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_BULLCITY_SOCIAL }}
@@ -1514,6 +1560,9 @@ jobs:
 
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Purge Cloudflare cache
         env:
@@ -1555,6 +1604,9 @@ jobs:
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_ATO_BAND }}
@@ -1595,6 +1647,9 @@ jobs:
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
       - name: Purge Cloudflare cache
         env:
           CLOUDFLARE_ZONE: ${{ secrets.CLOUDFLARE_ZONE_RELLM_ORG }}
@@ -1631,6 +1686,9 @@ jobs:
 
       - name: Deploy Preview Generator (image tag only)
         run: .github/workflows/scripts/set_backend_images.sh preview neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (image tag only)
+        run: .github/workflows/scripts/set_backend_images.sh vector neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
   bounce_traefik_production:
     name: Bounce Traefik (Production)

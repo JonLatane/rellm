@@ -23,7 +23,7 @@
 #   --repo-images         Deploy the image tags written in server_internal_central_data.yaml/
 #                         preview_generator_central_data.yaml instead of preserving whatever
 #                         image tags the namespace's Deployments are running right now (the
-#                         default -- CI deploys tags like 0.5.553-<sha> that aren't in the
+#                         default -- CI deploys tags like 0.5.554-<sha> that aren't in the
 #                         checked-in manifests, and this transition shouldn't ALSO be a
 #                         surprise version change).
 #   --no-traefik-bounce   Skip the final Traefik restart (see step 5).

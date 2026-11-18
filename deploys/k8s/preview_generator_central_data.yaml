@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
         - name: rellm-preview-generator
-          image: docker.io/jonlatane/rellm_preview_generator:0.5.553
+          image: docker.io/jonlatane/rellm_preview_generator:0.5.554
           imagePullPolicy: IfNotPresent
           env:
             - name: DATABASE_URL

@@ -68,7 +68,7 @@ spec:
             claimName: rellm-central-embedding-models
       containers:
         - name: embedding
-          image: docker.io/jonlatane/rellm_embeddings:0.5.553
+          image: docker.io/jonlatane/rellm_embeddings:0.5.554
           imagePullPolicy: IfNotPresent
           command: ["/opt/embedding_service"]
           env:

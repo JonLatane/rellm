@@ -61,7 +61,7 @@ spec:
         app: rellm
     spec:
       containers:
-        - image: docker.io/jonlatane/rellm:0.5.553
+        - image: docker.io/jonlatane/rellm:0.5.554
           name: rellm
           env:
           # Semantic search (optional): these keys of the namespace's `rellm-embedding` Secret exist only after
@@ -170,7 +170,7 @@ spec:
         app: rellm-jobs
     spec:
       containers:
-        - image: docker.io/jonlatane/rellm:0.5.553
+        - image: docker.io/jonlatane/rellm:0.5.554
           name: rellm-jobs
           imagePullPolicy: IfNotPresent
           command:

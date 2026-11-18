@@ -60,9 +60,13 @@ The model is **chosen by the cluster** (Settings → Search shows it read-only);
 `generate_embeddings` job takes no lock: it only calls the service. Changing the cluster's model
 (`RELLM_EMBEDDING_SERVICE_MODEL`) re-embeds every namespace's content in the background.
 
-Image tags: CI builds and pushes `rellm_embeddings:<version>` (and `<version>-<sha>`) but, like all deploys, never applies
-manifests. The manifests carry the release's base version; after a new release run `update_central_embedding` (and
-`update_backend_vector` per namespace) with the manifests' tags bumped, or `kubectl set image` for a one-off.
+Image tags: CI builds and pushes `rellm_embeddings:<version>` (and `<version>-<sha>`), then bumps the image tag of the
+cluster's `rellm-central-embedding` Deployment and of each namespace's `rellm-vector` Deployment (both are skipped if not
+deployed) with `.github/workflows/scripts/set_backend_images.sh embedding|vector`. Like all CI deploys it never applies
+manifests. The manifests carry the release's base version, so after a manifest change run `update_central_embedding` (and
+`update_backend_vector` per namespace) with the manifests' tags bumped, or `kubectl set image` for a one-off. Bump the
+manifests' tags together with `backend/Cargo.toml`'s version: the image is only published under the current version, so a
+stale tag in a manifest means `ImagePullBackOff` the next time you apply it.
 
 ## Running locally
 
