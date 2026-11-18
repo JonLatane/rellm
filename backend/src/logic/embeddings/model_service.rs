@@ -314,6 +314,8 @@ type Reply = tokio::sync::oneshot::Sender<Result<Vec<f32>, String>>;
 /// A document text for the model. The reply channel is also how the worker learns the request is gone: when the client
 /// gives up, tonic drops the handler's future, the receiver goes with it, and the worker skips the job.
 struct DocumentJob {
+    /// The request it belongs to (see `RequestGuard`).
+    request: u64,
     text: String,
     reply: Reply,
 }
@@ -387,6 +389,7 @@ struct Scheduler {
     /// Always locked after `queues` when both are held.
     cache: Mutex<QueryCache>,
     wake: Condvar,
+    next_request: std::sync::atomic::AtomicU64,
 }
 
 impl Scheduler {
@@ -412,11 +415,39 @@ impl Scheduler {
         receiver
     }
 
-    fn submit_document(&self, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+    fn submit_document(&self, request: u64, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
         let (reply, receiver) = tokio::sync::oneshot::channel();
-        self.queues.lock().unwrap().documents.push_back(DocumentJob { text, reply });
+        self.queues.lock().unwrap().documents.push_back(DocumentJob { request, text, reply });
         self.wake.notify_one();
         receiver
+    }
+
+    /// Starts tracking one request's jobs (see `RequestGuard`).
+    fn begin(self: &Arc<Self>) -> RequestGuard {
+        RequestGuard {
+            scheduler: self.clone(),
+            id: self.next_request.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            queries: Vec::new(),
+            finished: false,
+        }
+    }
+
+    /// A request ended before its work was done (its client gave up): take its jobs out of the queues now, instead of
+    /// leaving them for the worker to find -- with queries always going first, that could be a long time, and meanwhile
+    /// repeated timeouts and retries would keep adding texts that nobody is waiting for. A query other requests are also
+    /// waiting on stays queued for them.
+    fn cancel(&self, request: u64, query_texts: &[String]) {
+        let mut guard = self.queues.lock().unwrap();
+        let queues = &mut *guard;
+        queues.documents.retain(|job| job.request != request);
+        for text in query_texts {
+            let Some(waiters) = queues.query_waiters.get_mut(text) else { continue };
+            waiters.retain(|reply| !reply.is_closed());
+            if waiters.is_empty() {
+                queues.query_waiters.remove(text);
+                queues.queries.retain(|queued| queued != text);
+            }
+        }
     }
 
     /// The next job, blocking until there is one; `None` once the service is gone. Work nobody is waiting for any more (every
@@ -458,6 +489,40 @@ impl Scheduler {
     }
 }
 
+/// One request's jobs. Dropped before `finish()` (the handler's future was dropped because the client gave up, or the
+/// request failed), it removes whatever of the request is still queued. Declare it BEFORE the receivers of its jobs so that
+/// they are dropped first: a job whose receiver is gone is how `cancel` tells this request's waiters from other requests'.
+struct RequestGuard {
+    scheduler: Arc<Scheduler>,
+    id: u64,
+    queries: Vec<String>,
+    finished: bool,
+}
+
+impl RequestGuard {
+    fn query(&mut self, model: &'static str, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        self.queries.push(text.clone());
+        self.scheduler.submit_query(model, text)
+    }
+
+    fn document(&mut self, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
+        self.scheduler.submit_document(self.id, text)
+    }
+
+    /// Everything the request asked for has been answered: nothing to clean up.
+    fn finish(mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.scheduler.cancel(self.id, &self.queries);
+        }
+    }
+}
+
 pub struct EmbeddingServiceImpl {
     /// Locked by the worker for one text at a time, so `spec()` can read the live model between texts.
     embedder: Arc<Mutex<BoxedEmbedder>>,
@@ -490,6 +555,7 @@ impl EmbeddingServiceImpl {
             queues: Mutex::new(Queues::default()),
             cache: Mutex::new(QueryCache { model: spec.id, vectors: HashMap::new(), order: VecDeque::new() }),
             wake: Condvar::new(),
+            next_request: std::sync::atomic::AtomicU64::new(0),
         });
         {
             let (embedder, scheduler) = (embedder.clone(), scheduler.clone());
@@ -583,12 +649,13 @@ impl EmbeddingService for EmbeddingServiceImpl {
         let purpose = Purpose::try_from(request.purpose).unwrap_or(Purpose::Document);
         // One job per text. If the client gives up, this future is dropped and `replies` with it, which tells the worker to
         // skip whatever of the request hasn't run yet.
+        let mut guard = self.scheduler.begin(); // declared before `replies`: see `RequestGuard`
         let replies: Vec<_> = request
             .texts
             .into_iter()
             .map(|text| match purpose {
-                Purpose::Query => self.scheduler.submit_query(spec.id, text),
-                Purpose::Document => self.scheduler.submit_document(text),
+                Purpose::Query => guard.query(spec.id, text),
+                Purpose::Document => guard.document(text),
             })
             .collect();
         let mut vectors = Vec::with_capacity(replies.len());
@@ -599,6 +666,7 @@ impl EmbeddingService for EmbeddingServiceImpl {
                 .map_err(|message| Status::internal(message))?;
             vectors.push(vector);
         }
+        guard.finish();
         Ok(Response::new(EmbedResponse {
             vectors: vectors.into_iter().map(|values| Vector { values }).collect(),
             model_id: spec.id.to_string(),
@@ -612,4 +680,59 @@ pub async fn serve(addr: std::net::SocketAddr, embedder: BoxedEmbedder, secret: 
     log::info!("Embedding service listening on {} (model {}).", addr, service.spec().id);
     Server::builder().add_service(EmbeddingServiceServer::new(service)).serve(addr).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod scheduler_tests {
+    use super::*;
+
+    fn scheduler() -> Arc<Scheduler> {
+        Arc::new(Scheduler {
+            queues: Mutex::new(Queues::default()),
+            cache: Mutex::new(QueryCache { model: "m", vectors: HashMap::new(), order: VecDeque::new() }),
+            wake: Condvar::new(),
+            next_request: std::sync::atomic::AtomicU64::new(0),
+        })
+    }
+
+    fn queued(scheduler: &Scheduler) -> (usize, usize, usize) {
+        let queues = scheduler.queues.lock().unwrap();
+        (queues.documents.len(), queues.queries.len(), queues.query_waiters.len())
+    }
+
+    #[test]
+    fn a_request_that_is_dropped_takes_its_queued_jobs_with_it() {
+        let scheduler = scheduler();
+        let mut gone = scheduler.begin();
+        let mut stays = scheduler.begin();
+        let replies: Vec<_> = (0..5).map(|i| gone.document(format!("gone {i}"))).collect();
+        let kept: Vec<_> = (0..2).map(|i| stays.document(format!("stays {i}"))).collect();
+        let query = gone.query("m", "a query".to_string());
+        assert_eq!(queued(&scheduler), (7, 1, 1));
+
+        // The client gives up: the handler's future is dropped (receivers first, then the guard, as in the handler).
+        drop(replies);
+        drop(query);
+        drop(gone);
+        assert_eq!(queued(&scheduler), (2, 0, 0), "only the request that is still waiting keeps its jobs");
+        drop(kept);
+        stays.finish();
+        assert_eq!(queued(&scheduler), (2, 0, 0), "a finished request leaves nothing to clean up");
+    }
+
+    #[test]
+    fn a_query_other_requests_still_wait_on_stays_queued() {
+        let scheduler = scheduler();
+        let (mut first, mut second) = (scheduler.begin(), scheduler.begin());
+        let first_reply = first.query("m", "xyz".to_string());
+        let second_reply = second.query("m", "xyz".to_string());
+        assert_eq!(queued(&scheduler), (0, 1, 1), "identical queries share one queued run");
+
+        drop(first_reply);
+        drop(first);
+        assert_eq!(queued(&scheduler), (0, 1, 1), "the second request is still waiting on it");
+        drop(second_reply);
+        drop(second);
+        assert_eq!(queued(&scheduler), (0, 0, 0));
+    }
 }

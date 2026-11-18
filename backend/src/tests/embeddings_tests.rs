@@ -1063,7 +1063,10 @@ fn identical_queries_arriving_together_share_one_run_of_the_model() {
     for call in calls {
         assert_eq!(call.join().unwrap().unwrap(), 1, "every caller gets its vector");
     }
-    assert_eq!(seen.lock().unwrap().len(), 1, "five identical queries should cost one run of the model: {:?}", seen.lock().unwrap());
+    // One snapshot: `assert_eq!` keeps its arguments' temporaries alive while it builds the failure message, so locking `seen`
+    // again there would deadlock instead of reporting the failure.
+    let runs = seen.lock().unwrap().clone();
+    assert_eq!(runs.len(), 1, "five identical queries should cost one run of the model: {runs:?}");
 }
 
 #[test]
