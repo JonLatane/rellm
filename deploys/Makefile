@@ -369,7 +369,7 @@ wait_backend_postgres_ready:
 # upgrade_backend_postgres. Override the output path with DUMP_FILE=path/to/file.sql.
 DUMP_FILE ?= $(PG_BACKUP_DIR)/$(NAMESPACE)-$(shell date +%Y%m%d%H%M%S).sql
 dump_backend_postgres:
-	@mkdir -p $(PG_BACKUP_DIR)
+	@mkdir -p "$(PG_BACKUP_DIR)"
 	rm -f /tmp/pgpf-$(NAMESPACE).log; \
 	kubectl port-forward -n $(NAMESPACE) rellm-postgres-0 $(PG_UPGRADE_LOCAL_PORT):5432 >/tmp/pgpf-$(NAMESPACE).log 2>&1 & \
 	echo $$! > /tmp/pgpf-$(NAMESPACE).pid; \
@@ -381,7 +381,7 @@ dump_backend_postgres:
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 		exit 1; \
 	fi; \
-	PGPASSWORD="$(pg_password)" pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f $(DUMP_FILE); \
+	PGPASSWORD="$(pg_password)" pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f "$(DUMP_FILE)"; \
 	DUMP_STATUS=$$?; \
 	kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 	rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -408,7 +408,7 @@ restore_backend_postgres:
 			rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 			exit 1; \
 		fi; \
-		PGPASSWORD="$(pg_password)" psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f $(DUMP_FILE); \
+		PGPASSWORD="$(pg_password)" psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f "$(DUMP_FILE)"; \
 		RESTORE_STATUS=$$?; \
 		kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -425,12 +425,12 @@ restore_backend_postgres:
 # version, clean it up by hand with delete_backend_postgres_old_data.
 upgrade_backend_postgres:
 	@echo "== Upgrading Postgres in namespace $(NAMESPACE) (see k8s/k8s-postgres-$(K8S_PROVIDER).yaml for target version) =="
-	$(MAKE) dump_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE=$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql
+	$(MAKE) dump_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE="$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql"
 	$(MAKE) stop_backend NAMESPACE=$(NAMESPACE)
 	$(MAKE) stop_backend_postgres NAMESPACE=$(NAMESPACE)
 	$(MAKE) update_backend_postgres NAMESPACE=$(NAMESPACE)
 	$(MAKE) wait_backend_postgres_ready NAMESPACE=$(NAMESPACE)
-	$(MAKE) restore_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE=$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql
+	$(MAKE) restore_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE="$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql"
 	$(MAKE) start_backend NAMESPACE=$(NAMESPACE)
 	@echo "== Done. Verify the app, then (once confident) run: make delete_backend_postgres_old_data NAMESPACE=$(NAMESPACE) =="
 
