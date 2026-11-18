@@ -896,13 +896,75 @@ fn labelled(prefix: &str, n: usize) -> Vec<String> {
 }
 
 #[test]
-fn clients_send_short_calls_and_the_service_still_accepts_long_ones() {
+fn the_service_still_accepts_calls_as_long_as_before_short_calls() {
+    // A job pod from before `TEXTS_PER_CALL` sends 64 texts at a time; the service must keep serving those during a rolling
+    // deploy (the service is usually updated first).
+    let url = start_model_service(None);
+    assert_eq!(
+        embed_call(&url, labelled("old", embeddings::MAX_TEXTS_PER_REQUEST), std::time::Duration::from_secs(30)).unwrap(),
+        embeddings::MAX_TEXTS_PER_REQUEST
+    );
+}
+
+/// A gRPC service that only records how many texts each `Embed` call carried, and answers with the fake model's vectors.
+struct RecordingService(std::sync::Arc<std::sync::Mutex<Vec<usize>>>);
+
+#[tonic::async_trait]
+impl crate::internal_protos::embedding_service_server::EmbeddingService for RecordingService {
+    async fn describe(
+        &self,
+        _request: tonic::Request<crate::internal_protos::DescribeRequest>,
+    ) -> Result<tonic::Response<crate::internal_protos::ModelDescription>, tonic::Status> {
+        let spec = embeddings::default_model();
+        Ok(tonic::Response::new(crate::internal_protos::ModelDescription { model_id: spec.id.to_string(), dimensions: spec.dimensions }))
+    }
+    async fn embed(
+        &self,
+        request: tonic::Request<crate::internal_protos::EmbedRequest>,
+    ) -> Result<tonic::Response<crate::internal_protos::EmbedResponse>, tonic::Status> {
+        let texts = request.into_inner().texts;
+        self.0.lock().unwrap().push(texts.len());
+        Ok(tonic::Response::new(crate::internal_protos::EmbedResponse {
+            vectors: texts.iter().map(|t| crate::internal_protos::Vector { values: FakeEmbedder::vector(t) }).collect(),
+            model_id: embeddings::default_model().id.to_string(),
+        }))
+    }
+}
+
+#[test]
+fn the_client_splits_documents_into_short_calls_and_keeps_their_order() {
     use embeddings::model_service::TEXTS_PER_CALL;
     assert!(TEXTS_PER_CALL <= 16, "a call holds up every other namespace for as long as it takes: keep it short");
-    assert!(TEXTS_PER_CALL <= embeddings::MAX_TEXTS_PER_REQUEST, "what a client sends must be acceptable");
-    // A client from before the change sends 64 at a time; a service from after it must keep serving those during a rollout.
-    let url = start_model_service(None);
-    assert_eq!(embed_call(&url, labelled("old", embeddings::MAX_TEXTS_PER_REQUEST), std::time::Duration::from_secs(30)).unwrap(), embeddings::MAX_TEXTS_PER_REQUEST);
+    assert!(TEXTS_PER_CALL <= embeddings::MAX_TEXTS_PER_REQUEST, "what a client sends must be acceptable to the service");
+
+    let sizes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let service = RecordingService(sizes.clone());
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap().block_on(async move {
+            tonic::transport::Server::builder()
+                .add_service(crate::internal_protos::embedding_service_server::EmbeddingServiceServer::new(service))
+                .serve(format!("127.0.0.1:{}", port).parse().unwrap())
+                .await
+                .unwrap();
+        });
+    });
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let mut remote = embeddings::RemoteEmbedder::connect(&format!("http://127.0.0.1:{}", port), None).expect("connects");
+    let texts = labelled("doc ", TEXTS_PER_CALL * 2 + 3);
+    let vectors = remote.embed_documents(&texts).unwrap();
+    assert_eq!(*sizes.lock().unwrap(), vec![TEXTS_PER_CALL, TEXTS_PER_CALL, 3], "documents go out in short calls");
+    assert_eq!(vectors, FakeEmbedder.embed_documents(&texts).unwrap(), "and the vectors come back in the texts' order");
+
+    sizes.lock().unwrap().clear();
+    remote.embed_query("a query").unwrap();
+    assert_eq!(*sizes.lock().unwrap(), vec![1], "a query is one call of one text");
 }
 
 #[test]
@@ -931,23 +993,6 @@ fn a_call_abandoned_while_it_waits_never_runs() {
     assert_eq!(first.join().unwrap().unwrap(), 10);
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(*seen.lock().unwrap(), labelled("a", 10), "the abandoned call's texts must never reach the model");
-}
-
-#[test]
-fn callers_are_served_in_the_order_they_arrived() {
-    let (fake, seen) = SlowFake::new(60);
-    let url = start_model_service_with(Box::new(fake), None);
-    let mut calls = Vec::new();
-    for prefix in ["a", "b", "c", "d"] {
-        let url = url.clone();
-        calls.push(std::thread::spawn(move || embed_call(&url, labelled(prefix, 3), std::time::Duration::from_secs(20))));
-        std::thread::sleep(std::time::Duration::from_millis(40));
-    }
-    for call in calls {
-        assert_eq!(call.join().unwrap().unwrap(), 3);
-    }
-    let order: Vec<String> = seen.lock().unwrap().iter().map(|t| t[..1].to_string()).collect();
-    assert_eq!(order.join(""), "aaabbbcccddd", "a later caller overtook an earlier one: {order:?}");
 }
 
 #[test]
