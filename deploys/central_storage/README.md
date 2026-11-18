@@ -164,12 +164,12 @@ three instances is part of the plan.
 
 ## CI
 
-CI deploys are image-only: `.github/workflows/server_ci_cd.yml` runs
-`.github/workflows/scripts/set_backend_images.sh`, which bumps the image tags of a namespace's
-`rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments (plus the cluster's `rellm-central-embedding` and
-any namespace's `rellm-vector`, if deployed) and nothing else. It never applies a
-manifest, so it can't change a namespace's storage wiring, credentials or replica counts -- it behaves
-identically for namespaces on central storage and on their own, and a site you've scaled down for a
-transition stays down. Manifest changes are rolled out deliberately with
-`NAMESPACE=<ns> make update_internal_central_data_backend` (see "Rolling out manifest changes" in
-[`../README.md`](../README.md#rolling-out-manifest-changes)); a CI job warns when a push changes them.
+CI deploys **apply** the checked-in manifests for the namespaces on central storage: `.github/workflows/server_ci_cd.yml`
+runs `.github/workflows/scripts/apply_backend_manifests.sh`, which applies the central-data server, preview generator and
+(if deployed) vector manifests per namespace, and this directory's embedding service manifest, with their images set to
+the freshly built tag, so manifest changes and the new image roll out together. It only updates Deployments that already
+exist, never touches credentials Secrets or PVC contents, and never prunes. If a site's Deployments are scaled to 0 (parked
+for a transition) it falls back to an image-only bump (`set_backend_images.sh`), so a site you've scaled down stays down.
+Everything else in this directory (central Postgres, object storage, Valkey) and namespaces on their own storage are still
+rolled out deliberately (see "Rolling out manifest changes" in [`../README.md`](../README.md#rolling-out-manifest-changes));
+a CI job warns when a push changes a manifest CI doesn't apply.

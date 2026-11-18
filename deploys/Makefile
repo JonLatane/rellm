@@ -107,8 +107,9 @@ deploy_be_internal_insecure_update:
 create_internal_central_data_backend: deploy_ensure_namespace k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
 	kubectl create -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
-# This is how manifest changes (new env vars, ports, replicas, ...) get rolled out -- CI only bumps
-# image tags (see .github/workflows/scripts/set_backend_images.sh), never manifests. The manifests'
+# This is how manifest changes (new env vars, ports, replicas, ...) get rolled out by hand. CI applies
+# these same manifests on every deploy (.github/workflows/scripts/apply_backend_manifests.sh), so this is
+# for rolling a change out ahead of a deploy, or onto a site CI skips (scaled down). The manifests'
 # own image tags are just the base version, so this KEEPS whatever images the namespace's
 # Deployments are running right now (CI's `<version>-<sha>` tags) instead of resetting them; pass
 # REPO_IMAGES=1 to deploy the manifests' tags as written instead. Regenerates the per-namespace
