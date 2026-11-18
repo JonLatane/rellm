@@ -5,7 +5,7 @@
 //! `mod.rs`; this file only maps a registry id to a way of running it.
 use std::path::PathBuf;
 
-use fastembed::{EmbeddingModel, QuantizationMode, TextEmbedding, TextInitOptions};
+use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
 use ort::{environment::Environment, session::Session, value::Tensor};
 use tokenizers::{Tokenizer, TruncationParams};
 
@@ -27,22 +27,15 @@ fn environment() -> anyhow::Result<Environment> {
 // Longer input is truncated by the tokenizer; documents list their most important text first.
 const MAX_TOKENS: usize = 256;
 
-/// Texts per ONNX Runtime run for models that can batch.
-const BATCH_SIZE: usize = 32;
-
-/// Texts per ONNX Runtime run for `model`. A dynamically quantized model (`embeddinggemma-300m-int8`, the default, and
-/// `all-minilm-l6-v2`) can't be batched: fastembed fails any call with more texts than the batch size, because dynamic
-/// quantization scales each batch by its own data range, so a text's vector would depend on which others shared its
-/// batch. It's embedded one text at a time instead, which makes its vector the same wherever it's embedded (a query
-/// embedded alone matches the same text embedded in a document batch) and keeps memory flat: ONNX Runtime's working
-/// set grows with texts-per-run (a 64-text run peaked ~3GB above one text per run in a local measurement), which is the
-/// likely reason the 900Mi service was being OOMKilled while backfilling.
-fn batch_size_for(model: &EmbeddingModel) -> usize {
-    match TextEmbedding::get_quantization_mode(model) {
-        QuantizationMode::Dynamic => 1,
-        _ => BATCH_SIZE,
-    }
-}
+// There is no batching: every model runs ONE TEXT PER ONNX RUNTIME RUN.
+//   * Dynamically quantized models (EmbeddingGemma int8, Harrier, all-minilm-l6-v2) can't be batched: fastembed fails any
+//     call with more texts than its batch size, and dynamic quantization scales each batch by its own data range, so a
+//     text's vector would depend on which others shared its batch.
+//   * It is the better choice for the other models too. A vector never depends on other texts (a document embeds the same
+//     in a request of 64 as alone, which is how queries, always embedded alone, are compared against it), and memory is
+//     lower, since ONNX Runtime's working set grows with the texts in a run while batching bought no speed on the CPUs the
+//     service runs on (measurements are in the PR that removed it).
+// (The gRPC request can still carry up to `MAX_TEXTS_PER_REQUEST` texts, to save round trips; they are run one by one.)
 
 /// A registry model fastembed has no built-in entry for: its ONNX export and tokenizer come from the Hugging Face Hub and
 /// run on `OnnxEngine`. Revisions are pinned to commits so a change to either repository can't alter what a deployed
@@ -63,7 +56,7 @@ struct OnnxModel {
 
 /// Microsoft's Harrier (MIT): last-token pooling and normalization are inside the ONNX graph (`sentence_embedding`), which
 /// fastembed's own pooling modes (CLS, mean) couldn't do. The int8 export is dynamically quantized, so it is run one
-/// text at a time (see `batch_size_for`).
+/// text at a time (see the note above).
 const HARRIER_270M: OnnxModel = OnnxModel {
     tokenizer_repo: "microsoft/harrier-oss-v1-270m",
     tokenizer_revision: "31de22b673913c7d658c0f03f792d77c2dcf8ebd",
@@ -179,16 +172,13 @@ fn normalize(vector: &mut [f32]) {
 pub struct LocalEmbedder {
     inner: Engine,
     spec: &'static ModelSpec,
-    /// See `batch_size_for`.
-    batch_size: usize,
 }
 
 impl LocalEmbedder {
     /// Loads (downloading into `model_cache_dir()` first if need be) the model `spec` names. Blocking, and slow the
     /// first time. ONNX Runtime uses `threads` CPU threads (it would otherwise take every core).
     pub fn load(spec: &'static ModelSpec, threads: usize) -> anyhow::Result<LocalEmbedder> {
-        let (inner, batch_size) = if let Some(model) = fastembed_model(spec.id) {
-            let batch_size = batch_size_for(&model);
+        let inner = if let Some(model) = fastembed_model(spec.id) {
             let inner = TextEmbedding::try_new(
                 TextInitOptions::new(model)
                     .with_environment(environment()?)
@@ -197,29 +187,23 @@ impl LocalEmbedder {
                     .with_max_length(MAX_TOKENS)
                     .with_show_download_progress(false),
             )?;
-            (Engine::Fastembed(inner), batch_size)
+            Engine::Fastembed(inner)
         } else if let Some(model) = onnx_model(spec.id) {
-            // One text per ONNX run, as for every dynamically quantized model: see `batch_size_for`.
-            (Engine::Onnx(OnnxEngine::load(model, threads)?), 1)
+            Engine::Onnx(OnnxEngine::load(model, threads)?)
         } else {
             anyhow::bail!("no model to run for `{}`", spec.id);
         };
-        Ok(LocalEmbedder { inner, spec, batch_size })
+        Ok(LocalEmbedder { inner, spec })
     }
 
     fn embed_with_prefix(&mut self, prefix: &str, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         let prefixed: Vec<String> = texts.iter().map(|t| format!("{}{}", prefix, t)).collect();
-        // Chunking here (rather than passing a batch size for all of `prefixed`) is what makes a request bigger than one
-        // batch work for dynamically quantized models; see `batch_size_for`.
+        // One text per run, always: see the note above `OnnxModel`.
         let mut vectors = Vec::with_capacity(prefixed.len());
-        for chunk in prefixed.chunks(self.batch_size) {
+        for text in &prefixed {
             match &mut self.inner {
-                Engine::Fastembed(model) => vectors.extend(model.embed(chunk, Some(self.batch_size))?),
-                Engine::Onnx(engine) => {
-                    for text in chunk {
-                        vectors.push(engine.embed(text)?);
-                    }
-                }
+                Engine::Fastembed(model) => vectors.extend(model.embed(std::slice::from_ref(text), Some(1))?),
+                Engine::Onnx(engine) => vectors.push(engine.embed(text)?),
             }
         }
         // Matryoshka models keep their best information in the leading dimensions, so a registry entry asking for fewer
@@ -275,13 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn only_dynamically_quantized_models_are_embedded_one_text_at_a_time() {
-        for spec in super::super::MODELS.iter() {
-            let Some(model) = fastembed_model(spec.id) else { continue }; // custom ONNX models always run one at a time
-            let dynamic = matches!(TextEmbedding::get_quantization_mode(&model), QuantizationMode::Dynamic);
-            assert_eq!(batch_size_for(&model), if dynamic { 1 } else { BATCH_SIZE }, "{}", spec.id);
-        }
-        // The default model is a custom ONNX one, which `OnnxEngine` always runs one text at a time.
+    fn the_default_model_is_a_custom_onnx_one() {
         assert!(onnx_model(super::super::default_model().id).is_some());
     }
 

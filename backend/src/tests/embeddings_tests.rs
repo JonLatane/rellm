@@ -1107,22 +1107,20 @@ mod with_model {
     }
 
     /// The model service takes up to `MAX_TEXTS_PER_REQUEST` documents per call, and the jobs send full requests while
-    /// backfilling. `embeddinggemma-300m-int8` (the default) is dynamically quantized, which fastembed refuses to batch
-    /// (`batch_size < texts.len()` is an error), so anything over one batch used to fail every call -- and running a whole
-    /// request in one ONNX run is a large memory spike (the 900Mi service was OOMKilled while backfilling). Dynamic quantization also scales each
-    /// batch by its own data range, so a vector must not depend on which other texts shared its batch.
-    #[test]
-    #[ignore = "downloads the embedding model"]
-    fn a_full_request_of_documents_embeds_and_each_vector_matches_embedding_that_text_alone() {
+    /// backfilling. Every text must embed, to a vector of the registry's size, and the same as when it is embedded alone
+    /// (a document in a request is compared against queries, which are always embedded alone). There is no batching in the
+    /// service: a regression here would mean texts were being run together again (which fails outright for dynamically
+    /// quantized models, and made the service's memory spike).
+    fn a_full_request_embeds_every_text_the_same_as_alone(spec: &'static embeddings::ModelSpec) {
         use embeddings::TextEmbedder;
-        let mut embedder = embeddings::LocalEmbedder::load(embeddings::default_model(), 2).expect("model loads");
+        let mut embedder = embeddings::LocalEmbedder::load(spec, 2).expect("model loads");
         let texts: Vec<String> = (0..embeddings::MAX_TEXTS_PER_REQUEST)
             .map(|i| format!("Document number {i}: {}", "community potluck and puppy adoption day ".repeat(1 + i % 7)))
             .collect();
 
         let together = embedder.embed_documents(&texts).expect("a full request must embed");
         assert_eq!(together.len(), texts.len());
-        let dimensions = embeddings::default_model().dimensions as usize;
+        let dimensions = spec.dimensions as usize;
         for v in &together {
             assert_eq!(v.len(), dimensions, "vectors have the registry's dimensions (a longer native vector is cut)");
             let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -1132,8 +1130,21 @@ mod with_model {
         for i in [0, 1, texts.len() / 2, texts.len() - 1] {
             let alone = embedder.embed_documents(&texts[i..=i]).expect("a single text must embed").remove(0);
             let cosine: f32 = alone.iter().zip(&together[i]).map(|(a, b)| a * b).sum();
-            assert!(cosine > 0.9999, "text {i} embeds differently depending on its batch mates (cosine {cosine})");
+            assert!(cosine > 0.9999, "text {i} embeds differently depending on the other texts in its request (cosine {cosine})");
         }
+    }
+
+    #[test]
+    #[ignore = "downloads the embedding model"]
+    fn a_full_request_embeds_every_text_the_same_as_alone_for_the_default_model() {
+        a_full_request_embeds_every_text_the_same_as_alone(embeddings::default_model());
+    }
+
+    // The same through fastembed's loader (the default model goes through `OnnxEngine`): the smallest built-in model.
+    #[test]
+    #[ignore = "downloads the embedding model"]
+    fn a_full_request_embeds_every_text_the_same_as_alone_for_a_built_in_model() {
+        a_full_request_embeds_every_text_the_same_as_alone(embeddings::model_spec("bge-small-en-v1.5").unwrap());
     }
 
     #[test]
