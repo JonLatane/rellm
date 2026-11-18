@@ -12,6 +12,7 @@
 //!     `RELLM_EMBEDDING_SERVICE_INSECURE=1`), `RELLM_EMBEDDING_THREADS`.
 //! Because the service hosts one model, every namespace using it uses that model: the admin's own model choice
 //! is overridden (`SearchSettings.model_chosen_by_cluster`).
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -28,8 +29,14 @@ use crate::internal_protos::{DescribeRequest, EmbedRequest, EmbedResponse, Model
 
 pub const SECRET_HEADER: &str = "x-rellm-internal-secret";
 /// Most texts one `Embed` call may carry, and the most bytes in one text -- a request over either is refused
-/// (`INVALID_ARGUMENT`) rather than allowed to tie up the one model.
+/// (`INVALID_ARGUMENT`) rather than allowed to tie up the one model. (Clients send far fewer, `TEXTS_PER_CALL`; this
+/// stays generous so a client from before that change, still sending 64 at a time, keeps working during a rolling deploy.)
 pub const MAX_TEXTS_PER_REQUEST: usize = 64;
+/// Texts a client puts in one `Embed` call. One model serves every namespace, one request at a time, and every text takes
+/// a model run of its own (the service doesn't batch), so a call's length is how long it holds everyone else up: with 64
+/// texts a call took long enough that, with several namespaces backfilling at once, calls waited out the client's
+/// `CALL_TIMEOUT` in the queue and nothing was ever stored. Short calls finish well inside it and interleave fairly.
+pub const TEXTS_PER_CALL: usize = 8;
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
 /// Requests allowed to wait for the model at once (it embeds one request at a time). More are refused with
 /// `RESOURCE_EXHAUSTED`, so a flood of namespaces degrades to full-text search instead of a growing queue.
@@ -158,8 +165,8 @@ impl TextEmbedder for RemoteEmbedder {
     }
     fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
         let mut vectors = Vec::with_capacity(texts.len());
-        for batch in texts.chunks(MAX_TEXTS_PER_REQUEST) {
-            vectors.extend(self.call(Purpose::Document, batch.to_vec())?);
+        for call in texts.chunks(TEXTS_PER_CALL) {
+            vectors.extend(self.call(Purpose::Document, call.to_vec())?);
         }
         Ok(vectors)
     }
@@ -302,7 +309,9 @@ pub fn invalidate_cluster_model() {
 // ---------------------------------------------------------------------------------------------
 
 pub struct EmbeddingServiceImpl {
-    embedder: Arc<Mutex<BoxedEmbedder>>,
+    /// A tokio mutex on purpose: it queues waiters first come, first served (a std mutex makes no such promise), and a
+    /// request abandoned while it waits simply leaves the queue instead of running later for nobody.
+    embedder: Arc<tokio::sync::Mutex<BoxedEmbedder>>,
     /// The last model read from the embedder. Reading it must never wait for the embedder's mutex (held for the whole of
     /// an inference, which would tie up async workers), so while an inference runs this answers from the cache; a real
     /// service never changes model, so the cache is never stale.
@@ -316,7 +325,7 @@ impl EmbeddingServiceImpl {
     pub fn new(embedder: BoxedEmbedder, secret: Option<String>) -> Self {
         EmbeddingServiceImpl {
             spec: Mutex::new(embedder.spec()),
-            embedder: Arc::new(Mutex::new(embedder)),
+            embedder: Arc::new(tokio::sync::Mutex::new(embedder)),
             secret,
             waiting: Arc::new(tokio::sync::Semaphore::new(MAX_WAITING)),
         }
@@ -341,6 +350,16 @@ impl EmbeddingServiceImpl {
             }
             Err(_) => *self.spec.lock().unwrap(),
         }
+    }
+}
+
+/// Sets its flag when dropped: how a request's blocking run learns the client has gone (tonic drops the handler's future
+/// when the client cancels or times out, but a task already running on a blocking thread can't be cancelled from outside).
+struct CancelWhenDropped(Arc<AtomicBool>);
+
+impl Drop for CancelWhenDropped {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
     }
 }
 
@@ -371,13 +390,26 @@ impl EmbeddingService for EmbeddingServiceImpl {
             .try_acquire_owned()
             .map_err(|_| Status::resource_exhausted("embedding_queue_full"))?;
         let purpose = Purpose::try_from(request.purpose).unwrap_or(Purpose::Document);
-        let embedder = self.embedder.clone();
-        let vectors = tokio::task::spawn_blocking(move || {
-            let mut embedder = embedder.lock().unwrap();
-            match purpose {
-                Purpose::Document => embedder.embed_documents(&request.texts),
-                Purpose::Query => request.texts.iter().map(|t| embedder.embed_query(t)).collect(),
+        // Wait for the model in line. If the client gives up while we wait (or while we run) this future is dropped:
+        // leaving the line costs nothing, and `cancelled` tells a run already under way to stop at its next text.
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let _cancel_when_dropped = CancelWhenDropped(cancelled.clone());
+        let mut embedder = self.embedder.clone().lock_owned().await;
+        let vectors = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Vec<f32>>> {
+            let mut vectors = Vec::with_capacity(request.texts.len());
+            for text in &request.texts {
+                if cancelled.load(Ordering::Relaxed) {
+                    anyhow::bail!("the client stopped waiting");
+                }
+                vectors.push(match purpose {
+                    Purpose::Document => embedder
+                        .embed_documents(std::slice::from_ref(text))?
+                        .pop()
+                        .ok_or_else(|| anyhow::anyhow!("the model returned no vector"))?,
+                    Purpose::Query => embedder.embed_query(text)?,
+                });
             }
+            Ok(vectors)
         })
         .await
         .map_err(|_| Status::internal("embedding_task_failed"))?
