@@ -377,6 +377,20 @@ impl QueryCache {
     }
 }
 
+/// What one worker thread takes from the queues. With a model of its own for queries (`serve_with_query_model`) the two
+/// kinds of work run on different threads; sharing one model, a single thread does both, queries first.
+#[derive(Clone, Copy)]
+struct Role {
+    queries: bool,
+    documents: bool,
+}
+
+impl Role {
+    const BOTH: Role = Role { queries: true, documents: true };
+    const QUERIES: Role = Role { queries: true, documents: false };
+    const DOCUMENTS: Role = Role { queries: false, documents: true };
+}
+
 /// The model's next piece of work.
 enum Next {
     Query(String),
@@ -388,6 +402,7 @@ struct Scheduler {
     queues: Mutex<Queues>,
     /// Always locked after `queues` when both are held.
     cache: Mutex<QueryCache>,
+    /// Woken with `notify_all`: with two workers, a single notification could reach the one that has nothing to take.
     wake: Condvar,
     next_request: std::sync::atomic::AtomicU64,
 }
@@ -409,7 +424,7 @@ impl Scheduler {
             Entry::Vacant(first) => {
                 queues.queries.push_back(first.key().clone());
                 first.insert(vec![reply]);
-                self.wake.notify_one();
+                self.wake.notify_all();
             }
         }
         receiver
@@ -418,7 +433,7 @@ impl Scheduler {
     fn submit_document(&self, request: u64, text: String) -> tokio::sync::oneshot::Receiver<Result<Vec<f32>, String>> {
         let (reply, receiver) = tokio::sync::oneshot::channel();
         self.queues.lock().unwrap().documents.push_back(DocumentJob { request, text, reply });
-        self.wake.notify_one();
+        self.wake.notify_all();
         receiver
     }
 
@@ -450,13 +465,13 @@ impl Scheduler {
         }
     }
 
-    /// The next job, blocking until there is one; `None` once the service is gone. Work nobody is waiting for any more (every
-    /// client that asked has given up) is dropped here.
-    fn next(&self) -> Option<Next> {
+    /// The next job for `role`, blocking until there is one; `None` once the service is gone. Work nobody is waiting for any
+    /// more (every client that asked has given up) is dropped here.
+    fn next(&self, role: Role) -> Option<Next> {
         let mut guard = self.queues.lock().unwrap();
         loop {
             let queues = &mut *guard;
-            if let Some(text) = queues.queries.pop_front() {
+            if let Some(text) = role.queries.then(|| queues.queries.pop_front()).flatten() {
                 let abandoned = queues.query_waiters.get(&text).map_or(true, |waiters| waiters.iter().all(|w| w.is_closed()));
                 if abandoned {
                     queues.query_waiters.remove(&text);
@@ -464,7 +479,7 @@ impl Scheduler {
                 }
                 return Some(Next::Query(text));
             }
-            if let Some(job) = queues.documents.pop_front() {
+            if let Some(job) = role.documents.then(|| queues.documents.pop_front()).flatten() {
                 if job.reply.is_closed() {
                     continue;
                 }
@@ -547,8 +562,20 @@ impl EmbeddingServiceImpl {
     /// One worker thread runs the model, one text at a time, always taking a waiting search query before any document: with
     /// the cluster backfilling, a search used to wait behind every document call in the line (15-19s measured), and now waits
     /// for at most the text being embedded. Documents are served first come, first served, and a request that is abandoned
-    /// (its client timed out) costs nothing: its jobs are skipped.
+    /// (its client timed out) costs nothing: its jobs are skipped. See `with_query_model` to not wait even for that text.
     pub fn new(embedder: BoxedEmbedder, secret: Option<String>) -> Self {
+        Self::build(embedder, None, secret)
+    }
+
+    /// `new`, with a second copy of the model (`queries`, the same model as `documents`) that answers search queries on a
+    /// thread of its own: a query then never waits for the document being embedded (up to ~2.3s for a long one), only for
+    /// other queries. The cost is that model's working memory, and the two threads share the CPU while both are busy.
+    pub fn with_query_model(documents: BoxedEmbedder, queries: BoxedEmbedder, secret: Option<String>) -> Self {
+        assert_eq!(documents.spec().id, queries.spec().id, "the query model must be the same model as the document one");
+        Self::build(documents, Some(queries), secret)
+    }
+
+    fn build(embedder: BoxedEmbedder, queries: Option<BoxedEmbedder>, secret: Option<String>) -> Self {
         let spec = embedder.spec();
         let embedder = Arc::new(Mutex::new(embedder));
         let scheduler = Arc::new(Scheduler {
@@ -557,37 +584,12 @@ impl EmbeddingServiceImpl {
             wake: Condvar::new(),
             next_request: std::sync::atomic::AtomicU64::new(0),
         });
-        {
-            let (embedder, scheduler) = (embedder.clone(), scheduler.clone());
-            std::thread::Builder::new()
-                .name("embedding-worker".to_string())
-                .spawn(move || {
-                    let failed = |e: anyhow::Error| {
-                        log::error!("Embedding failed: {:?}", crate::logic::log_redaction::safe_error(&e));
-                        "embedding_failed".to_string()
-                    };
-                    while let Some(next) = scheduler.next() {
-                        match next {
-                            Next::Document(job) => {
-                                let result = {
-                                    let mut embedder = embedder.lock().unwrap();
-                                    embedder
-                                        .embed_documents(std::slice::from_ref(&job.text))
-                                        .and_then(|mut vectors| vectors.pop().ok_or_else(|| anyhow::anyhow!("the model returned no vector")))
-                                };
-                                let _ = job.reply.send(result.map_err(failed));
-                            }
-                            Next::Query(text) => {
-                                let (model, result) = {
-                                    let mut embedder = embedder.lock().unwrap();
-                                    (embedder.spec().id, embedder.embed_query(&text))
-                                };
-                                scheduler.finish_query(model, text, result.map_err(failed));
-                            }
-                        }
-                    }
-                })
-                .expect("starting the embedding worker thread");
+        match queries {
+            None => Self::spawn_worker("embedding-worker", &scheduler, &embedder, Role::BOTH),
+            Some(queries) => {
+                Self::spawn_worker("embedding-worker", &scheduler, &embedder, Role::DOCUMENTS);
+                Self::spawn_worker("embedding-query-worker", &scheduler, &Arc::new(Mutex::new(queries)), Role::QUERIES);
+            }
         }
         EmbeddingServiceImpl {
             spec: Mutex::new(spec),
@@ -596,6 +598,39 @@ impl EmbeddingServiceImpl {
             secret,
             waiting: Arc::new(tokio::sync::Semaphore::new(MAX_WAITING)),
         }
+    }
+
+    fn spawn_worker(name: &str, scheduler: &Arc<Scheduler>, embedder: &Arc<Mutex<BoxedEmbedder>>, role: Role) {
+        let (embedder, scheduler) = (embedder.clone(), scheduler.clone());
+        std::thread::Builder::new()
+            .name(name.to_string())
+            .spawn(move || {
+                let failed = |e: anyhow::Error| {
+                    log::error!("Embedding failed: {:?}", crate::logic::log_redaction::safe_error(&e));
+                    "embedding_failed".to_string()
+                };
+                while let Some(next) = scheduler.next(role) {
+                    match next {
+                        Next::Document(job) => {
+                            let result = {
+                                let mut embedder = embedder.lock().unwrap();
+                                embedder
+                                    .embed_documents(std::slice::from_ref(&job.text))
+                                    .and_then(|mut vectors| vectors.pop().ok_or_else(|| anyhow::anyhow!("the model returned no vector")))
+                            };
+                            let _ = job.reply.send(result.map_err(failed));
+                        }
+                        Next::Query(text) => {
+                            let (model, result) = {
+                                let mut embedder = embedder.lock().unwrap();
+                                (embedder.spec().id, embedder.embed_query(&text))
+                            };
+                            scheduler.finish_query(model, text, result.map_err(failed));
+                        }
+                    }
+                }
+            })
+            .expect("starting an embedding worker thread");
     }
 
     fn authorize<T>(&self, request: &Request<T>) -> Result<(), Status> {
@@ -676,7 +711,16 @@ impl EmbeddingService for EmbeddingServiceImpl {
 
 /// Serves `embedder` at `addr` until the process stops.
 pub async fn serve(addr: std::net::SocketAddr, embedder: BoxedEmbedder, secret: Option<String>) -> anyhow::Result<()> {
-    let service = EmbeddingServiceImpl::new(embedder, secret);
+    serve_service(addr, EmbeddingServiceImpl::new(embedder, secret)).await
+}
+
+/// `serve`, with `queries` (a second copy of the same model) answering search queries on its own thread: see
+/// `EmbeddingServiceImpl::with_query_model`.
+pub async fn serve_with_query_model(addr: std::net::SocketAddr, documents: BoxedEmbedder, queries: BoxedEmbedder, secret: Option<String>) -> anyhow::Result<()> {
+    serve_service(addr, EmbeddingServiceImpl::with_query_model(documents, queries, secret)).await
+}
+
+async fn serve_service(addr: std::net::SocketAddr, service: EmbeddingServiceImpl) -> anyhow::Result<()> {
     log::info!("Embedding service listening on {} (model {}).", addr, service.spec().id);
     Server::builder().add_service(EmbeddingServiceServer::new(service)).serve(addr).await?;
     Ok(())

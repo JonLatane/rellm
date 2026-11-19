@@ -1,6 +1,6 @@
 # The cluster-shared embedding model service (backend `embedding_service`): ONE pod per cluster that holds ONE text
 # embedding model in memory and embeds text for every namespace's Rellm servers and `generate_embeddings` jobs,
-# so the model's RAM (~0.5GB for the default harrier-oss-v1-270m-384, see `resources` below) is paid once instead of once per namespace
+# so the model's RAM (~0.75GB for the default harrier-oss-v1-270m-384, see `resources` below) is paid once instead of once per namespace
 # server/job. Opt-in: see ../../k8s/SEMANTIC_SEARCH.md for how a namespace starts using it.
 #
 # - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default harrier-oss-v1-270m-384); every namespace that
@@ -92,7 +92,13 @@ spec:
               value: harrier-oss-v1-270m-384
             - name: RELLM_EMBEDDING_SERVICE_ADDR
               value: 0.0.0.0:8090
+            # Documents: 4 threads embed them ~1.7x faster than 2 (measured), which is what a backfill waits on.
             - name: RELLM_EMBEDDING_THREADS
+              value: "4"
+            # A second copy of the model, on its own thread, answers search queries, so a search never waits for the
+            # document being embedded (up to ~2.3s). 2 threads: queries are ~35 tokens, and 4 saves only ~50ms.
+            # "0" turns it off (one model does both; ~270MiB less memory).
+            - name: RELLM_EMBEDDING_QUERY_THREADS
               value: "2"
             - name: RELLM_EMBEDDING_CACHE_DIR
               value: /models
@@ -107,18 +113,21 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /models
-          # harrier-oss-v1-270m-384, measured on this image's binary (Linux, 2 threads) as it serves requests: ~270MiB
-          # anonymous memory, flat from idle through full 64 x 256-token requests and 8 concurrent ones, plus ~200MiB of
-          # memory-mapped weights (reclaimable page cache), ~510MiB peak in total; it ran fine under a 512MiB limit.
-          # 768Mi leaves margin. (EmbeddingGemma, the previous default, needed ~1.2GiB once it had embedded anything: the
-          # ~330MB in its registry entry was its idle figure.) The first start also downloads ~360MB, so give the
-          # readiness probe time.
+          # harrier-oss-v1-270m-384, measured on this image's binary (Linux, 2 threads each) as it serves requests: with
+          # the second, query-only copy of the model ~535MiB anonymous memory (~270MiB per copy; flat through 12 x
+          # 256-token documents with queries running alongside) plus ~210MiB of memory-mapped weights (reclaimable page
+          # cache, shared by both copies), ~750MiB peak in total. It ran under a 768Mi limit with no margin, so: request
+          # 768Mi, limit 1Gi. Without the query copy (RELLM_EMBEDDING_QUERY_THREADS=0) it is ~270MiB + weights, ~510MiB.
+          # (EmbeddingGemma, a previous default, needed ~1.2GiB once it had embedded anything: the ~330MB in its registry
+          # entry was its idle figure.) The first start also downloads ~360MB, so give the readiness probe time.
           resources:
             requests:
-              memory: 512Mi
-              cpu: 500m
-            limits:
               memory: 768Mi
+              # Up to 4 threads on documents plus 2 on queries; no CPU limit, so it takes spare CPU from the node (4 vCPUs,
+              # mostly idle) but the request reserves what a busy backfill uses.
+              cpu: 1000m
+            limits:
+              memory: 1Gi
           # The port opens only after the model has downloaded (first start) and loaded, so liveness checks must wait
           # for that: up to 10 minutes here (120 x 5s), after which the container is restarted.
           startupProbe:

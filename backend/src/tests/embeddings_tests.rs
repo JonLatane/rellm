@@ -823,19 +823,21 @@ fn start_model_service(secret: Option<&str>) -> String {
 
 /// `start_model_service`, backed by any model.
 fn start_model_service_with(embedder: embeddings::BoxedEmbedder, secret: Option<&str>) -> String {
+    start_model_service_with_models(embedder, None, secret)
+}
+
+/// `start_model_service_with`, optionally with a second model that answers the search queries.
+fn start_model_service_with_models(embedder: embeddings::BoxedEmbedder, queries: Option<embeddings::BoxedEmbedder>, secret: Option<&str>) -> String {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let secret = secret.map(str::to_string);
     std::thread::spawn(move || {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(embeddings::model_service::serve(
-                format!("127.0.0.1:{}", port).parse().unwrap(),
-                embedder,
-                secret,
-            ))
-            .unwrap();
+        let addr = format!("127.0.0.1:{}", port).parse().unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        match queries {
+            Some(queries) => runtime.block_on(embeddings::model_service::serve_with_query_model(addr, embedder, queries, secret)),
+            None => runtime.block_on(embeddings::model_service::serve(addr, embedder, secret)),
+        }
+        .unwrap();
     });
     let url = format!("http://127.0.0.1:{}", port);
     // Wait for it to accept connections.
@@ -1025,6 +1027,58 @@ fn a_search_query_does_not_wait_behind_queued_document_work() {
     let position = order.iter().position(|t| t == "q").unwrap();
     assert!(position <= 4, "the query ran after {position} documents instead of ahead of them: {order:?}");
     assert!(waited < std::time::Duration::from_millis(600), "a query waited {waited:?} behind document work");
+}
+
+/// A model whose documents stay "running" until released: it says when one starts, and holds it until told to finish (or
+/// 20s pass, so a broken test fails instead of hanging). Queries are instant.
+struct GatedFake {
+    started: std::sync::mpsc::Sender<()>,
+    release: std::sync::mpsc::Receiver<()>,
+    seen: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl TextEmbedder for GatedFake {
+    fn spec(&self) -> &'static embeddings::ModelSpec {
+        embeddings::default_model()
+    }
+    fn embed_documents(&mut self, texts: &[String]) -> anyhow::Result<Vec<Vec<f32>>> {
+        let mut vectors = Vec::new();
+        for text in texts {
+            let _ = self.started.send(());
+            let _ = self.release.recv_timeout(std::time::Duration::from_secs(20));
+            self.seen.lock().unwrap().push(text.clone());
+            vectors.push(FakeEmbedder::vector(text));
+        }
+        Ok(vectors)
+    }
+    fn embed_query(&mut self, text: &str) -> anyhow::Result<Vec<f32>> {
+        self.seen.lock().unwrap().push(text.to_string());
+        Ok(FakeEmbedder::vector(text))
+    }
+}
+
+#[test]
+fn a_query_does_not_wait_for_a_document_the_model_is_running_when_it_has_a_model_of_its_own() {
+    // A query that arrives mid-document used to wait out the document (the one wait priority can't remove); with a model of
+    // its own it doesn't. Deterministic: the document is held mid-run until the query has been answered, so a query that
+    // waited for it would time out instead of passing.
+    let (started, started_signal) = std::sync::mpsc::channel();
+    let (release_document, release) = std::sync::mpsc::channel();
+    let documents_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let documents_model = GatedFake { started, release, seen: documents_seen.clone() };
+    let (quick, queries_seen) = SlowFake::new(0);
+    let url = start_model_service_with_models(Box::new(documents_model), Some(Box::new(quick)), None);
+    let documents_url = url.clone();
+    let documents = std::thread::spawn(move || embed_call(&documents_url, labelled("d", 1), std::time::Duration::from_secs(30)));
+    started_signal.recv_timeout(std::time::Duration::from_secs(10)).expect("the document never started running");
+
+    // The document is now mid-run on the documents' model, and stays there.
+    let query = ask_query(&url, "q");
+    release_document.send(()).unwrap();
+    assert_eq!(query.expect("the query should be answered while the document is still running"), 1);
+    assert_eq!(documents.join().unwrap().unwrap(), 1);
+    assert_eq!(*queries_seen.lock().unwrap(), vec!["q".to_string()], "only the query ran on the queries' model");
+    assert_eq!(*documents_seen.lock().unwrap(), vec!["d0".to_string()], "only documents ran on the documents' model");
 }
 
 fn ask_query(url: &str, text: &str) -> Result<usize, tonic::Status> {
