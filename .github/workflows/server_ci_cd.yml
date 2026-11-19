@@ -563,8 +563,21 @@ jobs:
           retention-days: 1
 
   test_rust_binaries:
-    name: Test Rust Binaries
+    # Two parallel legs (each with its own Postgres/object storage and cache): the default-feature
+    # suite, and the suite with the rellm_embeddings features (model service, USearch vector
+    # service) on. Downstream jobs `needs:` this id, so they wait for both.
+    name: Test Rust Binaries (${{ matrix.name }})
     runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default features
+            slug: default
+            cargo_args: ""
+          - name: embedding features
+            slug: embeddings
+            cargo_args: "--features embedding-service,vector-service"
     # Backs the DB-backed specs under backend/src/tests/ (see src/tests/factories.rs), which run
     # against TEST_DATABASE_URL - a dedicated `rellm_test` DB, analogous to a Rails dev/test
     # split, kept separate from the `rellm_dev` DB used by a real running server. Migrations are
@@ -637,16 +650,13 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
-          key: rellm-test-${{ runner.OS }}-github-test
-          shared-key: rellm-test-${{ runner.OS }}-github-test
+          key: rellm-test-${{ runner.OS }}-github-test-${{ matrix.slug }}
+          shared-key: rellm-test-${{ runner.OS }}-github-test-${{ matrix.slug }}
           # The rellm crate itself is recompiled every run no matter what (its source changed), so
           # caching its artifacts only adds bytes to restore. Dependencies are what's worth caching.
           cache-workspace-crates: false
-      # One run with the rellm_embeddings features (model service, USearch vector service) on, which
-      # covers every default-feature test too. Two separate runs meant compiling the crate twice
-      # (~2m20 each) for what is otherwise the same suite.
       - working-directory: backend
-        run: cargo test --features embedding-service,vector-service
+        run: cargo test ${{ matrix.cargo_args }}
       # No separate `cargo build` here: the release jobs above already compile every binary, and a
       # debug build of the same code cost ~2.5 minutes (a third full compile of the rellm crate).
 
