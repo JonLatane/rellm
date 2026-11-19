@@ -117,6 +117,10 @@ pub fn get_posts_scoped(
     only: &Option<crate::logic::subdomains::AuthorSet>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetPostsResponse, Status> {
+    // Times each step of a search (one summary line when it ends, after the response is built): see
+    // `logic::embeddings::search_timing`.
+    let _timer = (request.post_id.is_none() && request.listing_type() == PostListingType::TextSearch)
+        .then(|| embeddings::search_timing::begin(embeddings::EmbeddingKind::Post));
     let cutoff = published_or_created_before(&request);
     let excluded = author_scope(&request, only)?;
     let offset = page_offset(&request);
@@ -448,8 +452,6 @@ fn get_search_posts(
     //
     // That unordered candidate set is capped at `SEARCH_CANDIDATE_LIMIT` rather than `PAGE_SIZE`, so a
     // later `page` still has matches to rank (it would otherwise be a fixed, arbitrary 200).
-    // Times each step of this search (one summary line when it ends): see `logic::embeddings::search_timing`.
-    let _timer = embeddings::search_timing::begin(embeddings::EmbeddingKind::Post);
     let mut matching_post_ids = query_visible_posts_unlimited!(user)
         .limit(SEARCH_CANDIDATE_LIMIT)
         .filter(posts::context.eq(request.context().as_str_name()))

@@ -94,6 +94,10 @@ pub fn get_events_scoped(
     only: &Option<crate::logic::subdomains::AuthorSet>,
     conn: &mut PgPooledConnection,
 ) -> Result<GetEventsResponse, Status> {
+    // Times each step of a search (one summary line when it ends, after the response is built): see
+    // `logic::embeddings::search_timing`.
+    let _timer = (request.occasion_post_ids.is_empty() && request.listing_type() == EventListingType::EventTextSearch)
+        .then(|| embeddings::search_timing::begin(embeddings::EmbeddingKind::Event));
     let excluded = AuthorScope { excluded: excluded_author_db_ids(&request)?, only: only.clone() };
     let result: Vec<MarshalableEvent> = if !request.occasion_post_ids.is_empty() {
         get_events_by_occasion_post_ids(&user, &request.occasion_post_ids, conn)?
@@ -553,8 +557,6 @@ fn get_search_events(
     // narrows that list down to just `id`, the order has to be overridden to match (a plain `id`
     // order is fine here regardless -- this query only collects ids, `binding` below is what's
     // actually ordered by rank).
-    // Times each step of this search (one summary line when it ends): see `logic::embeddings::search_timing`.
-    let _timer = embeddings::search_timing::begin(embeddings::EmbeddingKind::Event);
     let mut matching_occasion_ids = query_visible_events!(user, request.time_filter)
         .select(occasions::post_id)
         .order(occasions::post_id)

@@ -57,9 +57,10 @@ impl Stage {
         }
     }
 
-    /// Part of semantic search (as opposed to the full-text search and the page load every search has).
+    /// Part of semantic search (as opposed to the full-text search and the page load every search has, and the
+    /// configuration read, which happens even when semantic search is off).
     fn is_semantic(self) -> bool {
-        !matches!(self, Stage::FullText | Stage::PageLoad)
+        !matches!(self, Stage::FullText | Stage::PageLoad | Stage::Configuration)
     }
 }
 
@@ -132,9 +133,13 @@ fn add(stage: Stage, elapsed: Duration, note: Option<String>) {
             match collector.stages.iter_mut().find(|(s, _, _)| *s == stage) {
                 Some((_, total, existing)) => {
                     *total += elapsed;
-                    // A repeated step keeps its latest note.
-                    if note.is_some() {
-                        *existing = note;
+                    // A repeated step (the Postgres scan after the vector service failed, say) shows each run's note,
+                    // so an earlier run's wait is not hidden by a later one's.
+                    if let Some(note) = note {
+                        *existing = Some(match existing.take() {
+                            Some(earlier) => format!("{}; {}", earlier, note),
+                            None => note,
+                        });
                     }
                 }
                 None => collector.stages.push((stage, elapsed, note)),
@@ -182,6 +187,23 @@ mod tests {
             record_duration(Stage::Candidates, Duration::from_millis(7));
         });
         assert_eq!(stages, vec![(Stage::FullText, Duration::from_millis(10)), (Stage::Candidates, Duration::from_millis(12))]);
+    }
+
+    #[test]
+    fn a_repeated_step_keeps_every_runs_note() {
+        let timer = begin(EmbeddingKind::Post);
+        record_with(Stage::Embed, Instant::now(), "2400ms of it waiting".to_string());
+        record_with(Stage::Embed, Instant::now(), "1ms of it waiting".to_string());
+        let notes = recorded();
+        drop(timer);
+        assert_eq!(notes, vec![(Stage::Embed, Some("2400ms of it waiting; 1ms of it waiting".to_string()))]);
+    }
+
+    #[test]
+    fn a_search_that_only_read_the_configuration_logs_nothing() {
+        assert!(!Stage::Configuration.is_semantic());
+        assert!(Stage::Embed.is_semantic());
+        assert!(!Stage::FullText.is_semantic() && !Stage::PageLoad.is_semantic());
     }
 
     #[test]

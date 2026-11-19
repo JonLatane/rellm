@@ -97,9 +97,16 @@ impl SemanticIndex for PostgresScanIndex {
         ))
         .bind::<diesel::sql_types::Array<BigInt>, _>(scope.to_vec())
         .bind::<Text, _>(query.spec.id)
-        .load::<StoredVector>(conn)
-        .map_err(|e| log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
+        .load::<StoredVector>(conn);
+        // A load that waits and then fails (a statement timeout) still spent that time here.
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(e) => {
+                search_timing::record(search_timing::Stage::VectorLoad, load_started);
+                log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), crate::logic::log_redaction::safe_error(&e));
+                return None;
+            }
+        };
         // How much comes out of Postgres and into this process for every scoped search: the candidates' vectors.
         let megabytes = rows.iter().map(|row| row.embedding.len()).sum::<usize>() as f64 / (1024.0 * 1024.0);
         search_timing::record_with(search_timing::Stage::VectorLoad, load_started, format!("{} vectors, {:.1}MB", rows.len(), megabytes));
