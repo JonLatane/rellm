@@ -323,8 +323,8 @@ struct DocumentJob {
 /// What the model is waiting to do: search queries first (somebody is waiting on a page), then documents in arrival order.
 #[derive(Default)]
 struct Queues {
-    /// Distinct query texts waiting for the model, oldest first.
-    queries: VecDeque<String>,
+    /// Distinct query texts waiting for the model, oldest first, with when each was queued (for the log).
+    queries: VecDeque<(String, Instant)>,
     /// Everyone waiting on each distinct query text, from when it is queued until its vector is ready: identical queries
     /// (several Rellm servers answering the same search) share one run of the model.
     query_waiters: HashMap<String, Vec<Reply>>,
@@ -393,7 +393,8 @@ impl Role {
 
 /// The model's next piece of work.
 enum Next {
-    Query(String),
+    /// The text, and how long it waited in the queue.
+    Query(String, Duration),
     Document(DocumentJob),
 }
 
@@ -416,13 +417,17 @@ impl Scheduler {
         // Checked under the queues lock, like the worker's insert, so a run can't finish between the check and the join.
         if let Some(vector) = self.cache.lock().unwrap().get(model, &text) {
             let _ = reply.send(Ok(vector));
+            log::info!("Search query answered from the cache.");
             return receiver;
         }
         let queues = &mut *guard;
         match queues.query_waiters.entry(text) {
-            Entry::Occupied(mut joined) => joined.get_mut().push(reply),
+            Entry::Occupied(mut joined) => {
+                joined.get_mut().push(reply);
+                log::info!("Search query joined the identical one already queued or running ({} requests waiting on it).", joined.get().len());
+            }
             Entry::Vacant(first) => {
-                queues.queries.push_back(first.key().clone());
+                queues.queries.push_back((first.key().clone(), Instant::now()));
                 first.insert(vec![reply]);
                 self.wake.notify_all();
             }
@@ -460,7 +465,7 @@ impl Scheduler {
             waiters.retain(|reply| !reply.is_closed());
             if waiters.is_empty() {
                 queues.query_waiters.remove(text);
-                queues.queries.retain(|queued| queued != text);
+                queues.queries.retain(|(queued, _)| queued != text);
             }
         }
     }
@@ -471,13 +476,13 @@ impl Scheduler {
         let mut guard = self.queues.lock().unwrap();
         loop {
             let queues = &mut *guard;
-            if let Some(text) = role.queries.then(|| queues.queries.pop_front()).flatten() {
+            if let Some((text, queued_at)) = role.queries.then(|| queues.queries.pop_front()).flatten() {
                 let abandoned = queues.query_waiters.get(&text).map_or(true, |waiters| waiters.iter().all(|w| w.is_closed()));
                 if abandoned {
                     queues.query_waiters.remove(&text);
                     continue;
                 }
-                return Some(Next::Query(text));
+                return Some(Next::Query(text, queued_at.elapsed()));
             }
             if let Some(job) = role.documents.then(|| queues.documents.pop_front()).flatten() {
                 if job.reply.is_closed() {
@@ -492,13 +497,23 @@ impl Scheduler {
         }
     }
 
-    /// A query's run is over: remember a good vector, and answer everyone who was waiting on it.
-    fn finish_query(&self, model: &'static str, text: String, result: Result<Vec<f32>, String>) {
+    /// A query's run is over: remember a good vector, and answer everyone who was waiting on it. Logs how long it waited
+    /// for the model and how long the model took (never the text: the service doesn't log what people search for).
+    fn finish_query(&self, model: &'static str, text: String, result: Result<Vec<f32>, String>, waited: Duration, ran: Duration) {
         let mut queues = self.queues.lock().unwrap();
         if let Ok(vector) = &result {
             self.cache.lock().unwrap().put(model, &text, vector.clone());
         }
-        for reply in queues.query_waiters.remove(&text).unwrap_or_default() {
+        let replies = queues.query_waiters.remove(&text).unwrap_or_default();
+        log::info!(
+            "Search query embedded in {}ms after {}ms in the queue ({} request{} waiting on it{}).",
+            ran.as_millis(),
+            waited.as_millis(),
+            replies.len(),
+            if replies.len() == 1 { "" } else { "s" },
+            if result.is_ok() { "" } else { "; it failed" }
+        );
+        for reply in replies {
             let _ = reply.send(result.clone());
         }
     }
@@ -620,12 +635,14 @@ impl EmbeddingServiceImpl {
                             };
                             let _ = job.reply.send(result.map_err(failed));
                         }
-                        Next::Query(text) => {
+                        Next::Query(text, waited) => {
+                            let started = Instant::now();
                             let (model, result) = {
                                 let mut embedder = embedder.lock().unwrap();
                                 (embedder.spec().id, embedder.embed_query(&text))
                             };
-                            scheduler.finish_query(model, text, result.map_err(failed));
+                            let ran = started.elapsed();
+                            scheduler.finish_query(model, text, result.map_err(failed), waited, ran);
                         }
                     }
                 }
