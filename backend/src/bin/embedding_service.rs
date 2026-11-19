@@ -7,7 +7,9 @@
 //   RELLM_EMBEDDING_SERVICE_MODEL   model id (default: the registry default, harrier-oss-v1-270m-384)
 //   RELLM_EMBEDDING_SERVICE_ADDR    listen address (default 0.0.0.0:8090)
 //   RELLM_EMBEDDING_SERVICE_SECRET  callers must send it (required unless RELLM_EMBEDDING_SERVICE_INSECURE=1)
-//   RELLM_EMBEDDING_THREADS         CPU threads for the model (default 2)
+//   RELLM_EMBEDDING_THREADS         CPU threads for the model that embeds documents (default 2)
+//   RELLM_EMBEDDING_QUERY_THREADS   CPU threads for the second copy of the model that answers search queries, so a search never
+//                                   waits for a document being embedded (default 2; 0 = no second copy, one model does both)
 //   RELLM_EMBEDDING_CACHE_DIR       where the model is downloaded (give it a volume to survive restarts)
 // It stores nothing and never logs text. Don't expose it outside the cluster network.
 extern crate rellm;
@@ -39,11 +41,22 @@ async fn main() {
         .filter(|t| *t > 0)
         .unwrap_or(2);
 
+    let query_threads = std::env::var("RELLM_EMBEDDING_QUERY_THREADS").ok().and_then(|t| t.parse::<usize>().ok()).unwrap_or(2);
+
     log::info!("Loading embedding model {} (downloads it the first time)...", spec.id);
     // Always in-process here: this *is* the model service.
     let embedder = tokio::task::spawn_blocking(move || load_embedder_local(spec, threads))
         .await
         .expect("model loading task")
         .expect("failed to load the embedding model");
-    model_service::serve(addr, embedder, secret).await.expect("embedding service failed");
+    if query_threads == 0 {
+        model_service::serve(addr, embedder, secret).await.expect("embedding service failed");
+        return;
+    }
+    // A second copy for search queries (the weights are a mapped file, so they are not held twice).
+    let queries = tokio::task::spawn_blocking(move || load_embedder_local(spec, query_threads))
+        .await
+        .expect("model loading task")
+        .expect("failed to load the embedding model for queries");
+    model_service::serve_with_query_model(addr, embedder, queries, secret).await.expect("embedding service failed");
 }

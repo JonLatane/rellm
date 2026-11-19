@@ -823,19 +823,21 @@ fn start_model_service(secret: Option<&str>) -> String {
 
 /// `start_model_service`, backed by any model.
 fn start_model_service_with(embedder: embeddings::BoxedEmbedder, secret: Option<&str>) -> String {
+    start_model_service_with_models(embedder, None, secret)
+}
+
+/// `start_model_service_with`, optionally with a second model that answers the search queries.
+fn start_model_service_with_models(embedder: embeddings::BoxedEmbedder, queries: Option<embeddings::BoxedEmbedder>, secret: Option<&str>) -> String {
     let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let secret = secret.map(str::to_string);
     std::thread::spawn(move || {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(embeddings::model_service::serve(
-                format!("127.0.0.1:{}", port).parse().unwrap(),
-                embedder,
-                secret,
-            ))
-            .unwrap();
+        let addr = format!("127.0.0.1:{}", port).parse().unwrap();
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        match queries {
+            Some(queries) => runtime.block_on(embeddings::model_service::serve_with_query_model(addr, embedder, queries, secret)),
+            None => runtime.block_on(embeddings::model_service::serve(addr, embedder, secret)),
+        }
+        .unwrap();
     });
     let url = format!("http://127.0.0.1:{}", port);
     // Wait for it to accept connections.
@@ -1025,6 +1027,26 @@ fn a_search_query_does_not_wait_behind_queued_document_work() {
     let position = order.iter().position(|t| t == "q").unwrap();
     assert!(position <= 4, "the query ran after {position} documents instead of ahead of them: {order:?}");
     assert!(waited < std::time::Duration::from_millis(600), "a query waited {waited:?} behind document work");
+}
+
+#[test]
+fn a_query_does_not_wait_for_a_document_the_model_is_running_when_it_has_a_model_of_its_own() {
+    // The documents' model takes a second per text; the queries' model is quick. A query that arrives mid-document used to
+    // wait out the document (the one wait priority can't remove); with its own model it doesn't.
+    let (slow, documents_seen) = SlowFake::new(1000);
+    let (quick, queries_seen) = SlowFake::new(20);
+    let url = start_model_service_with_models(Box::new(slow), Some(Box::new(quick)), None);
+    let documents_url = url.clone();
+    let documents = std::thread::spawn(move || embed_call(&documents_url, labelled("d", 2), std::time::Duration::from_secs(20)));
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    let asked = std::time::Instant::now();
+    assert_eq!(ask_query(&url, "q").unwrap(), 1);
+    let waited = asked.elapsed();
+    assert!(waited < std::time::Duration::from_millis(500), "a query waited {waited:?} for a document");
+    assert_eq!(documents.join().unwrap().unwrap(), 2);
+    assert_eq!(*queries_seen.lock().unwrap(), vec!["q".to_string()], "only the query ran on the queries' model");
+    assert_eq!(*documents_seen.lock().unwrap(), vec!["d0".to_string(), "d1".to_string()], "only documents ran on the documents' model");
 }
 
 fn ask_query(url: &str, text: &str) -> Result<usize, tonic::Status> {

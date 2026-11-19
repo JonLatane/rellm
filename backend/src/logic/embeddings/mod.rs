@@ -76,7 +76,7 @@ pub struct ModelSpec {
 
 /// The default is Microsoft's Harrier OSS v1 270M (int8), its 640-dimension vectors cut to the first 384: multilingual
 /// (94 languages), MIT-licensed, search-tuned (queries carry a task instruction, documents none), under half the memory of
-/// the EmbeddingGemma it replaced as the default (~500MB vs ~1.2GB once serving), and 384-dimension vectors (the same storage as e5-small). Microsoft
+/// the EmbeddingGemma it replaced as the default (~750MB with its separate query copy, ~500MB without, vs ~1.2GB once serving), and 384-dimension vectors (the same storage as e5-small). Microsoft
 /// doesn't document Matryoshka-style truncation for it; 384 was our choice, checked on `compare_models`. EmbeddingGemma
 /// and the other models stay registered for clusters that pick them (`RELLM_EMBEDDING_SERVICE_MODEL`).
 pub const DEFAULT_MODEL_ID: &str = "harrier-oss-v1-270m-384";
@@ -86,18 +86,19 @@ pub static MODELS: [ModelSpec; 9] = [
     ModelSpec {
         id: DEFAULT_MODEL_ID,
         name: "Harrier OSS v1 270M (int8, 384 dimensions)",
-        description: "Multilingual (94 languages), search-tuned, 8-bit weights, MIT-licensed, with the vectors cut from 640 to their first 384 dimensions so storage and index memory match e5-small. The default: ~500MB of memory in use while serving, under half of EmbeddingGemma's.",
+        description: "Multilingual (94 languages), search-tuned, 8-bit weights, MIT-licensed, with the vectors cut from 640 to their first 384 dimensions so storage and index memory match e5-small. The default: ~750MB of memory in use while serving (a second copy answers search queries on its own thread; ~500MB without it), well under EmbeddingGemma's.",
         dimensions: 384,
         download_megabytes: 360,
-        memory_megabytes: 500,
+        memory_megabytes: 750,
         multilingual: true,
         query_prefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ",
         document_prefix: "",
-        // `compare_models`: R@1 97%, R@3 100%, MRR 0.98 (perfect in English, non-English and cross-language). Unlike
-        // EmbeddingGemma the right answers and the no-answer queries overlap slightly (worst right answer 0.332, best
-        // no-answer 0.354), so there is no clean gap; 0.36 is the best trade (keeps 97% of right answers, rejects every
-        // no-answer query).
-        min_similarity: 0.36,
+        // `compare_models` (short passages written to have one right answer): R@1 97%, R@3 100%, MRR 0.98; worst right
+        // answer 0.332, best no-answer query 0.354 -- which is why this was 0.36. Real listings are looser: scored against
+        // ~2,000 events on the live servers, 0.36-0.40 is mostly unrelated text (a search for "live music" at 0.37 pulled in
+        // baseball games and a trivia night, against real concerts at 0.42-0.50), so the floor is 0.40. It costs some true
+        // but weak matches (a violin recital at 0.37 for "live music"), the trade for not padding results with noise.
+        min_similarity: 0.40,
     },
     ModelSpec {
         id: "embeddinggemma-300m-int8-384",
