@@ -553,6 +553,8 @@ fn get_search_events(
     // narrows that list down to just `id`, the order has to be overridden to match (a plain `id`
     // order is fine here regardless -- this query only collects ids, `binding` below is what's
     // actually ordered by rank).
+    // Times each step of this search (one summary line when it ends): see `logic::embeddings::search_timing`.
+    let _timer = embeddings::search_timing::begin(embeddings::EmbeddingKind::Event);
     let mut matching_occasion_ids = query_visible_events!(user, request.time_filter)
         .select(occasions::post_id)
         .order(occasions::post_id)
@@ -578,14 +580,16 @@ fn get_search_events(
     // Full-text matches, best first. Search results are ordered by match quality first, falling
     // back to start time to keep ordering stable across the (common, with prefix matching) rank
     // ties -- mirrors get_search_posts's own recency fallback.
-    let mut ranked_ids: Vec<i64> = occasions::table
-        .filter(occasions::post_id.eq_any(matching_occasion_ids))
-        .order(ts_rank_cd(occasions::search_text, rank_query).desc())
-        .then_order_by(occasions::starts_at.desc())
-        .select(occasions::post_id)
-        .limit(SEARCH_CANDIDATE_LIMIT)
-        .load(conn)
-        .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
+    let mut ranked_ids: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::FullText, || {
+        occasions::table
+            .filter(occasions::post_id.eq_any(matching_occasion_ids))
+            .order(ts_rank_cd(occasions::search_text, rank_query).desc())
+            .then_order_by(occasions::starts_at.desc())
+            .select(occasions::post_id)
+            .limit(SEARCH_CANDIDATE_LIMIT)
+            .load(conn)
+    })
+    .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
 
     // Semantic reranking (see `logic::embeddings`). Embeddings are per *Event* (its Post plus its
     // Occasions' times/places), results are per *Occasion*: rank the Events of the candidate
@@ -609,8 +613,7 @@ fn get_search_events(
                     if let Some(author_user_id) = author_user_id {
                         visible = visible.filter(occasions::user_id.eq(author_user_id));
                     }
-                    let visible: Vec<(i64, i64)> = visible
-                        .load(conn)
+                    let visible: Vec<(i64, i64)> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Visibility, || visible.load(conn))
                         .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
                     (visible, Some(nearest))
                 }
@@ -631,15 +634,16 @@ fn get_search_events(
             if let Some(author_user_id) = author_user_id {
                 recent = recent.filter(occasions::user_id.eq(author_user_id));
             }
-            let mut occasion_event: Vec<(i64, i64)> = recent
-                .load(conn)
+            let mut occasion_event: Vec<(i64, i64)> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Candidates, || recent.load(conn))
                 .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
             occasion_event.extend(
-                occasions::table
-                    .filter(occasions::post_id.eq_any(&ranked_ids))
-                    .select((occasions::post_id, occasions::event_id))
-                    .load::<(i64, i64)>(conn)
-                    .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?,
+                embeddings::search_timing::timed(embeddings::search_timing::Stage::Candidates, || {
+                    occasions::table
+                        .filter(occasions::post_id.eq_any(&ranked_ids))
+                        .select((occasions::post_id, occasions::event_id))
+                        .load::<(i64, i64)>(conn)
+                })
+                .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?,
             );
             occasion_event.sort_unstable();
             occasion_event.dedup();
@@ -667,7 +671,8 @@ fn get_search_events(
     let occasion_posts = alias!(posts as occasion_posts);
     let occasion_users = alias!(users as occasion_users);
 
-    let mut loaded: Vec<EventLoadData> = occasions::table
+    let mut loaded: Vec<EventLoadData> = embeddings::search_timing::timed(embeddings::search_timing::Stage::PageLoad, || {
+        occasions::table
         .inner_join(events::table.on(events::post_id.eq(occasions::event_id)))
         .inner_join(posts::table.on(posts::id.eq(events::post_id)))
         .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
@@ -687,7 +692,8 @@ fn get_search_events(
             occasion_users.fields(AUTHOR_COLUMNS).nullable(),
         ))
         .load::<EventLoadData>(conn)
-        .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
+    })
+    .map_err(|_| Status::new(Code::Internal, "error_loading_events"))?;
     // Back into ranked order (the rows come back in no particular order).
     let position: HashMap<i64, usize> =
         ranked_ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();

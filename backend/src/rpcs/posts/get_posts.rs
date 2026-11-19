@@ -448,6 +448,8 @@ fn get_search_posts(
     //
     // That unordered candidate set is capped at `SEARCH_CANDIDATE_LIMIT` rather than `PAGE_SIZE`, so a
     // later `page` still has matches to rank (it would otherwise be a fixed, arbitrary 200).
+    // Times each step of this search (one summary line when it ends): see `logic::embeddings::search_timing`.
+    let _timer = embeddings::search_timing::begin(embeddings::EmbeddingKind::Post);
     let mut matching_post_ids = query_visible_posts_unlimited!(user)
         .limit(SEARCH_CANDIDATE_LIMIT)
         .filter(posts::context.eq(request.context().as_str_name()))
@@ -468,15 +470,17 @@ fn get_search_posts(
     // looking for), falling back to recency - `COALESCE(published_at, created_at)` - to keep
     // ordering stable across the (common, with prefix matching) rank ties rather than falling
     // through to unspecified/DB-natural order.
-    let mut ranked_ids: Vec<i64> = posts::table
-        .filter(posts::id.eq_any(matching_post_ids))
-        .order(ts_rank_cd(posts::search_text, rank_query).desc())
-        .then_order_by(posts::sort_published_at.desc())
-        .then_order_by(posts::id.desc())
-        .select(posts::id)
-        .limit(SEARCH_CANDIDATE_LIMIT)
-        .load(conn)
-        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?;
+    let mut ranked_ids: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::FullText, || {
+        posts::table
+            .filter(posts::id.eq_any(matching_post_ids))
+            .order(ts_rank_cd(posts::search_text, rank_query).desc())
+            .then_order_by(posts::sort_published_at.desc())
+            .then_order_by(posts::id.desc())
+            .select(posts::id)
+            .limit(SEARCH_CANDIDATE_LIMIT)
+            .load(conn)
+    })
+    .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?;
 
     // Semantic reranking (see `logic::embeddings`): also consider posts that are semantically close to the
     // query even though they share no words with it, and fuse the two rankings. Only ever ids the
@@ -502,8 +506,7 @@ fn get_search_posts(
                     if let Some(cutoff) = published_or_created_before(request) {
                         visible = visible.filter(posts::sort_published_at.lt(cutoff));
                     }
-                    let visible: std::collections::HashSet<i64> = visible
-                        .load::<i64>(conn)
+                    let visible: std::collections::HashSet<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Visibility, || visible.load::<i64>(conn))
                         .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
                         .into_iter()
                         .collect();
@@ -532,8 +535,7 @@ fn get_search_posts(
             if let Some(cutoff) = published_or_created_before(request) {
                 recent = recent.filter(posts::sort_published_at.lt(cutoff));
             }
-            let mut scope: Vec<i64> = recent
-                .load::<(i64, std::time::SystemTime)>(conn)
+            let mut scope: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Candidates, || recent.load::<(i64, std::time::SystemTime)>(conn))
                 .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
                 .into_iter()
                 .map(|(id, _)| id)
@@ -553,12 +555,14 @@ fn get_search_posts(
         .skip(page_offset(request) as usize)
         .take(PAGE_SIZE as usize)
         .collect();
-    let mut rows: HashMap<i64, (models::Post, Option<models::Author>)> = posts::table
-        .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
-        .filter(posts::id.eq_any(&page_ids))
-        .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
-        .load::<(models::Post, Option<models::Author>)>(conn)
-        .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
+    let mut rows: HashMap<i64, (models::Post, Option<models::Author>)> = embeddings::search_timing::timed(embeddings::search_timing::Stage::PageLoad, || {
+        posts::table
+            .left_join(users::table.on(posts::user_id.eq(users::id.nullable())))
+            .filter(posts::id.eq_any(&page_ids))
+            .select((models::POST_COLUMNS, models::AUTHOR_COLUMNS.nullable()))
+            .load::<(models::Post, Option<models::Author>)>(conn)
+    })
+    .map_err(|_| Status::new(Code::Internal, "error_loading_posts"))?
         .into_iter()
         .map(|row| (row.0.id, row))
         .collect();

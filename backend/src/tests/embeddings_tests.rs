@@ -1326,8 +1326,18 @@ fn a_server_embeds_search_queries_and_the_job_embeds_documents_through_the_model
         ctx.embedder = Some(Box::new(embeddings::RemoteEmbedder::connect(&url, None).unwrap()));
         embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
         // The server side: a semantic-only search through the remote query embedder.
+        let timer = embeddings::search_timing::begin(EmbeddingKind::Post);
         let ranking = embeddings::semantic_ranking(conn, EmbeddingKind::Post, "getting canine", &[dog.id]).unwrap();
         assert_eq!(ranking.first().map(|m| m.0), Some(dog.id));
+        // The steps of a Postgres-scan search are told apart: configuration, embedding, loading the vectors, scoring them.
+        let steps = embeddings::search_timing::recorded();
+        let names: Vec<_> = steps.iter().map(|(stage, _)| *stage).collect();
+        use embeddings::search_timing::Stage;
+        assert_eq!(names, vec![Stage::Configuration, Stage::Embed, Stage::VectorLoad, Stage::Similarity]);
+        let note = |stage| steps.iter().find(|(s, _)| *s == stage).and_then(|(_, n)| n.clone()).unwrap_or_default();
+        assert!(note(Stage::VectorLoad).starts_with("1 vectors, "), "{}", note(Stage::VectorLoad));
+        assert!(note(Stage::Embed).contains("waiting for this server's embedder"));
+        drop(timer);
         Ok(())
     });
     embeddings::unload_server_embedder();

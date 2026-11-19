@@ -145,27 +145,31 @@ fn semantic_user_page_ids(
         TsConfigurationByName("simple"),
         prefix_tsquery_text(search_text),
     );
-    let mut ranked: Vec<i64> = users::table
-        .filter(visible())
-        .filter(users::search_text.matches(search_query))
-        .order(ts_rank_cd(users::search_text, rank_query).desc())
-        .then_order_by(users::created_at.desc())
-        .select(users::id)
-        .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-        .load(conn)
-        .ok()?;
+    let mut ranked: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::FullText, || {
+        users::table
+            .filter(visible())
+            .filter(users::search_text.matches(search_query))
+            .order(ts_rank_cd(users::search_text, rank_query).desc())
+            .then_order_by(users::created_at.desc())
+            .select(users::id)
+            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+            .load(conn)
+    })
+    .ok()?;
     // First the vector search service, if configured and up: the nearest profiles anywhere, kept to the visible ones.
     // `None` when it's absent, down or still building -- then the Postgres scan below answers instead.
     let global = if embeddings::semantic_global_available() {
         match embeddings::semantic_ranking_global(conn, embeddings::EmbeddingKind::UserProfile, search_text) {
             Some(mut nearest) => {
                 let nearest_ids: Vec<i64> = nearest.iter().map(|(id, _)| *id).collect();
-                let visible_ids: std::collections::HashSet<i64> = users::table
-                    .filter(visible())
-                    .filter(users::id.eq_any(&nearest_ids))
-                    .select(users::id)
-                    .load::<i64>(conn)
-                    .ok()?
+                let visible_ids: std::collections::HashSet<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Visibility, || {
+                    users::table
+                        .filter(visible())
+                        .filter(users::id.eq_any(&nearest_ids))
+                        .select(users::id)
+                        .load::<i64>(conn)
+                })
+                .ok()?
                     .into_iter()
                     .collect();
                 nearest.retain(|(id, _)| visible_ids.contains(id));
@@ -179,13 +183,15 @@ fn semantic_user_page_ids(
     let semantic = if let Some(global) = global {
         global
     } else {
-        let mut scope: Vec<i64> = users::table
-            .filter(visible())
-            .order(users::created_at.desc())
-            .select(users::id)
-            .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-            .load(conn)
-            .ok()?;
+        let mut scope: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Candidates, || {
+            users::table
+                .filter(visible())
+                .order(users::created_at.desc())
+                .select(users::id)
+                .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                .load(conn)
+        })
+        .ok()?;
         scope.extend(ranked.iter().copied());
         scope.sort_unstable();
         scope.dedup();
@@ -251,6 +257,8 @@ fn get_all_users(
     // Set when a semantic-search listing decided which users (and in what order) this page shows.
     let mut semantic_page_ids: Option<Vec<i64>> = None;
 
+    // Times each step of a search (one summary line when it ends): see `logic::embeddings::search_timing`.
+    let _timer = search_text.map(|_| embeddings::search_timing::begin(embeddings::EmbeddingKind::UserProfile));
     if let Some(search_text) = search_text {
         // Semantic reranking (see `logic::embeddings`): full-text matches ranked by quality, plus
         // semantically similar profiles among the newest visible ones, fused. Only the plain
@@ -276,14 +284,15 @@ fn get_all_users(
         None => query = query.offset(page_offset),
     }
 
-    let mut rows = query
-        .load::<(
+    let mut rows = embeddings::search_timing::timed(embeddings::search_timing::Stage::PageLoad, || {
+        query.load::<(
             models::User,
             Option<models::Follow>,
             Option<models::Follow>,
             Option<models::MediaReference>,
         )>(conn)
-        .unwrap();
+    })
+    .unwrap();
     if let Some(ids) = &semantic_page_ids {
         let position: HashMap<i64, usize> = ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
         rows.sort_by_key(|row| position.get(&row.0.id).copied().unwrap_or(usize::MAX));
