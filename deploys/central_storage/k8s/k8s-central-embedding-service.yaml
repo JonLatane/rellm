@@ -92,10 +92,12 @@ spec:
               value: harrier-oss-v1-270m-384
             - name: RELLM_EMBEDDING_SERVICE_ADDR
               value: 0.0.0.0:8090
+            # Documents: 4 threads embed them ~1.7x faster than 2 (measured), which is what a backfill waits on.
             - name: RELLM_EMBEDDING_THREADS
-              value: "2"
+              value: "4"
             # A second copy of the model, on its own thread, answers search queries, so a search never waits for the
-            # document being embedded (up to ~2.3s). "0" turns it off (one model does both; ~270MiB less memory).
+            # document being embedded (up to ~2.3s). 2 threads: queries are ~35 tokens, and 4 saves only ~50ms.
+            # "0" turns it off (one model does both; ~270MiB less memory).
             - name: RELLM_EMBEDDING_QUERY_THREADS
               value: "2"
             - name: RELLM_EMBEDDING_CACHE_DIR
@@ -121,7 +123,9 @@ spec:
           resources:
             requests:
               memory: 768Mi
-              cpu: 500m
+              # Up to 4 threads on documents plus 2 on queries; no CPU limit, so it takes spare CPU from the node (4 vCPUs,
+              # mostly idle) but the request reserves what a busy backfill uses.
+              cpu: 1000m
             limits:
               memory: 1Gi
           # The port opens only after the model has downloaded (first start) and loaded, so liveness checks must wait
