@@ -469,15 +469,11 @@ pub fn semantic_ranking(
         return None;
     }
     let embedder = server_embedder(spec)?;
-    let query = embedder
-        .lock()
-        .ok()?
-        .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
+    let query = embed_search_query(&embedder, query_text.trim())?;
     // Scoped search is always the Postgres scan: it reads only `scope_ids`' vectors and needs nothing else running.
     // It is also the fallback when the optional vector search service can't answer a "search anywhere" query.
-    PostgresScanIndex.search(
+    let started = Instant::now();
+    let matches = PostgresScanIndex.search(
         conn,
         &IndexQuery {
             kind,
@@ -486,7 +482,35 @@ pub fn semantic_ranking(
             scope: Some(scope_ids),
             limit: SEMANTIC_RESULT_LIMIT,
         },
-    )
+    );
+    log_index_search(kind, "scoped (Postgres scan)", started.elapsed(), matches.as_ref().map(|m| m.len()));
+    matches
+}
+
+/// Embeds a search query with the server's embedder, logging how long that took. Never logs the query. The time includes
+/// waiting for the embedder's lock (one search embeds at a time in this process) and the call to the embedding service.
+fn embed_search_query(embedder: &Arc<Mutex<BoxedEmbedder>>, text: &str) -> Option<Vec<f32>> {
+    let started = Instant::now();
+    let mut embedder = embedder.lock().ok()?;
+    let locked = started.elapsed();
+    let result = embedder
+        .embed_query(text)
+        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
+        .ok();
+    log::info!(
+        "Semantic search: embedded the query in {}ms ({}ms of it waiting for this server's embedder){}.",
+        started.elapsed().as_millis(),
+        locked.as_millis(),
+        if result.is_some() { "" } else { "; it failed" }
+    );
+    result
+}
+
+fn log_index_search(kind: EmbeddingKind, how: &str, took: Duration, matches: Option<usize>) {
+    match matches {
+        Some(n) => log::info!("Semantic search: {} {} search took {}ms, {} match{}.", kind.name(), how, took.as_millis(), n, if n == 1 { "" } else { "es" }),
+        None => log::info!("Semantic search: {} {} search took {}ms and gave no result.", kind.name(), how, took.as_millis()),
+    }
 }
 
 /// How many nearest ids a global search asks the index for. Visibility is applied to them afterwards (in Postgres),
@@ -511,16 +535,14 @@ pub fn semantic_ranking_global(conn: &mut PgPooledConnection, kind: EmbeddingKin
         return None;
     }
     let embedder = server_embedder(spec)?;
-    let query = embedder
-        .lock()
-        .ok()?
-        .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
-    semantic_index().search(
+    let query = embed_search_query(&embedder, query_text.trim())?;
+    let started = Instant::now();
+    let matches = semantic_index().search(
         conn,
         &IndexQuery { kind, spec, vector: &query, scope: None, limit: GLOBAL_RESULT_LIMIT },
-    )
+    );
+    log_index_search(kind, "global", started.elapsed(), matches.as_ref().map(|m| m.len()));
+    matches
 }
 
 /// Reranks by reciprocal rank fusion: each id scores `1/(k + rank)` in every list it appears in
