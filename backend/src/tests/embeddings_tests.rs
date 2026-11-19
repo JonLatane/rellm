@@ -1326,11 +1326,40 @@ fn a_server_embeds_search_queries_and_the_job_embeds_documents_through_the_model
         ctx.embedder = Some(Box::new(embeddings::RemoteEmbedder::connect(&url, None).unwrap()));
         embeddings::sync_embeddings(conn, EmbeddingKind::Post, &mut ctx)?;
         // The server side: a semantic-only search through the remote query embedder.
+        let timer = embeddings::search_timing::begin(EmbeddingKind::Post);
         let ranking = embeddings::semantic_ranking(conn, EmbeddingKind::Post, "getting canine", &[dog.id]).unwrap();
         assert_eq!(ranking.first().map(|m| m.0), Some(dog.id));
+        // The steps of a Postgres-scan search are told apart: configuration, embedding, loading the vectors, scoring them.
+        let steps = embeddings::search_timing::recorded();
+        let names: Vec<_> = steps.iter().map(|(stage, _)| *stage).collect();
+        use embeddings::search_timing::Stage;
+        assert_eq!(names, vec![Stage::Configuration, Stage::Embed, Stage::VectorLoad, Stage::Similarity]);
+        let note = |stage| steps.iter().find(|(s, _)| *s == stage).and_then(|(_, n)| n.clone()).unwrap_or_default();
+        assert!(note(Stage::VectorLoad).starts_with("1 vectors, "), "{}", note(Stage::VectorLoad));
+        assert!(note(Stage::Embed).contains("waiting for this server's embedder"));
+        drop(timer);
         Ok(())
     });
     embeddings::unload_server_embedder();
+}
+
+#[test]
+fn checking_the_server_embedder_does_not_wait_for_a_search_using_it() {
+    // A search holds the embedder's lock for its whole call to the embedding service. The checks that every search makes
+    // first (is semantic search ready? which model is it?) must not queue behind that, or the wait would go unseen.
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    embeddings::install_server_embedder(Box::new(FakeEmbedder));
+    let spec = embeddings::default_model();
+    let busy = embeddings::server_embedder(spec).expect("installed");
+    let _held = busy.lock().unwrap(); // a search in the middle of its embed call
+    let (done, answered) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(embeddings::server_embedder(spec).is_some());
+    });
+    let found = answered.recv_timeout(std::time::Duration::from_secs(5));
+    drop(_held);
+    embeddings::unload_server_embedder();
+    assert_eq!(found, Ok(true), "the check waited for the embedder's lock");
 }
 
 #[test]

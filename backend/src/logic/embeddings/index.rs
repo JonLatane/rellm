@@ -1,7 +1,7 @@
 use diesel::sql_types::{BigInt, Binary, Text};
 use diesel::*;
 
-use super::{EmbeddingKind, ModelSpec};
+use super::{search_timing, EmbeddingKind, ModelSpec};
 use crate::db_connection::PgPooledConnection;
 
 /// One nearest-neighbor question: which rows of `kind` are most like `vector` (made by `spec`'s model).
@@ -88,6 +88,7 @@ impl SemanticIndex for PostgresScanIndex {
         if scope.is_empty() {
             return None;
         }
+        let load_started = std::time::Instant::now();
         let rows = sql_query(format!(
             "SELECT {id} AS id, embedding FROM {table} \
              WHERE {id} = ANY($1) AND embedding IS NOT NULL AND model = $2",
@@ -96,10 +97,21 @@ impl SemanticIndex for PostgresScanIndex {
         ))
         .bind::<diesel::sql_types::Array<BigInt>, _>(scope.to_vec())
         .bind::<Text, _>(query.spec.id)
-        .load::<StoredVector>(conn)
-        .map_err(|e| log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
+        .load::<StoredVector>(conn);
+        // A load that waits and then fails (a statement timeout) still spent that time here.
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(e) => {
+                search_timing::record(search_timing::Stage::VectorLoad, load_started);
+                log::error!("Couldn't load {} embeddings: {:?}", query.kind.name(), crate::logic::log_redaction::safe_error(&e));
+                return None;
+            }
+        };
+        // How much comes out of Postgres and into this process for every scoped search: the candidates' vectors.
+        let megabytes = rows.iter().map(|row| row.embedding.len()).sum::<usize>() as f64 / (1024.0 * 1024.0);
+        search_timing::record_with(search_timing::Stage::VectorLoad, load_started, format!("{} vectors, {:.1}MB", rows.len(), megabytes));
 
+        let scoring_started = std::time::Instant::now();
         let mut matches: Vec<(i64, f32)> = rows
             .iter()
             .filter_map(|row| Some((row.id, similarity(query.vector, &row.embedding)?)))
@@ -107,6 +119,7 @@ impl SemanticIndex for PostgresScanIndex {
             .collect();
         matches.sort_by(|a, b| b.1.total_cmp(&a.1).then(b.0.cmp(&a.0)));
         matches.truncate(query.limit);
+        search_timing::record(search_timing::Stage::Similarity, scoring_started);
         Some(matches)
     }
 }

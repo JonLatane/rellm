@@ -33,6 +33,7 @@ mod embedder;
 mod index;
 #[cfg(feature = "embedding-service")]
 mod local_embedder;
+pub mod search_timing;
 mod vector_client;
 pub mod model_service;
 #[cfg(feature = "vector-service")]
@@ -314,7 +315,9 @@ pub fn vector_to_bytes(vector: &[f32]) -> Vec<u8> {
 
 // `None` until loaded, and again after `unload_server_embedder` (setting turned off) so a small host gets
 // the model's memory back without a restart. Searches hold their own `Arc` while using it.
-static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<BoxedEmbedder>>>> = RwLock::new(None);
+// Stored with its model id, read once when it is installed: checking which model it is must never lock the embedder
+// (another search holds that lock for its whole call to the embedding service, so this check would queue behind it).
+static SERVER_EMBEDDER: RwLock<Option<(&'static str, Arc<Mutex<BoxedEmbedder>>)>> = RwLock::new(None);
 // What the last `search_configuration` check saw, so a connection that finishes after the setting was turned
 // off (or the model changed) is discarded instead of kept.
 static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -330,8 +333,8 @@ const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
 /// so a search never waits on it: it's just full-text until then. An embedder for a *different* model is dropped (the
 /// service switched models). A failed connection is retried at most every ten minutes.
 pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedder>>> {
-    if let Some(embedder) = SERVER_EMBEDDER.read().unwrap().as_ref() {
-        if embedder.lock().map(|e| e.spec().id == spec.id).unwrap_or(false) {
+    if let Some((model_id, embedder)) = SERVER_EMBEDDER.read().unwrap().as_ref() {
+        if *model_id == spec.id {
             return Some(embedder.clone());
         }
     }
@@ -355,7 +358,7 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
                     if LAST_KNOWN_ENABLED.load(Ordering::SeqCst)
                         && *LAST_KNOWN_MODEL_ID.lock().unwrap() == spec.id =>
                 {
-                    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
+                    install_server_embedder(embedder);
                     *LAST_LOAD_FAILURE.lock().unwrap() = None;
                     log::info!("Connected to the embedding service (model {}); semantic search is active.", spec.id);
                 }
@@ -375,7 +378,8 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
 /// aren't loaded on demand by `server_embedder` -- a client of a shared model service set up at startup,
 /// or a deterministic fake in tests. It is used for as long as its `spec()` is the configured model.
 pub fn install_server_embedder(embedder: BoxedEmbedder) {
-    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
+    let model_id = embedder.spec().id;
+    *SERVER_EMBEDDER.write().unwrap() = Some((model_id, Arc::new(Mutex::new(embedder))));
 }
 
 /// Drops the server's embedder (the setting was turned off, or the model changed). A search already using it
@@ -413,12 +417,14 @@ pub fn active_model(conn: &mut PgPooledConnection) -> &'static ModelSpec {
 /// a setting: it is whatever the cluster's embedding service runs.
 fn search_configuration(conn: &mut PgPooledConnection) -> (bool, &'static ModelSpec) {
     use crate::schema::server_configurations::dsl::*;
-    let stored = server_configurations
-        .filter(active.eq(true))
-        .select(search_settings)
-        .first::<Option<serde_json::Value>>(conn)
-        .ok()
-        .flatten();
+    let stored = search_timing::timed(search_timing::Stage::Configuration, || {
+        server_configurations
+            .filter(active.eq(true))
+            .select(search_settings)
+            .first::<Option<serde_json::Value>>(conn)
+            .ok()
+            .flatten()
+    });
     let enabled = stored
         .as_ref()
         .and_then(|v| v.get("semantic_search_enabled").and_then(|b| b.as_bool()))
@@ -469,12 +475,7 @@ pub fn semantic_ranking(
         return None;
     }
     let embedder = server_embedder(spec)?;
-    let query = embedder
-        .lock()
-        .ok()?
-        .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
+    let query = embed_search_query(&embedder, query_text.trim())?;
     // Scoped search is always the Postgres scan: it reads only `scope_ids`' vectors and needs nothing else running.
     // It is also the fallback when the optional vector search service can't answer a "search anywhere" query.
     PostgresScanIndex.search(
@@ -487,6 +488,21 @@ pub fn semantic_ranking(
             limit: SEMANTIC_RESULT_LIMIT,
         },
     )
+}
+
+/// Embeds a search query with the server's embedder, recording the time (`search_timing`). The time includes waiting for
+/// the embedder's lock (one search embeds at a time in this process) and the call to the embedding service; the wait is
+/// noted beside it, so a slow embed can be told from a queue of searches in this server.
+fn embed_search_query(embedder: &Arc<Mutex<BoxedEmbedder>>, text: &str) -> Option<Vec<f32>> {
+    let started = Instant::now();
+    let mut embedder = embedder.lock().ok()?;
+    let waited = started.elapsed();
+    let result = embedder
+        .embed_query(text)
+        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
+        .ok();
+    search_timing::record_with(search_timing::Stage::Embed, started, format!("{}ms of it waiting for this server's embedder", waited.as_millis()));
+    result
 }
 
 /// How many nearest ids a global search asks the index for. Visibility is applied to them afterwards (in Postgres),
@@ -511,16 +527,10 @@ pub fn semantic_ranking_global(conn: &mut PgPooledConnection, kind: EmbeddingKin
         return None;
     }
     let embedder = server_embedder(spec)?;
-    let query = embedder
-        .lock()
-        .ok()?
-        .embed_query(query_text.trim())
-        .map_err(|e| log::error!("Couldn't embed search query: {:?}", crate::logic::log_redaction::safe_error(&e)))
-        .ok()?;
-    semantic_index().search(
-        conn,
-        &IndexQuery { kind, spec, vector: &query, scope: None, limit: GLOBAL_RESULT_LIMIT },
-    )
+    let query = embed_search_query(&embedder, query_text.trim())?;
+    search_timing::timed(search_timing::Stage::VectorService, || {
+        semantic_index().search(conn, &IndexQuery { kind, spec, vector: &query, scope: None, limit: GLOBAL_RESULT_LIMIT })
+    })
 }
 
 /// Reranks by reciprocal rank fusion: each id scores `1/(k + rank)` in every list it appears in

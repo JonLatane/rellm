@@ -181,13 +181,17 @@ pub fn get_media(
             to_tsquery_with_search_config(TsConfigurationByName("simple"), prefix_query_text.clone());
         let rank_query =
             to_tsquery_with_search_config(TsConfigurationByName("simple"), prefix_query_text);
-        let matching_ids: Vec<i64> = media_filter::table
-            .filter(media_filter::search_text.matches(search_query))
-            .order(ts_rank_cd(media_filter::search_text, rank_query).desc())
-            .select(media_filter::id)
-            .limit(1000)
-            .load(conn)
-            .map_err(|_| Status::internal("error_loading_media"))?;
+        // Times each step of this search (one summary line when it ends): see `logic::embeddings::search_timing`.
+        let _timer = embeddings::search_timing::begin(embeddings::EmbeddingKind::Media);
+        let matching_ids: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::FullText, || {
+            media_filter::table
+                .filter(media_filter::search_text.matches(search_query))
+                .order(ts_rank_cd(media_filter::search_text, rank_query).desc())
+                .select(media_filter::id)
+                .limit(1000)
+                .load(conn)
+        })
+        .map_err(|_| Status::internal("error_loading_media"))?;
         // Semantic reranking (see `logic::embeddings`): also consider the newest visible media
         // (of the requested owner/type) that's semantically close to the query without sharing
         // its words, and fuse the two rankings. The final `query` below still applies visibility.
@@ -211,9 +215,7 @@ pub fn get_media(
                         if server_wide {
                             visible = apply_server_wide_exclusions(visible);
                         }
-                        let visible: std::collections::HashSet<i64> = visible
-                            .select(media::id)
-                            .load::<i64>(conn)
+                        let visible: std::collections::HashSet<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Visibility, || visible.select(media::id).load::<i64>(conn))
                             .map_err(|_| Status::internal("error_loading_media"))?
                             .into_iter()
                             .collect();
@@ -239,12 +241,14 @@ pub fn get_media(
                 if server_wide {
                     recent = apply_server_wide_exclusions(recent);
                 }
-                let mut scope: Vec<i64> = recent
-                    .order(media::created_at.desc())
-                    .select(media::id)
-                    .limit(embeddings::SEMANTIC_SCAN_LIMIT)
-                    .load(conn)
-                    .map_err(|_| Status::internal("error_loading_media"))?;
+                let mut scope: Vec<i64> = embeddings::search_timing::timed(embeddings::search_timing::Stage::Candidates, || {
+                    recent
+                        .order(media::created_at.desc())
+                        .select(media::id)
+                        .limit(embeddings::SEMANTIC_SCAN_LIMIT)
+                        .load(conn)
+                })
+                .map_err(|_| Status::internal("error_loading_media"))?;
                 scope.extend(matching_ids.iter().copied());
                 scope.sort_unstable();
                 scope.dedup();
@@ -279,8 +283,7 @@ fn load_page(
     let mut media_rows: Vec<models::Media> = match ranked_ids {
         // Search results: page through the ranked id list itself, then fetch just that slice.
         Some(ranked_ids) => {
-            let mut rows = query
-                .load::<models::Media>(conn)
+            let mut rows = embeddings::search_timing::timed(embeddings::search_timing::Stage::PageLoad, || query.load::<models::Media>(conn))
                 .map_err(|_| Status::internal("error_loading_media"))?;
             let position = |id: i64| ranked_ids.iter().position(|r| *r == id).unwrap_or(usize::MAX);
             rows.sort_by_key(|m| position(m.id));
