@@ -96,10 +96,14 @@ spec:
             - name: RELLM_EMBEDDING_THREADS
               value: "4"
             # A second copy of the model, on its own thread, answers search queries, so a search never waits for the
-            # document being embedded (up to ~2.3s). 2 threads: queries are ~35 tokens, and 4 saves only ~50ms.
+            # document being embedded (up to ~2.3s). 4 threads: a query is ~25 tokens (most of them the model's fixed
+            # search instruction) and the cluster's vCPUs run it ~3x slower than a laptop (370-640ms on 2 threads in
+            # production, from the service's own "Search query embedded in ..." log), and every source of a search waits
+            # on that one run. Measured in Docker, 1/2/4 threads take a query 0.24/0.15/0.10s. Queries are short, so
+            # the extra threads sit idle between them; they only compete with a backfill while one is running.
             # "0" turns it off (one model does both; ~270MiB less memory).
             - name: RELLM_EMBEDDING_QUERY_THREADS
-              value: "2"
+              value: "4"
             - name: RELLM_EMBEDDING_CACHE_DIR
               value: /models
             - name: RELLM_EMBEDDING_SERVICE_SECRET
@@ -123,7 +127,7 @@ spec:
           resources:
             requests:
               memory: 768Mi
-              # Up to 4 threads on documents plus 2 on queries; no CPU limit, so it takes spare CPU from the node (4 vCPUs,
+              # Up to 4 threads on documents plus 4 on queries; no CPU limit, so it takes spare CPU from the node (4 vCPUs,
               # mostly idle) but the request reserves what a busy backfill uses.
               cpu: 1000m
             limits:

@@ -9,7 +9,7 @@
 //   RELLM_EMBEDDING_SERVICE_SECRET  callers must send it (required unless RELLM_EMBEDDING_SERVICE_INSECURE=1)
 //   RELLM_EMBEDDING_THREADS         CPU threads for the model that embeds documents (default 2; the Deployment sets 4)
 //   RELLM_EMBEDDING_QUERY_THREADS   CPU threads for the second copy of the model that answers search queries, so a search never
-//                                   waits for a document being embedded (default 2; 0 = no second copy, one model does both)
+//                                   waits for a document being embedded (default 2; the Deployment sets 4; 0 = no second copy, one model does both)
 //   RELLM_EMBEDDING_CACHE_DIR       where the model is downloaded (give it a volume to survive restarts)
 // It stores nothing and never logs text. Don't expose it outside the cluster network.
 extern crate rellm;
