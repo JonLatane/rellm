@@ -642,11 +642,11 @@ jobs:
           # The rellm crate itself is recompiled every run no matter what (its source changed), so
           # caching its artifacts only adds bytes to restore. Dependencies are what's worth caching.
           cache-workspace-crates: false
+      # One run with the rellm_embeddings features (model service, USearch vector service) on, which
+      # covers every default-feature test too. Two separate runs meant compiling the crate twice
+      # (~2m20 each) for what is otherwise the same suite.
       - working-directory: backend
-        run: cargo test
-      # The rellm_embeddings services (model service, USearch vector service) are behind cargo features.
-      - working-directory: backend
-        run: cargo test --features embedding-service,vector-service -- embeddings_tests vector_service_tests
+        run: cargo test --features embedding-service,vector-service
       # No separate `cargo build` here: the release jobs above already compile every binary, and a
       # debug build of the same code cost ~2.5 minutes (a third full compile of the rellm crate).
 
