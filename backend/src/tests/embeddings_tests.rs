@@ -1334,6 +1334,25 @@ fn a_server_embeds_search_queries_and_the_job_embeds_documents_through_the_model
 }
 
 #[test]
+fn checking_the_server_embedder_does_not_wait_for_a_search_using_it() {
+    // A search holds the embedder's lock for its whole call to the embedding service. The checks that every search makes
+    // first (is semantic search ready? which model is it?) must not queue behind that, or the wait would go unseen.
+    let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    embeddings::install_server_embedder(Box::new(FakeEmbedder));
+    let spec = embeddings::default_model();
+    let busy = embeddings::server_embedder(spec).expect("installed");
+    let _held = busy.lock().unwrap(); // a search in the middle of its embed call
+    let (done, answered) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(embeddings::server_embedder(spec).is_some());
+    });
+    let found = answered.recv_timeout(std::time::Duration::from_secs(5));
+    drop(_held);
+    embeddings::unload_server_embedder();
+    assert_eq!(found, Ok(true), "the check waited for the embedder's lock");
+}
+
+#[test]
 fn the_postgres_scan_index_needs_a_scope_and_answers_only_within_it() {
     let _state = EMBEDDER_STATE.lock().unwrap_or_else(|e| e.into_inner());
     let mut conn = test_conn();

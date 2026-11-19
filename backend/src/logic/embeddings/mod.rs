@@ -314,7 +314,9 @@ pub fn vector_to_bytes(vector: &[f32]) -> Vec<u8> {
 
 // `None` until loaded, and again after `unload_server_embedder` (setting turned off) so a small host gets
 // the model's memory back without a restart. Searches hold their own `Arc` while using it.
-static SERVER_EMBEDDER: RwLock<Option<Arc<Mutex<BoxedEmbedder>>>> = RwLock::new(None);
+// Stored with its model id, read once when it is installed: checking which model it is must never lock the embedder
+// (another search holds that lock for its whole call to the embedding service, so this check would queue behind it).
+static SERVER_EMBEDDER: RwLock<Option<(&'static str, Arc<Mutex<BoxedEmbedder>>)>> = RwLock::new(None);
 // What the last `search_configuration` check saw, so a connection that finishes after the setting was turned
 // off (or the model changed) is discarded instead of kept.
 static LAST_KNOWN_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -330,8 +332,8 @@ const RETRY_LOAD_AFTER: Duration = Duration::from_secs(600);
 /// so a search never waits on it: it's just full-text until then. An embedder for a *different* model is dropped (the
 /// service switched models). A failed connection is retried at most every ten minutes.
 pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedder>>> {
-    if let Some(embedder) = SERVER_EMBEDDER.read().unwrap().as_ref() {
-        if embedder.lock().map(|e| e.spec().id == spec.id).unwrap_or(false) {
+    if let Some((model_id, embedder)) = SERVER_EMBEDDER.read().unwrap().as_ref() {
+        if *model_id == spec.id {
             return Some(embedder.clone());
         }
     }
@@ -355,7 +357,7 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
                     if LAST_KNOWN_ENABLED.load(Ordering::SeqCst)
                         && *LAST_KNOWN_MODEL_ID.lock().unwrap() == spec.id =>
                 {
-                    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
+                    install_server_embedder(embedder);
                     *LAST_LOAD_FAILURE.lock().unwrap() = None;
                     log::info!("Connected to the embedding service (model {}); semantic search is active.", spec.id);
                 }
@@ -375,7 +377,8 @@ pub fn server_embedder(spec: &'static ModelSpec) -> Option<Arc<Mutex<BoxedEmbedd
 /// aren't loaded on demand by `server_embedder` -- a client of a shared model service set up at startup,
 /// or a deterministic fake in tests. It is used for as long as its `spec()` is the configured model.
 pub fn install_server_embedder(embedder: BoxedEmbedder) {
-    *SERVER_EMBEDDER.write().unwrap() = Some(Arc::new(Mutex::new(embedder)));
+    let model_id = embedder.spec().id;
+    *SERVER_EMBEDDER.write().unwrap() = Some((model_id, Arc::new(Mutex::new(embedder))));
 }
 
 /// Drops the server's embedder (the setting was turned off, or the model changed). A search already using it
