@@ -122,6 +122,49 @@
   text-align: center;
   border-width: 2px;
   border-style: solid;
+  /* Showing/hiding a badge (`.count-badge-hidden`, see `UI.cornerBadgesLoading`) fades and scales it. */
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.starred-count-badge.count-badge-hidden {
+  opacity: 0;
+  transform: scale(0.5);
+  pointer-events: none;
+}
+
+/* The ↻ in the server-count badge while server-side stars load (`UI.cornerBadgesLoading`): always
+   rendered, collapsed to zero width/opacity, so loading starting/ending transitions both in `em`. It
+   spins only while `.loading`. (↻ has no emoji form, so it can't be drawn as a color emoji on iOS.) */
+.starred-count-spinner {
+  display: inline-block;
+  width: 0;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  vertical-align: top;
+  text-align: center;
+  line-height: inherit;
+  transition: max-width 0.25s ease, width 0.25s ease, opacity 0.25s ease, margin-right 0.25s ease;
+}
+
+.starred-count-spinner.loading {
+  width: 0.9em;
+  max-width: 0.9em;
+  opacity: 1;
+  animation: starred-count-spin 1s linear infinite;
+}
+
+/* Inline with the count: a little gap only while both are showing. */
+.starred-count-spinner.loading:not(:last-child) {
+  margin-right: 0.15em;
+}
+
+@keyframes starred-count-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .starred-panel-header {
@@ -379,9 +422,55 @@
   left: -4px;
 }
 
-/* A toggle with a badge in a left corner (`UI.cornerBadges`) sticks out 4px to its left -- keep that
+/* The corner badges (`UI.CornerBadges`) are positioned against the toggle button itself, not its
+   `.starred-menu`/`.messaging-menu` wrapper. The margin below shifts the button inside the wrapper, and a
+   badge anchored to the wrapper would then sit that far off its corner -- all of them 8px too far left. */
+.nav-menu-toggle:has(> .starred-count-badge) {
+  position: relative;
+}
+
+/* A toggle with a badge in a left corner (`UI.CornerBadges`) sticks out 4px to its left -- keep that
    clear of whatever sits beside the button. */
-.nav-menu-toggle:has(> .corner-badge-bottom-left),
-.nav-menu-toggle:has(> .corner-badge-top-left) {
+.nav-menu-toggle:has(> .corner-badge-bottom-left:not(.count-badge-hidden)),
+.nav-menu-toggle:has(> .corner-badge-top-left:not(.count-badge-hidden)) {
   margin-left: 8px;
+}
+
+/* Why a favourite/like push failed (`StarredPanel.serverStarErrorView`). Always mounted; `.hidden` fades
+   and collapses it, so showing/dismissing/auto-clearing all animate. */
+.starred-panel-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  overflow: hidden;
+  max-height: 6rem;
+  margin: 0.25rem 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  opacity: 1;
+  transition: max-height 0.25s ease, margin 0.25s ease, padding 0.25s ease, opacity 0.25s ease, border-width 0.25s ease;
+}
+
+.starred-panel-error.hidden {
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.starred-panel-error-dismiss {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0.25rem;
 }

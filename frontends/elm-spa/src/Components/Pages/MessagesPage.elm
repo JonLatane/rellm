@@ -6,6 +6,7 @@ module Components.Pages.MessagesPage exposing
     , init
     , selectSubscriptionThread
     , unreadCounts
+    , refreshing
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
@@ -170,6 +171,11 @@ type alias Model =
     -- during the debounce window). Per-host, not one global counter, so a burst of pushes for
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
+
+    -- How many message listing fetches are in flight per host (first load or an in-place refetch,
+    -- which leaves `status` alone) -- a count, so an older response finishing can't end the spinner
+    -- while a newer request is still running. See `refreshing`.
+    , listingsInFlight : Dict String Int
 
     -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
     -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
@@ -538,6 +544,7 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
+    , listingsInFlight = Dict.empty
     , tab = MessagesTab
     , fulfillment = Fulfillment.empty
     , selectedThread = Nothing
@@ -669,6 +676,7 @@ update accountsPanelModel msg model =
             ( { model
                 | messagesByServer =
                     Dict.update host (Maybe.map (\feed -> { feed | status = Loaded response.messages })) model.messagesByServer
+                , listingsInFlight = finishRefresh host model.listingsInFlight
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -676,7 +684,10 @@ update accountsPanelModel msg model =
             )
 
         GotServerMessages host (Err _) ->
-            ( { model | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer }
+            ( { model
+                | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer
+                , listingsInFlight = finishRefresh host model.listingsInFlight
+              }
                 |> syncSidebarAnimations
             , Cmd.none
             , Nothing
@@ -1939,6 +1950,37 @@ unreadCounts model =
     }
 
 
+{-| Which of the panel button's three counts (see `unreadCounts`) is being fetched right now: Messages while
+any server's listing is in flight, Subscriptions and Fulfillment while any account's own / admin-wide
+subscription listing is.
+-}
+refreshing : Model -> { messages : Bool, subscriptions : Bool, fulfillment : Bool }
+refreshing model =
+    { messages = not (Dict.isEmpty model.listingsInFlight)
+    , subscriptions = Fulfillment.isRefreshingOwn model.fulfillment
+    , fulfillment = Fulfillment.isRefreshingAdmin model.fulfillment
+    }
+
+
+{-| One fetch of `host`'s listing finished: counts it down, dropping the entry at zero.
+-}
+finishRefresh : String -> Dict String Int -> Dict String Int
+finishRefresh host =
+    Dict.update host
+        (\count ->
+            case count of
+                Just n ->
+                    if n > 1 then
+                        Just (n - 1)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+        )
+
+
 {-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
 three counts: this one, unread notes on the user's own subscriptions, and -- for server
 admins -- subscriptions (of any type) still awaiting a host admin).
@@ -2004,7 +2046,14 @@ refetchServers accountsPanelModel model entriesToFetch =
                 { status = Maybe.withDefault Loading statusIfSame, accountId = Just entry.account.userId, listingType = entry.listingType }
                 dict
     in
-    ( { model | messagesByServer = List.foldl markEntry prunedMessagesByServer entries }
+    ( { model
+        | messagesByServer = List.foldl markEntry prunedMessagesByServer entries
+        , listingsInFlight =
+            List.foldl
+                (\entry -> Dict.update entry.server.frontendHost (\n -> Just (Maybe.withDefault 0 n + 1)))
+                model.listingsInFlight
+                entriesToFetch
+      }
     , Cmd.batch (List.map fetchCmd entriesToFetch)
     )
         |> Tuple.mapFirst syncSidebarAnimations
