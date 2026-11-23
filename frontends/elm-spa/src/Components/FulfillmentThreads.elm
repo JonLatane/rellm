@@ -8,6 +8,8 @@ module Components.FulfillmentThreads exposing
     , detailView
     , empty
     , fetchAll
+    , isRefreshingAdmin
+    , isRefreshingOwn
     , hasAdminOrders
     , hasSubscriptions
     , datesText
@@ -98,6 +100,12 @@ type alias Model =
     -- Admin note composer: draft text and in-flight saves, per `Thread.key`.
     , drafts : Dict String String
     , saving : Dict String ()
+
+    -- How many listing fetches are in flight per account, for the user's own subscriptions and for the admin-wide
+    -- listing separately -- a count, so an older response can't end the spinner while a newer fetch is running.
+    -- See `isRefreshingOwn`/`isRefreshingAdmin`.
+    , ownInFlight : Dict String Int
+    , adminInFlight : Dict String Int
     }
 
 
@@ -117,6 +125,8 @@ empty =
     , adminFeeds = Dict.empty
     , drafts = Dict.empty
     , saving = Dict.empty
+    , ownInFlight = Dict.empty
+    , adminInFlight = Dict.empty
     }
 
 
@@ -471,12 +481,55 @@ fetchAll accountsPanelModel model =
                 |> Task.onError (\_ -> listingTask ( account, id ) GETMARKETSUBSCRIPTIONSREQUESTFORFULFILLMENTADMIN)
                 |> Task.attempt (GotAdminSubscriptions id)
     in
-    ( { model | feeds = syncFeeds entries model.feeds, adminFeeds = syncFeeds adminEntries model.adminFeeds }
+    ( { model
+        | feeds = syncFeeds entries model.feeds
+        , adminFeeds = syncFeeds adminEntries model.adminFeeds
+        , ownInFlight = List.foldl (\( _, id ) -> startRequest id) model.ownInFlight entries
+        , adminInFlight = List.foldl (\( _, id ) -> startRequest id) model.adminInFlight adminEntries
+      }
     , Cmd.batch
         (List.map (fetchCmd GETMARKETSUBSCRIPTIONSREQUESTFORPURCHASE GotSubscriptions) entries
             ++ List.map adminFetchCmd adminEntries
         )
     )
+
+
+startRequest : String -> Dict String Int -> Dict String Int
+startRequest id =
+    Dict.update id (\n -> Just (Maybe.withDefault 0 n + 1))
+
+
+{-| One request finished: counts it down, dropping the entry at zero.
+-}
+finishRequest : String -> Dict String Int -> Dict String Int
+finishRequest id =
+    Dict.update id
+        (\count ->
+            case count of
+                Just n ->
+                    if n > 1 then
+                        Just (n - 1)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+        )
+
+
+{-| Whether any account's own-subscriptions listing is being fetched or refetched.
+-}
+isRefreshingOwn : Model -> Bool
+isRefreshingOwn model =
+    not (Dict.isEmpty model.ownInFlight)
+
+
+{-| Whether any admin account's all-subscriptions (Fulfillment) listing is being fetched or refetched.
+-}
+isRefreshingAdmin : Model -> Bool
+isRefreshingAdmin model =
+    not (Dict.isEmpty model.adminInFlight)
 
 
 rpcFor :
@@ -613,7 +666,10 @@ update accountsPanelModel selected msg model =
             let
                 updated : Model
                 updated =
-                    { model | feeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.feeds }
+                    { model
+                        | feeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.feeds
+                        , ownInFlight = finishRequest id model.ownInFlight
+                    }
             in
             ( updated
             , selected
@@ -634,7 +690,10 @@ update accountsPanelModel selected msg model =
             let
                 updated : Model
                 updated =
-                    { model | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.adminFeeds }
+                    { model
+                        | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Loaded subscriptions })) model.adminFeeds
+                        , adminInFlight = finishRequest id model.adminInFlight
+                    }
 
                 -- An order that is selected (by a deep link, or synced from the embedded panel) is opened
                 -- as soon as it loads -- once: an order moves out of awaiting on its first open, and
@@ -664,7 +723,13 @@ update accountsPanelModel selected msg model =
                     ( updated, Cmd.none, maybeMsg )
 
         GotAdminSubscriptions id (Err _) ->
-            ( { model | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.adminFeeds }, Cmd.none, Nothing )
+            ( { model
+                | adminFeeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.adminFeeds
+                , adminInFlight = finishRequest id model.adminInFlight
+              }
+            , Cmd.none
+            , Nothing
+            )
 
         DraftChanged key newText ->
             ( { model | drafts = Dict.insert key newText model.drafts }, Cmd.none, Nothing )
@@ -714,7 +779,13 @@ update accountsPanelModel selected msg model =
             ( { model | saving = Dict.remove key model.saving }, Cmd.none, Nothing )
 
         GotSubscriptions id (Err _) ->
-            ( { model | feeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.feeds }, Cmd.none, Nothing )
+            ( { model
+                | feeds = Dict.update id (Maybe.map (\f -> { f | status = Failed })) model.feeds
+                , ownInFlight = finishRequest id model.ownInFlight
+              }
+            , Cmd.none
+            , Nothing
+            )
 
         GotMarkedRead key (Ok ( maybeMsg, updatedSubscription )) ->
             ( { model | feeds = Dict.map (\_ feed -> replaceSubscription "" key updatedSubscription feed) model.feeds }

@@ -56,6 +56,7 @@ import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.CornerBadges as CornerBadges
 import UI.CustomCssStylesheet as CustomCssStylesheet
 import UI.CustomNav as CustomNav
 import UI.Drag
@@ -4988,114 +4989,13 @@ starredPostsToggle shared =
             , title "Starred"
             ]
             (text "⭐"
-                :: cornerBadgesLoading shared.accounts.mainFrontendHost
-                    1
-                    (StarredPanel.serverStarsLoading shared.panels.starredPanel)
+                :: CornerBadges.view shared.accounts.mainFrontendHost
+                    [ Nothing, Just (StarredPanel.serverStarsLoading shared.panels.starredPanel) ]
                     [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
-                    , if StarredPanel.serverStarsLoading shared.panels.starredPanel then
-                        Just (StarredPanel.serverStarCount shared.panels.starredPanel)
-
-                      else
-                        nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
+                    , CornerBadges.nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
                     ]
             )
         ]
-
-
-{-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `cornerBadgesLoading`).
--}
-nonZero : Int -> Maybe Int
-nonZero n =
-    if n > 0 then
-        Just n
-
-    else
-        Nothing
-
-
-{-| The count badges in a nav toggle's corners -- our "summed count" style, used by both the Starred and
-Messages buttons. Counts fill the corners in a fixed order: top-right, bottom-right, bottom-left, then
-(for a fourth) top-left. A `Nothing` leaves its corner empty (a count that's hidden at zero) but still
-holds its place, so a given kind of count always lands in the same corner.
-
-  - Starred: top-right is the stars in this browser, bottom-right the server-side stars (when any).
-  - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
-    Fulfillment orders awaiting a host admin (server admins).
-
-The badge at index `loadingIndex` (0 = top-right, 1 = bottom-right, ...; `-1` for none) also holds a
-spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width and opacity in and out) while
-`loading`. A `Just 0` count there shows just the spinner, no number.
--}
-cornerBadgesLoading : String -> Int -> Bool -> List (Maybe Int) -> List (Html msg)
-cornerBadgesLoading mainFrontendHost loadingIndex loading counts =
-    let
-        corners : List String
-        corners =
-            [ "corner-badge-top-right", "corner-badge-bottom-right", "corner-badge-bottom-left", "corner-badge-top-left" ]
-
-        badge : Int -> String -> Maybe Int -> Html msg
-        badge index corner maybeCount =
-            -- Always rendered (a `Nothing` count just gets `.count-badge-hidden`) so showing/hiding
-            -- transitions in CSS instead of the element appearing/vanishing. A hidden badge keeps
-            -- "0" as its text so it doesn't change shape while fading out.
-            let
-                hasSpinner : Bool
-                hasSpinner =
-                    index == loadingIndex
-
-                count : Int
-                count =
-                    Maybe.withDefault 0 maybeCount
-            in
-            span
-                [ classes
-                    ([ "starred-count-badge"
-                     , corner
-                     , hostnameToCSSClass mainFrontendHost
-                     , "background-color-nav"
-                     , "border-color-primary-text"
-                     ]
-                        ++ (if maybeCount == Nothing then
-                                [ "count-badge-hidden" ]
-
-                            else
-                                []
-                           )
-                    )
-                ]
-                ((if hasSpinner then
-                    [ span
-                        [ classes
-                            ("starred-count-spinner"
-                                :: (if loading then
-                                        [ "loading" ]
-
-                                    else
-                                        []
-                                   )
-                            )
-                        ]
-                        [ text "↻" ]
-                    ]
-
-                  else
-                    []
-                 )
-                    ++ (if hasSpinner then
-                            -- A real element (not a bare text node) so CSS can tell the spinner has a
-                            -- sibling; no element at all for a zero count that's just the spinner.
-                            if count == 0 then
-                                []
-
-                            else
-                                [ span [ class "starred-count-number" ] [ text (String.fromInt count) ] ]
-
-                        else
-                            [ text (String.fromInt count) ]
-                       )
-                )
-    in
-    List.map3 badge (List.range 0 (List.length corners - 1)) corners counts
 
 
 {-| The Starred panel's content -- see `starredPostsToggle` for why this
@@ -5166,7 +5066,7 @@ mirrors `starredPostsToggle`'s own "only show once there's something behind
 it" gating and `.starred-menu`/separately-mounted-panel structure (see
 `messagingPanel`, mounted as a `.navbar` direct child in `headerNav`, same
 reasoning as `starredPanel`). The unread badges (`MessagingPanel.unreadCounts`, one per corner --
-see `cornerBadgesLoading` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
+see `UI.CornerBadges` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
 hidden at `0` rather than shown as a literal "0" -- unlike Starred's count,
 which is always known from boot (`starredPostIds` persists locally), this one
 only reflects whatever's actually been fetched so far (see that function's
@@ -5180,6 +5080,11 @@ messagingToggle shared currentRoute =
         unreadCounts : { messages : Int, subscriptions : Int, fulfillment : Int }
         unreadCounts =
             MessagingPanel.unreadCounts shared.panels.messagingPanel
+
+        -- Which of the three counts is being (re)fetched right now -- each badge spins on its own.
+        refreshing : { messages : Bool, subscriptions : Bool, fulfillment : Bool }
+        refreshing =
+            MessagingPanel.refreshing shared.panels.messagingPanel
 
         -- Highlighted the same way `postsLink`/`eventsLink`/etc. highlight
         -- themselves for their own `currentRoute` -- just `background-color-nav`
@@ -5211,16 +5116,11 @@ messagingToggle shared currentRoute =
             , title "Messages"
             ]
             (text "✉️"
-                :: cornerBadgesLoading shared.accounts.mainFrontendHost
-                    0
-                    (MessagingPanel.isRefreshing shared.panels.messagingPanel)
-                    [ if MessagingPanel.isRefreshing shared.panels.messagingPanel then
-                        Just unreadCounts.messages
-
-                      else
-                        nonZero unreadCounts.messages
-                    , nonZero unreadCounts.subscriptions
-                    , nonZero unreadCounts.fulfillment
+                :: CornerBadges.view shared.accounts.mainFrontendHost
+                    [ Just refreshing.messages, Just refreshing.subscriptions, Just refreshing.fulfillment ]
+                    [ CornerBadges.nonZero unreadCounts.messages
+                    , CornerBadges.nonZero unreadCounts.subscriptions
+                    , CornerBadges.nonZero unreadCounts.fulfillment
                     ]
             )
         ]

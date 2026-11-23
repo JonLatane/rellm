@@ -6,7 +6,7 @@ module Components.Pages.MessagesPage exposing
     , init
     , selectSubscriptionThread
     , unreadCounts
-    , isRefreshing
+    , refreshing
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
@@ -174,8 +174,8 @@ type alias Model =
 
     -- How many message listing fetches are in flight per host (first load or an in-place refetch,
     -- which leaves `status` alone) -- a count, so an older response finishing can't end the spinner
-    -- while a newer request is still running. See `isRefreshing`.
-    , refreshing : Dict String Int
+    -- while a newer request is still running. See `refreshing`.
+    , listingsInFlight : Dict String Int
 
     -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
     -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
@@ -544,7 +544,7 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
-    , refreshing = Dict.empty
+    , listingsInFlight = Dict.empty
     , tab = MessagesTab
     , fulfillment = Fulfillment.empty
     , selectedThread = Nothing
@@ -676,7 +676,7 @@ update accountsPanelModel msg model =
             ( { model
                 | messagesByServer =
                     Dict.update host (Maybe.map (\feed -> { feed | status = Loaded response.messages })) model.messagesByServer
-                , refreshing = finishRefresh host model.refreshing
+                , listingsInFlight = finishRefresh host model.listingsInFlight
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -686,7 +686,7 @@ update accountsPanelModel msg model =
         GotServerMessages host (Err _) ->
             ( { model
                 | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer
-                , refreshing = finishRefresh host model.refreshing
+                , listingsInFlight = finishRefresh host model.listingsInFlight
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -1950,11 +1950,16 @@ unreadCounts model =
     }
 
 
-{-| Whether any server's message listing is being fetched -- the panel button's spinner.
+{-| Which of the panel button's three counts (see `unreadCounts`) is being fetched right now: Messages while
+any server's listing is in flight, Subscriptions and Fulfillment while any account's own / admin-wide
+subscription listing is.
 -}
-isRefreshing : Model -> Bool
-isRefreshing model =
-    not (Dict.isEmpty model.refreshing)
+refreshing : Model -> { messages : Bool, subscriptions : Bool, fulfillment : Bool }
+refreshing model =
+    { messages = not (Dict.isEmpty model.listingsInFlight)
+    , subscriptions = Fulfillment.isRefreshingOwn model.fulfillment
+    , fulfillment = Fulfillment.isRefreshingAdmin model.fulfillment
+    }
 
 
 {-| One fetch of `host`'s listing finished: counts it down, dropping the entry at zero.
@@ -2043,10 +2048,10 @@ refetchServers accountsPanelModel model entriesToFetch =
     in
     ( { model
         | messagesByServer = List.foldl markEntry prunedMessagesByServer entries
-        , refreshing =
+        , listingsInFlight =
             List.foldl
                 (\entry -> Dict.update entry.server.frontendHost (\n -> Just (Maybe.withDefault 0 n + 1)))
-                model.refreshing
+                model.listingsInFlight
                 entriesToFetch
       }
     , Cmd.batch (List.map fetchCmd entriesToFetch)

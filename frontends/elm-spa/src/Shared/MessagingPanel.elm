@@ -1,4 +1,4 @@
-module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, isRefreshing, subscriptions, unreadCounts, update, view)
+module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, refreshing, subscriptions, unreadCounts, update, view)
 
 {-| The Messages nav panel -- toggled open/closed from a nav icon (mirrors
 `Shared.StarredPanel`'s own toggle shape), embedding
@@ -44,11 +44,12 @@ isOpen model =
     model.open
 
 
-{-| Whether a message listing is being fetched -- the nav button's spinner (`UI.cornerBadgesLoading`).
+{-| Which of the nav button's three counts is being (re)fetched -- each corner badge's spinner
+(`UI.CornerBadges.view`). See `MessagesPage.refreshing`.
 -}
-isRefreshing : Model -> Bool
-isRefreshing model =
-    MessagesPage.isRefreshing model.page
+refreshing : Model -> { messages : Bool, subscriptions : Bool, fulfillment : Bool }
+refreshing model =
+    MessagesPage.refreshing model.page
 
 
 hasEligibleAccount : AccountsPanel.Model -> Bool
@@ -58,7 +59,7 @@ hasEligibleAccount =
 
 {-| See `MessagesPage.unreadCounts`'s own doc -- this just unwraps `model.page` to get at it. The nav
 button shows the three counts in its corners: Messages top-right, Subscriptions bottom-right,
-Fulfillment bottom-left (`UI.cornerBadgesLoading`).
+Fulfillment bottom-left (`UI.CornerBadges.view`).
 -}
 unreadCounts : Model -> { messages : Int, subscriptions : Int, fulfillment : Int }
 unreadCounts model =
