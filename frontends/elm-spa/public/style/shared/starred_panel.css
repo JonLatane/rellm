@@ -299,11 +299,17 @@
   padding: 0.3rem 0.5rem;
   font-size: 0.85rem;
   opacity: 0.6;
+  /* Explicit theme colors, never the browser's button defaults: those differ per browser (iOS Safari tints
+     button text blue; desktop Safari/Chrome use black on a light face) and ignore the app's own light/dark
+     theme, so with the app dark the text -- and the count pill inside it -- came out black on dark. */
+  color: var(--fg);
+  background: var(--chip-bg);
 }
 
 .starred-panel-tab.active {
   opacity: 1;
   font-weight: 700;
+  background: var(--panel-bg);
 }
 
 /* The post count in a tab (Starred panel) -- a quiet pill, not the red "needs attention" one. */
@@ -314,7 +320,9 @@
   border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 700;
-  background: var(--chip-bg);
+  /* Own text and fill colors (see `.starred-panel-tab`): a pill on a chip-colored tab, in the theme's text color. */
+  color: var(--fg);
+  background: var(--bg);
   border: 1px solid var(--border);
 }
 
