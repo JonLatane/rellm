@@ -128,6 +128,12 @@ type alias Model =
     -- latest value actually refetches (a trailing-edge debounce -- see `GotServerStarPushed`).
     , serverRefetchCounter : Int
 
+    -- Posts just starred from Rellm, by server-side host, that a refetched list may not have caught
+    -- up with yet (Bluesky's AppView indexes a new like with a delay, so `getActorLikes` right after
+    -- the push can omit it). `GotServerStars` keeps them in the list until a fetch includes them;
+    -- unstarring drops them.
+    , pendingServerStars : Dict String (List Post)
+
     -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
     -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
     -- (enter/unstar-fade), which stays authoritative while an unstar fade is running -- see
@@ -375,6 +381,7 @@ init flags =
     , activeTab = BrowserTab
     , collapsedServerGroups = Set.empty
     , serverRefetchCounter = 0
+    , pendingServerStars = Dict.empty
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
     , transition = Nothing
@@ -598,6 +605,10 @@ sendUpdate accountsPanelModel msg model =
                     , starOrder = newStarOrder
                     , posts = newPosts
                     , serverStars = updateServerStars serverHost True post model.serverStars
+                    , pendingServerStars =
+                        Dict.update (canonicalHost serverHost)
+                            (\existing -> Just (post :: List.filter (\p -> p.id /= post.id) (Maybe.withDefault [] existing)))
+                            model.pendingServerStars
                   }
                 , Cmd.batch [ persistCmd newStarOrder, pushCmd ]
                 , Nothing
@@ -618,6 +629,10 @@ sendUpdate accountsPanelModel msg model =
 
                 else
                     let
+                        withoutPending : Dict String (List Post)
+                        withoutPending =
+                            Dict.map (\listHost ps -> List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p)) ps) model.pendingServerStars
+
                         -- On unstarring, a server-side entry for this same post under a *different* key
                         -- (the same status on the account's own instance) goes right away; the same-key one
                         -- is removed with the fade, by `finishUnstar`.
@@ -651,6 +666,7 @@ sendUpdate accountsPanelModel msg model =
                         ( { model
                             | posts = newPosts
                             , serverStars = withoutOtherKeyCopies model.serverStars
+                            , pendingServerStars = withoutPending
                             , starAnimations = Dict.insert key (UI.Flip.remove (FinishUnstar key) currentState) model.starAnimations
                           }
                         , pushCmd
@@ -660,13 +676,26 @@ sendUpdate accountsPanelModel msg model =
                     else
                         let
                             ( finishedModel, finishCmd ) =
-                                finishUnstar key { model | posts = newPosts, serverStars = withoutOtherKeyCopies model.serverStars }
+                                finishUnstar key { model | posts = newPosts, serverStars = withoutOtherKeyCopies model.serverStars, pendingServerStars = withoutPending }
                         in
                         ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
 
         GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
+            let
+                pending : List Post
+                pending =
+                    Dict.get host model.pendingServerStars |> Maybe.withDefault []
+
+                -- Likes the service's list doesn't show yet stay (at the top) until it does.
+                notYetListed : List Post
+                notYetListed =
+                    List.filter (\p -> not (List.any (\q -> sameStarredPost host p host q) posts)) pending
+            in
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
-                { model | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded posts } model.serverStars }
+                { model
+                    | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ posts) } model.serverStars
+                    , pendingServerStars = Dict.insert host notYetListed model.pendingServerStars
+                }
 
               else
                 model
