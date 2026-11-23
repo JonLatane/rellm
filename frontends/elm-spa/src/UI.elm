@@ -5041,52 +5041,61 @@ cornerBadgesLoading mainFrontendHost loadingIndex loading counts =
 
         badge : Int -> String -> Maybe Int -> Html msg
         badge index corner maybeCount =
-            case maybeCount of
-                Just count ->
-                    let
-                        hasSpinner : Bool
-                        hasSpinner =
-                            index == loadingIndex
-                    in
-                    span
+            -- Always rendered (a `Nothing` count just gets `.count-badge-hidden`) so showing/hiding
+            -- transitions in CSS instead of the element appearing/vanishing. A hidden badge keeps
+            -- "0" as its text so it doesn't change shape while fading out.
+            let
+                hasSpinner : Bool
+                hasSpinner =
+                    index == loadingIndex
+
+                count : Int
+                count =
+                    Maybe.withDefault 0 maybeCount
+            in
+            span
+                [ classes
+                    ([ "starred-count-badge"
+                     , corner
+                     , hostnameToCSSClass mainFrontendHost
+                     , "background-color-nav"
+                     , "border-color-primary-text"
+                     ]
+                        ++ (if maybeCount == Nothing then
+                                [ "count-badge-hidden" ]
+
+                            else
+                                []
+                           )
+                    )
+                ]
+                ((if hasSpinner then
+                    [ span
                         [ classes
-                            [ "starred-count-badge"
-                            , corner
-                            , hostnameToCSSClass mainFrontendHost
-                            , "background-color-nav"
-                            , "border-color-primary-text"
-                            ]
+                            ("starred-count-spinner"
+                                :: (if loading then
+                                        [ "loading" ]
+
+                                    else
+                                        []
+                                   )
+                            )
                         ]
-                        ((if hasSpinner then
-                            [ span
-                                [ classes
-                                    ("starred-count-spinner"
-                                        :: (if loading then
-                                                [ "loading" ]
+                        [ text "↻" ]
+                    ]
 
-                                            else
-                                                []
-                                           )
-                                    )
-                                ]
-                                [ text "↻" ]
-                            ]
+                  else
+                    []
+                 )
+                    ++ [ text
+                            (if hasSpinner && count == 0 then
+                                ""
 
-                          else
-                            []
-                         )
-                            ++ [ text
-                                    (if hasSpinner && count == 0 then
-                                        ""
-
-                                     else
-                                        String.fromInt count
-                                    )
-                               ]
-                        )
-
-                Nothing ->
-                    text ""
+                             else
+                                String.fromInt count
+                            )
+                       ]
+                )
     in
     List.map3 badge (List.range 0 (List.length corners - 1)) corners counts
 
