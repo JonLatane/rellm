@@ -1227,7 +1227,10 @@ likesFrom auth actor cursor collected page =
                             Task.succeed ( List.take maxServerStars all, True )
 
                         else
+                            -- A later page failing keeps what is already loaded (and says there is more) instead
+                            -- of failing the whole list; only the first page's failure is a failure.
                             likesFrom auth actor next all (page + 1)
+                                |> Task.onError (\_ -> Task.succeed ( List.take maxServerStars all, True ))
             )
 
 

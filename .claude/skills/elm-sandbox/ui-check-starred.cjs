@@ -30,7 +30,7 @@ const postView = (uri, text, liked) => ({
  * AppView reports (`getActorLikes`, `viewer.like`) after `indexLagMs` -- in BOTH directions, like the real
  * one: right after an unlike the old list still has the post.
  */
-function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false }) {
+function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false, failLikesFromOffset = null }) {
   const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [], likesPages: [] };
   const visible = () => {
     const now = Date.now();
@@ -58,6 +58,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
         const limit = Math.min(Number(u.searchParams.get("limit") || 50), 100);
         const offset = Number(u.searchParams.get("cursor") || 0);
         state.likesPages.push({ limit, offset });
+        if (failLikesFromOffset !== null && offset >= failLikesFromOffset) return json({ error: "InternalServerError", message: "page failed" }, 500);
         const page = all.slice(offset, offset + limit).filter((_, i) => !dropEveryFifth || (offset + i) % 5 !== 4);
         const next = offset + limit < all.length ? String(offset + limit) : undefined;
         return json({ feed: page.map(uri => ({ post: postView(uri, "liked post", true) })), ...(next ? { cursor: next } : {}) });
@@ -226,6 +227,14 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
     console.log(`   Server tab "${shown.serverTab}", badge "${shown.badge}", pages requested: ${page.bsky.state.likesPages.length}`);
     check(shown.serverTab === "300+" && shown.badge === "300+", "I  shows \"300+\", not a count that looks complete");
     check(page.bsky.state.likesPages.length === 3, "I  stops after 3 pages instead of fetching all 4");
+    await page.close();
+
+    console.log("\nK  the second page fails: keep the first page and say there is more");
+    page = await open([OTHER, ...manyLikes(250)], [FILLER], { failLikesFromOffset: 100 });
+    await sleep(3000);
+    shown = await shownCounts(page);
+    console.log(`   Server tab "${shown.serverTab}", badge "${shown.badge}", pages requested: ${JSON.stringify(page.bsky.state.likesPages)}`);
+    check(shown.serverTab === "100+" && shown.badge === "100+", "K  the 100 likes already loaded are kept and shown as \"100+\" (not an error / an empty tab)");
     await page.close();
 
     console.log("\nJ  a page with posts dropped (deleted/blocked) still has a cursor: keep going");

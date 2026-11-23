@@ -32,6 +32,7 @@ module Shared.Federation.Mastodon exposing
     , maxIdParam
     , pageOf
     , fetchFavourites
+    , isOnInstance
     , nextLink
     , fetchEmbeddedStatus
     , fetchStatus
@@ -857,28 +858,37 @@ favouritesFrom instanceHost accessToken url collected page =
 
                     next : Maybe String
                     next =
-                        Dict.get "link" headers
-                            |> Maybe.andThen nextLink
-                            |> Maybe.andThen
-                                (\nextUrl ->
-                                    if String.startsWith ("https://" ++ instanceHost ++ "/") nextUrl then
-                                        Just nextUrl
-
-                                    else
-                                        Nothing
-                                )
+                        Dict.get "link" headers |> Maybe.andThen nextLink
                 in
                 case next of
                     Nothing ->
                         Task.succeed ( List.take maxServerStars all, List.length all > maxServerStars )
 
                     Just nextUrl ->
-                        if List.length all >= maxServerStars || page >= maxServerStarPages then
+                        if not (isOnInstance instanceHost nextUrl) then
+                            -- A next page we won't follow (our token only goes to the account's own instance) is
+                            -- still more favourites than are loaded.
+                            Task.succeed ( List.take maxServerStars all, True )
+
+                        else if List.length all >= maxServerStars || page >= maxServerStarPages then
                             Task.succeed ( List.take maxServerStars all, True )
 
                         else
+                            -- A later page failing keeps what is already loaded (and says there is more) instead
+                            -- of failing the whole list; only the first page's failure is a failure.
                             favouritesFrom instanceHost accessToken nextUrl all (page + 1)
+                                |> Task.onError (\_ -> Task.succeed ( List.take maxServerStars all, True ))
             )
+
+
+{-| Whether `url` is an `https` URL on `instanceHost` itself -- the only place the account's access token may be
+sent. Hostnames are case-insensitive, so `Mastodon.Social` is `mastodon.social`; the host must end at a `/`
+(so `https://mastodon.social.evil.example/` and `https://mastodon.social@evil.example/` are not it), and any
+port is part of the host.
+-}
+isOnInstance : String -> String -> Bool
+isOnInstance instanceHost url =
+    String.startsWith (String.toLower ("https://" ++ instanceHost ++ "/")) (String.toLower url)
 
 
 {-| The `rel="next"` URL of an HTTP `Link` header (`<https://x/api/v1/favourites?max_id=1>; rel="next", <...>;

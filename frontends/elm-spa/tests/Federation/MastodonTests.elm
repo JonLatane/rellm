@@ -156,6 +156,33 @@ suite =
             , test "is Nothing for an empty header" <|
                 \_ -> Mastodon.nextLink "" |> Expect.equal Nothing
             ]
+        , describe "isOnInstance (where the access token may be sent)"
+            [ test "an https URL on the instance" <|
+                \_ -> Mastodon.isOnInstance "mastodon.social" "https://mastodon.social/api/v1/favourites?max_id=1" |> Expect.equal True
+            , test "hostname case does not matter (Mastodon.Social is mastodon.social)" <|
+                \_ ->
+                    ( Mastodon.isOnInstance "Mastodon.Social" "https://mastodon.social/api/v1/favourites?max_id=1"
+                    , Mastodon.isOnInstance "mastodon.social" "https://MASTODON.SOCIAL/api/v1/favourites?max_id=1"
+                    )
+                        |> Expect.equal ( True, True )
+            , test "a port is part of the host" <|
+                \_ ->
+                    ( Mastodon.isOnInstance "localhost:8443" "https://localhost:8443/api/v1/favourites"
+                    , Mastodon.isOnInstance "localhost:8443" "https://localhost:9999/api/v1/favourites"
+                    )
+                        |> Expect.equal ( True, False )
+            , test "another host is not it, including look-alikes" <|
+                \_ ->
+                    [ "https://evil.example/api/v1/favourites"
+                    , "https://mastodon.social.evil.example/api/v1/favourites"
+                    , "https://mastodon.social@evil.example/api/v1/favourites"
+                    , "https://evil.example/https://mastodon.social/"
+                    ]
+                        |> List.map (Mastodon.isOnInstance "mastodon.social")
+                        |> Expect.equal [ False, False, False, False ]
+            , test "plain http is not it (the token would travel in the clear)" <|
+                \_ -> Mastodon.isOnInstance "mastodon.social" "http://mastodon.social/api/v1/favourites" |> Expect.equal False
+            ]
         , describe "toPost links"
             [ test "uses the url when there is one" <|
                 \_ ->
