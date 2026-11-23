@@ -4992,7 +4992,7 @@ starredPostsToggle shared =
                 :: CornerBadges.view shared.accounts.mainFrontendHost
                     [ Nothing, Just (StarredPanel.serverStarsLoading shared.panels.starredPanel) ]
                     [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
-                    , CornerBadges.nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
+                    , CornerBadges.nonZero (StarredPanel.serverTabCount shared.panels.starredPanel)
                     ]
             )
         ]

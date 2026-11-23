@@ -48,6 +48,8 @@ There is no Rellm backend in the sandbox (needs Postgres + MinIO), and no Bluesk
 - Read state from the DOM and print a time series (`badge over time: 0ms:1 ... 1000ms:1↻ ...`) rather than relying on one screenshot -- a 0.25s transition or a ~1s spinner is easy to miss. Screenshots: `page.screenshot({ clip })` to zoom; `deviceScaleFactor: 2` if a person will look. View the PNG with `Read`; one you didn't look at proves nothing.
 - Starred button gotchas: the bottom-right badge counts server stars *not also starred in this browser*, so starring a post doesn't change it -- check the panel's Server tab count instead. A badge's `textContent` includes the (visually hidden) `↻` glyph; strip it. The closed panel still contains `.post-star` elements, so click `.post-star >> visible=true`.
 
+The stub models the AppView's lag in **both directions** (`indexLagMs` applies to likes *and* unlikes -- right after an unlike the old list still has the post), which is what exposed two bugs a happy-path stub would miss: a refetch re-adding a just-unstarred post, and a refetch dropping a just-starred one. `ONLY=counts node ui-check-starred.cjs` runs just the count-consistency scenarios (liked-only / starred-and-liked / fresh post, each starred then unstarred) and prints a timeline of both badges and both tab counts after every click, asserting that the badges equal the tabs, the change settles at +/-1, and the refetch doesn't flip it back. Include an unrelated browser star in the seed so the Browser/Server tab strip (which only renders when both kinds exist) is always there to read.
+
 ### Prove a UI check can fail (control run)
 
 A check that has only ever passed proves little. Build the pre-change commit and run the same script against it:
