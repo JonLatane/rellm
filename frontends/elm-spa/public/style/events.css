@@ -805,6 +805,13 @@
   width: 95vw;
   max-width: 900px;
   max-height: calc(100vh - 4rem);
+  /* A column so `.calendar-preview-strip` can take just the height left under
+     the modal's own `max-height` (rather than growing to its tallest card and
+     spilling out past the modal's bottom edge, as it did in a short phone
+     landscape viewport), which is what lets each card scroll on its own. */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -920,6 +927,11 @@
   overflow-x: auto;
   scroll-behavior: smooth;
   padding: 2rem 0.5rem 0.5rem 0;
+  /* Fill the modal's remaining height (never more) and stretch the cards to
+     it -- see `.calendar-preview-card`'s own `overflow-y`. */
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
 }
 
 /* Wider than `.events-strip`'s own fixed 280px tile (`.events-grid
@@ -931,6 +943,12 @@
   flex: 0 0 auto;
   width: calc(min(60vw, 420px));
   scroll-margin-left: -50%;
+  /* Each card scrolls vertically by itself when the modal is too short to show
+     it whole (phone landscape); a no-op when it fits. `contain` keeps a
+     scroll that hits a card's end from chaining into the page behind. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Mirrors `.event-occasion-strip` (above). */
