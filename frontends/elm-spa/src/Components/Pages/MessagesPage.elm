@@ -172,9 +172,10 @@ type alias Model =
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
 
-    -- Hosts whose message listing fetch is in flight (first load or an in-place refetch, which
-    -- leaves `status` alone) -- see `isRefreshing`.
-    , refreshing : Set String
+    -- How many message listing fetches are in flight per host (first load or an in-place refetch,
+    -- which leaves `status` alone) -- a count, so an older response finishing can't end the spinner
+    -- while a newer request is still running. See `isRefreshing`.
+    , refreshing : Dict String Int
 
     -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
     -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
@@ -543,7 +544,7 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
-    , refreshing = Set.empty
+    , refreshing = Dict.empty
     , tab = MessagesTab
     , fulfillment = Fulfillment.empty
     , selectedThread = Nothing
@@ -675,7 +676,7 @@ update accountsPanelModel msg model =
             ( { model
                 | messagesByServer =
                     Dict.update host (Maybe.map (\feed -> { feed | status = Loaded response.messages })) model.messagesByServer
-                , refreshing = Set.remove host model.refreshing
+                , refreshing = finishRefresh host model.refreshing
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -685,7 +686,7 @@ update accountsPanelModel msg model =
         GotServerMessages host (Err _) ->
             ( { model
                 | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer
-                , refreshing = Set.remove host model.refreshing
+                , refreshing = finishRefresh host model.refreshing
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -1953,7 +1954,26 @@ unreadCounts model =
 -}
 isRefreshing : Model -> Bool
 isRefreshing model =
-    not (Set.isEmpty model.refreshing)
+    not (Dict.isEmpty model.refreshing)
+
+
+{-| One fetch of `host`'s listing finished: counts it down, dropping the entry at zero.
+-}
+finishRefresh : String -> Dict String Int -> Dict String Int
+finishRefresh host =
+    Dict.update host
+        (\count ->
+            case count of
+                Just n ->
+                    if n > 1 then
+                        Just (n - 1)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+        )
 
 
 {-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
@@ -2024,10 +2044,10 @@ refetchServers accountsPanelModel model entriesToFetch =
     ( { model
         | messagesByServer = List.foldl markEntry prunedMessagesByServer entries
         , refreshing =
-            entriesToFetch
-                |> List.map (.server >> .frontendHost)
-                |> Set.fromList
-                |> Set.union model.refreshing
+            List.foldl
+                (\entry -> Dict.update entry.server.frontendHost (\n -> Just (Maybe.withDefault 0 n + 1)))
+                model.refreshing
+                entriesToFetch
       }
     , Cmd.batch (List.map fetchCmd entriesToFetch)
     )

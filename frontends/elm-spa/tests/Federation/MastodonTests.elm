@@ -86,7 +86,14 @@ suite =
                 \_ ->
                     ("{\"id\":\"999\",\"url\":null,\"content\":\"\",\"reblog\":" ++ Factory.statusJson defaultOverrides ++ "}")
                         |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (\decoded -> { decoded | timelineId = defaultOverrides.id })
                         |> Expect.equal (Ok (Factory.status defaultOverrides))
+            , test "a boost keeps its own id as its place in the timeline, so paging doesn't skip posts" <|
+                \_ ->
+                    ("{\"id\":\"999\",\"url\":null,\"content\":\"\",\"reblog\":" ++ Factory.statusJson defaultOverrides ++ "}")
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map (\decoded -> ( decoded.id, decoded.timelineId ))
+                        |> Expect.equal (Ok ( defaultOverrides.id, "999" ))
             , test "decodes media_attachments, including a null description (Mastodon's own \"no alt text\" convention)" <|
                 \_ ->
                     let

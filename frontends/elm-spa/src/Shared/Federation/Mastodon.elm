@@ -117,6 +117,11 @@ that's read-only: Rellm's own star button still can't actually push a real favou
 -}
 type alias Status =
     { id : String
+
+    -- Where this status sits in the timeline it came from, which is what `pageOf` pages by: its own
+    -- `id`, except for a boost (decoded as the original post it wraps, see `decoder`), where it's the
+    -- boost's id -- the original is older, and paging from it would skip everything in between.
+    , timelineId : String
     , url : Maybe String
 
     -- The status' ActivityPub id: always present, identical on every instance (unlike `id`) and
@@ -171,7 +176,9 @@ decoder =
     -- A boost (`reblog` set) is just a wrapper with `url: null` and empty content -- the post that
     -- matters is the nested original, so that's what a boost decodes as.
     Decode.oneOf
-        [ Decode.field "reblog" (Decode.lazy (\_ -> statusDecoder))
+        [ Decode.map2 (\boostId original -> { original | timelineId = boostId })
+            (Decode.field "id" Decode.string)
+            (Decode.field "reblog" (Decode.lazy (\_ -> statusDecoder)))
         , statusDecoder
         ]
 
@@ -182,6 +189,7 @@ statusDecoder =
         (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
             \mediaAttachments sensitive favouritesCount repliesCount quote authorAcct uri ->
                 { id = id
+                , timelineId = id
                 , url = url
                 , uri = uri
                 , content = content
@@ -459,7 +467,7 @@ the statuses older than it -- or `Nothing` once a page comes back empty, the end
 pageOf : String -> List Status -> ( List Post, Maybe String )
 pageOf instanceHost statuses =
     ( List.map (toPost instanceHost) statuses
-    , statuses |> List.reverse |> List.head |> Maybe.map .id
+    , statuses |> List.reverse |> List.head |> Maybe.map .timelineId
     )
 
 

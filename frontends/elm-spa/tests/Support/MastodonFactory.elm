@@ -64,6 +64,7 @@ defaultOverrides =
 status : Overrides -> Status
 status overrides =
     { id = overrides.id
+    , timelineId = overrides.id
     , url = overrides.url
     , uri = overrides.uri
     , content = overrides.content

@@ -684,7 +684,7 @@ sendUpdate accountsPanelModel msg model =
 
                 else
                     let
-                        withoutPending : Dict String (List Post)
+                        withoutPending : Dict String PendingStars
                         withoutPending =
                             Dict.map (\listHost pending -> { pending | posts = List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p)) pending.posts }) model.pendingServerStars
 
