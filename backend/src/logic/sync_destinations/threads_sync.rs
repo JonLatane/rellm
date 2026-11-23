@@ -99,7 +99,7 @@ pub fn exchange_code_for_token_at(
         "threads_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Threads code exchange failed ({}): {:?}", status, body);
+        log::error!("Threads code exchange failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "threads_code_exchange_failed",
@@ -112,7 +112,7 @@ pub fn exchange_code_for_token_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads code exchange response missing access_token: {:?}",
-                body
+                crate::logic::log_redaction::summarize(&body)
             );
             Status::new(Code::FailedPrecondition, "threads_code_exchange_failed")
         })?;
@@ -123,7 +123,7 @@ pub fn exchange_code_for_token_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads code exchange response missing user_id: {:?}",
-                body
+                crate::logic::log_redaction::summarize(&body)
             );
             Status::new(Code::FailedPrecondition, "threads_code_exchange_failed")
         })?;
@@ -155,7 +155,7 @@ pub fn exchange_long_lived_token_at(
         "threads_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Threads long-lived token exchange failed ({}): {:?}", status, body);
+        log::error!("Threads long-lived token exchange failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "threads_token_exchange_failed",
@@ -167,7 +167,7 @@ pub fn exchange_long_lived_token_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads long-lived token exchange response missing access_token: {:?}",
-                body
+                crate::logic::log_redaction::summarize(&body)
             );
             Status::new(Code::FailedPrecondition, "threads_token_exchange_failed")
         })
@@ -195,7 +195,7 @@ pub fn get_username_at(
         "threads_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Threads username lookup failed ({}): {:?}", status, body);
+        log::error!("Threads username lookup failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "threads_username_lookup_failed",
@@ -205,7 +205,7 @@ pub fn get_username_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Threads username lookup response missing username: {:?}", body);
+            log::error!("Threads username lookup response missing username: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::FailedPrecondition, "threads_username_lookup_failed")
         })
 }
@@ -269,7 +269,7 @@ pub fn post_thread_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads media creation response missing id: {:?}",
-                create_response
+                crate::logic::log_redaction::summarize(&create_response)
             );
             Status::new(Code::Internal, "threads_post_failed")
         })?;
@@ -289,7 +289,7 @@ pub fn post_thread_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads threads_publish response missing id: {:?}",
-                publish_response
+                crate::logic::log_redaction::summarize(&publish_response)
             );
             Status::new(Code::Internal, "threads_post_failed")
         })?;
@@ -306,7 +306,7 @@ pub fn post_thread_at(
         .ok_or_else(|| {
             log::error!(
                 "Threads permalink lookup response missing permalink: {:?}",
-                permalink_response
+                crate::logic::log_redaction::summarize(&permalink_response)
             );
             Status::new(Code::Internal, "threads_post_failed")
         })?;
@@ -320,7 +320,7 @@ fn threads_post(url: &str, params: &[(&str, &str)]) -> Result<serde_json::Value,
         "threads_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Threads post request failed ({}): {:?}", status, body);
+        log::error!("Threads post request failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "threads_post_failed"));
     }
     Ok(body)
@@ -332,7 +332,7 @@ fn threads_get(url: &str, params: &[(&str, &str)]) -> Result<serde_json::Value, 
         "threads_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Threads get request failed ({}): {:?}", status, body);
+        log::error!("Threads get request failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "threads_post_failed"));
     }
     Ok(body)

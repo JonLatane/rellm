@@ -18,7 +18,7 @@ import Grpc
 import Html exposing (Html, button, div, h3, input, option, p, select, span, text)
 import Html.Attributes exposing (disabled, selected, value)
 import Html.Events exposing (onClick, onInput)
-import Proto.Rellm exposing (ServerConfiguration, defaultEventSettings, defaultFeatureSettings, defaultMediaSettings, defaultPostSettings)
+import Proto.Rellm exposing (EmbeddingModel, SearchSettings, ServerConfiguration, defaultEventSettings, defaultFeatureSettings, defaultMediaSettings, defaultPostSettings, defaultSearchSettings)
 import Proto.Rellm.CalendarDisplayMode exposing (CalendarDisplayMode(..))
 import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.Moderation exposing (Moderation(..))
@@ -53,6 +53,10 @@ type alias Model =
     , mediaSettingsEdit : Maybe FeatureSettingsEdit
     , collapsedFeatureSettings : Set String
     , mediaMaintenanceStatus : MediaMaintenanceStatus
+
+    -- The Search section's "Semantic Search" switch saves the moment it's flipped (a single
+    -- boolean, no Save/Cancel), so only its in-flight/error state lives here.
+    , searchSettingsStatus : AccountsPanel.FormStatus
     }
 
 
@@ -91,6 +95,8 @@ type Msg
     | FeatureSettingsHlsStreamingToggled FeatureSettingsSet
     | FeatureSettingsGenerateLinkPreviewImagesToggled FeatureSettingsSet
     | FeatureSettingsPreferMetadataForLinkPreviewImagesToggled FeatureSettingsSet
+    | SemanticSearchToggled
+    | GotSemanticSearchSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
     | DeleteLinkPreviewImagesClicked
     | DeleteUnownedMediaClicked
     | GotDeleteUnownedMediaResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, () ))
@@ -216,6 +222,7 @@ init =
     , mediaSettingsEdit = Nothing
     , collapsedFeatureSettings = Set.empty
     , mediaMaintenanceStatus = MediaMaintenanceIdle
+    , searchSettingsStatus = AccountsPanel.Idle
     }
 
 
@@ -481,6 +488,26 @@ update shared targetHost maybeServer msg model =
             ( setFeatureSettingsEditFor set
                 (featureSettingsEditFor set model |> Maybe.map (\edit -> { edit | preferMetadataForLinkPreviewImages = not edit.preferMetadataForLinkPreviewImages }))
                 model
+            , Effect.none
+            )
+
+        SemanticSearchToggled ->
+            saveSearchSettings shared
+                targetHost
+                maybeServer
+                (\settings -> { settings | semanticSearchEnabled = not settings.semanticSearchEnabled })
+                model
+
+        GotSemanticSearchSaveResult (Ok ( maybeAccountsPanelMsg, newConfig )) ->
+            ( { model | searchSettingsStatus = AccountsPanel.Idle }
+            , Effect.batch
+                [ Common.accountsPanelEffect maybeAccountsPanelMsg
+                , Effect.fromShared (Shared.AccountsPanelMsg (AccountsPanel.GotServerConfigSaveResult targetHost newConfig))
+                ]
+            )
+
+        GotSemanticSearchSaveResult (Err err) ->
+            ( { model | searchSettingsStatus = AccountsPanel.Errored (AccountsPanel.grpcErrorToString err) }
             , Effect.none
             )
 
@@ -1154,6 +1181,7 @@ view shared server maybeAdminAccount model =
         ([ permissionsSection AnonymousPermissions "Anonymous User Permissions" maybeAdminAccount model.anonymousPermissionsEdit config.anonymousUserPermissions
          , permissionsSection DefaultPermissions "Default User Permissions" maybeAdminAccount model.defaultPermissionsEdit config.defaultUserPermissions
          , permissionsSection BasicPermissions "Basic User Permissions" maybeAdminAccount model.basicPermissionsEdit config.basicUserPermissions
+         , searchSection maybeAdminAccount model.searchSettingsStatus (currentSearchSettings config)
          ]
             ++ ([ PeopleFeatureSettings, MediaFeatureSettings, PostFeatureSettings, EventFeatureSettings, GroupFeatureSettings ]
                     |> List.map
@@ -1168,6 +1196,108 @@ view shared server maybeAdminAccount model =
                         )
                )
         )
+
+
+{-| The server's `SearchSettings`, or the defaults (semantic search on, no model chosen -- the server
+then uses its own default) when it didn't report any, e.g. a server that predates the field.
+-}
+currentSearchSettings : ServerConfiguration -> SearchSettings
+currentSearchSettings config =
+    config.searchSettings |> Maybe.withDefault { defaultSearchSettings | semanticSearchEnabled = True }
+
+
+{-| Saves a change to the server's `SearchSettings` right away (one switch and one picker, so no
+Save/Cancel) as an admin: `change` is applied to the *server's current* settings inside
+`updateServerConfig`, so nothing else in the configuration is touched.
+-}
+saveSearchSettings : Shared.Model -> String -> Maybe RellmServer -> (SearchSettings -> SearchSettings) -> Model -> ( Model, Effect Msg )
+saveSearchSettings shared targetHost maybeServer change model =
+    case ( maybeServer, Common.adminAccountFor shared targetHost ) of
+        ( Just _, Just account ) ->
+            ( { model | searchSettingsStatus = AccountsPanel.Submitting }
+            , AccountsPanel.updateServerConfig shared.accounts
+                ( Just account.userId, targetHost )
+                (\config -> { config | searchSettings = Just (change (currentSearchSettings config)) })
+                |> Task.attempt GotSemanticSearchSaveResult
+                |> Effect.fromCmd
+            )
+
+        _ ->
+            ( model, Effect.none )
+
+
+{-| "N MB download, ~N MB RAM, English only/multilingual" -- the numbers an admin on small hardware
+needs to know about the model the cluster's embedding service runs (the RAM is that service's, once per
+cluster).
+-}
+embeddingModelFacts : EmbeddingModel -> String
+embeddingModelFacts m =
+    String.fromInt m.downloadMegabytes
+        ++ " MB download, ~"
+        ++ String.fromInt m.memoryMegabytes
+        ++ " MB RAM, "
+        ++ (if m.multilingual then
+                "multilingual"
+
+            else
+                "English only"
+           )
+
+
+{-| The "Search" section: the "Semantic Search" switch and the (read-only) "Embedding Model" -- always the
+one the cluster's embedding service runs. An admin's switch saves right away (see `saveSearchSettings`);
+everyone else sees it read-only.
+-}
+searchSection : Maybe RellmAccount -> AccountsPanel.FormStatus -> SearchSettings -> Html Msg
+searchSection maybeAdminAccount status settings =
+    let
+        selectedModel : Maybe EmbeddingModel
+        selectedModel =
+            settings.availableModels |> List.filter (\m -> m.id == settings.embeddingModel) |> List.head
+    in
+    div [ Html.Attributes.class "server-details-permissions" ]
+        [ h3 [ classes [ "section-title" ] ] [ text "Search" ]
+        , Common.settingsRow "Semantic Search"
+            (case ( maybeAdminAccount, status ) of
+                ( Just _, AccountsPanel.Submitting ) ->
+                    Common.switchDisplay settings.semanticSearchEnabled
+
+                ( Just _, _ ) ->
+                    Common.flagSwitch settings.semanticSearchEnabled SemanticSearchToggled
+
+                ( Nothing, _ ) ->
+                    Common.switchDisplay settings.semanticSearchEnabled
+            )
+        , Common.settingsNote "Also finds posts, events, media and profiles by meaning (not just matching words) and reranks results with text embeddings, made in the background by the cluster's embedding service. Turn off to use plain full-text search only."
+        , Common.settingsRow "Embedding Model"
+            (span [ Html.Attributes.class "server-details-feature-settings-value" ]
+                [ text
+                    (case selectedModel of
+                        Just m ->
+                            m.name
+
+                        Nothing ->
+                            if String.isEmpty settings.embeddingModel then
+                                "\u{2014}"
+
+                            else
+                                settings.embeddingModel
+                    )
+                ]
+            )
+        , case selectedModel of
+            Just m ->
+                Common.settingsNote (m.description ++ " (" ++ embeddingModelFacts m ++ ".)")
+
+            Nothing ->
+                text ""
+        , if settings.embeddingServiceAvailable then
+            Common.settingsNote "The model is run by this cluster's embedding service, one model for every server in the cluster, so it can't be chosen here. Changing it means redeploying the service; every server then re-embeds in the background."
+
+          else
+            Common.settingsNote "No embedding service is configured for this server (RELLM_EMBEDDING_SERVICE_URL), so search is plain full-text until the rellm_embeddings service is deployed."
+        , Common.editErrorView status
+        ]
 
 
 {-| One of the three server-wide permission sections (Anonymous/Default/Basic, distinguished by

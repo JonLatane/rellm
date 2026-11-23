@@ -38,7 +38,7 @@ pub fn delete_sync_destination(
         log::error!(
             "Failed to delete Occasion sync statuses for destination {}: {:?}",
             existing.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
         Status::new(Code::Internal, "failed_to_delete_sync_destination")
     })?;
@@ -52,7 +52,7 @@ pub fn delete_sync_destination(
         log::error!(
             "Failed to delete Post sync statuses for destination {}: {:?}",
             existing.id,
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
         Status::new(Code::Internal, "failed_to_delete_sync_destination")
     })?;
@@ -60,7 +60,7 @@ pub fn delete_sync_destination(
     diesel::delete(sync_destinations::table.filter(sync_destinations::id.eq(existing.id)))
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to delete sync destination {}: {:?}", existing.id, e);
+            log::error!("Failed to delete sync destination {}: {:?}", existing.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_delete_sync_destination")
         })?;
 

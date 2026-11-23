@@ -41,7 +41,7 @@ pub fn create_market_product(
         })
         .get_result::<models::MarketProduct>(conn)
         .map_err(|e| {
-            log::error!("Failed to create market product: {:?}", e);
+            log::error!("Failed to create market product: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_product")
         })?;
 

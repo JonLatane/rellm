@@ -119,6 +119,13 @@ message User {
   // [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)).
   repeated MarketSubscription market_subscriptions = 85;
 
+  // Whether the account has a password it can sign in with. `false` for an account created without
+  // one (a passwordless SMS/email account) until a password is set with
+  // [`ResetPassword`](#grpc-api-ResetPassword). While `false`, a sign-in
+  // [`ContactMethod`](#rellm-ContactMethod) can't be turned off, changed or removed. Only sent to the
+  // user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
+  bool has_password = 86;
+
   // The time the user was created.
   google.protobuf.Timestamp created_at = 100;
   // The time the user was last updated.
@@ -220,6 +227,17 @@ message ContactMethod {
   // sends. Same owner-or-`ADMIN`-only visibility as `consent_state` (blanked to empty for every
   // other viewer).
   repeated ContactConsentChange consent_history = 7;
+
+  // Whether this contact method can be used to sign in (the SMS/email codes of
+  // [`LoginRequest`](#rellm-LoginRequest)). Only ever `true` for a *verified* contact method:
+  // [`UpdateUser`](#grpc-api-UpdateUser) can switch it on only once `verified_at` is set, and editing
+  // `value` (which un-verifies) switches it off. A contact method verified at
+  // [`CreateAccount`](#grpc-api-CreateAccount) is made a sign-in method implicitly. Turning it off, or
+  // removing/changing the contact method while it is on, is refused with
+  // `password_required_for_sign_in` unless the account has a password
+  // ([`User.has_password`](#rellm-User)) -- otherwise the account could be left with no way in.
+  // Unset (as sent by clients that predate this field) means "leave it as it is" in an `UpdateUser`.
+  optional bool use_for_sign_in = 8;
 }
 
 // Whether a user has consented to being contacted (e.g. via SMS/email sent by external services)
@@ -328,7 +346,7 @@ message GetUsersResponse {
 
 // Request for [`VerifyContactMethod`](#grpc-api-VerifyContactMethod).
 message VerifyContactMethodRequest {
-  // The `tel:` (or, in the future, `mailto:`) value being verified -- must match the current
+  // The `tel:` or `mailto:` value being verified -- must match the current
   // user's own stored `phone`/`email` value.
   string value = 1;
   // The code the user was sent by `StartContactMethodVerification`.

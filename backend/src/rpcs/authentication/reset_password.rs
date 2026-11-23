@@ -33,10 +33,18 @@ pub fn reset_password(
     };
     log::info!("self_delete: {}, admin: {}", self_delete, admin);
 
+    // A password that sign-in would reject mustn't count as "has a password" -- setting one is what
+    // unlocks a passwordless account's sign-in contact methods (see `update_user`).
+    validate_password(&request.password)?;
     let hashed_password = hash(&request.password, DEFAULT_COST).unwrap();
 
     let db_result = update(users::table.find(user_id))
-        .set(users::password_salted_hash.eq(hashed_password))
+        .set((
+            users::password_salted_hash.eq(hashed_password),
+            // Setting a password is what makes a passwordless account's sign-in contact methods
+            // removable (see `update_user`).
+            users::has_password.eq(true),
+        ))
         .execute(conn);
 
     let result = match db_result {
@@ -44,18 +52,11 @@ pub fn reset_password(
         Ok(_) => Ok(()),
         Err(NotFound) => Err(Status::new(Code::NotFound, "user_not_found")),
         Err(e) => {
-            log::error!("Error deleting user: {:?}", e);
+            log::error!("Error deleting user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!(
-        "ResetPassword::request: {:?}, result: {:?}",
-        ResetPasswordRequest {
-            password: "<redacted>".to_string(),
-            ..request
-        },
-        result
-    );
+    log::info!("ResetPassword: user_id={}, ok={}", user_id, result.is_ok());
 
     result
 }

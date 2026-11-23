@@ -83,7 +83,7 @@ pub fn make_market_purchase(
                 log::error!(
                     "Failed to parse PermissionsAccessSubscriptionDetails for product {}: {:?}",
                     product.id,
-                    e
+                    crate::logic::log_redaction::safe_error(&e)
                 );
                 Status::new(Code::Internal, "invalid_product_details")
             })?;

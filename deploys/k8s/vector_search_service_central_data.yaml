@@ -1,0 +1,96 @@
+# The per-namespace vector search service (backend `vector_search_service`): ONE pod per namespace that keeps all of
+# the namespace's text embeddings in a USearch (quantized HNSW) index and answers nearest-neighbor queries for the
+# namespace's Rellm servers, so the (usually two) servers neither hold nor scan the vectors themselves. Postgres stays
+# the source of truth; this is a rebuildable cache that reads the embedding tables. Opt-in: see SEMANTIC_SEARCH.md.
+#
+# - replicas stays 1 (a second pod would just hold a second copy of the index); strategy Recreate. While it is
+#   down or still building its index, searches silently use the Postgres scan (the service is optional).
+# - Cluster-internal only (ClusterIP). Callers authenticate with `vector-service-secret` from this namespace's
+#   `rellm-embedding` Secret, sent as `x-rellm-internal-secret`.
+# - This file is for namespaces on central storage (database-url from `rellm-central-data`); vector_search_service.yaml
+#   is its twin for namespaces with their own Postgres. `rellm deploy create_backend_vector` picks the right one and creates the Secret.
+# - It indexes whatever model the cluster's shared embedding service runs (RELLM_EMBEDDING_SERVICE_URL).
+# - Image: rellm_embeddings (the same image as the model service); it never loads a model itself.
+# - Memory is about 400 bytes per vector (int8 + graph); 100k rows ~ 40MB, 1M ~ 400MB -- size the limit to the data.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-vector
+  labels:
+    app: rellm-vector
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8091
+      targetPort: 8091
+      name: grpc
+  selector:
+    app: rellm-vector
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rellm-vector
+  labels:
+    app: rellm-vector
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rellm-vector
+  template:
+    metadata:
+      labels:
+        app: rellm-vector
+    spec:
+      containers:
+        - name: rellm-vector
+          image: docker.io/jonlatane/rellm_embeddings:0.5.554
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/vector_search_service"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-data
+                  key: database-url
+            - name: RELLM_VECTOR_SERVICE_ADDR
+              value: 0.0.0.0:8091
+            - name: RELLM_VECTOR_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: vector-service-secret
+            - name: RELLM_EMBEDDING_SERVICE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-url
+            - name: RELLM_EMBEDDING_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-embedding
+                  key: embedding-service-secret
+            - name: RUST_BACKTRACE
+              value: full
+          ports:
+            - containerPort: 8091
+              name: grpc
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 50m
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8091
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8091
+            initialDelaySeconds: 30
+            periodSeconds: 20

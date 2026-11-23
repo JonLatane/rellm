@@ -67,7 +67,7 @@ async fn main() {
                     "Message {}: failed to download {} from object storage: {:?}. Skipping.",
                     message.id,
                     object_storage_path,
-                    e
+                    rellm::logic::log_redaction::safe_error(&e)
                 );
                 skipped_count += 1;
                 continue;
@@ -89,8 +89,7 @@ async fn main() {
                 "Message {}: repair found no Message-Id header (only {} originally recognized \
                  header(s)); leaving as-is for manual review.",
                 message.id,
-                header_prefix_len(&corrupted),
-            );
+                header_prefix_len(&corrupted));
             skipped_count += 1;
             continue;
         };
@@ -118,13 +117,7 @@ async fn main() {
 
         match update_result {
             Ok(_) => {
-                log::info!(
-                    "Message {}: repaired (subject={:?}, from={:?}, message_id={}).",
-                    message.id,
-                    subject,
-                    email_headers.from,
-                    email_message_id
-                );
+                log::info!("Message {}: repaired.", message.id);
                 repaired_count += 1;
             }
             // The real Message-ID collides with a row already updated earlier in this same run
@@ -156,7 +149,7 @@ async fn main() {
                 log::error!(
                     "Message {}: failed to save repaired fields: {:?}. Skipping.",
                     message.id,
-                    e
+                    rellm::logic::log_redaction::safe_error(&e)
                 );
                 skipped_count += 1;
             }

@@ -23,12 +23,16 @@ const CreateAccountRequest$json = {
     {'1': 'phone', '3': 4, '4': 1, '5': 11, '6': '.rellm.ContactMethod', '9': 1, '10': 'phone', '17': true},
     {'1': 'expires_at', '3': 5, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 2, '10': 'expiresAt', '17': true},
     {'1': 'device_name', '3': 6, '4': 1, '5': 9, '9': 3, '10': 'deviceName', '17': true},
+    {'1': 'phone_verification_code', '3': 7, '4': 1, '5': 9, '9': 4, '10': 'phoneVerificationCode', '17': true},
+    {'1': 'email_verification_code', '3': 8, '4': 1, '5': 9, '9': 5, '10': 'emailVerificationCode', '17': true},
   ],
   '8': [
     {'1': '_email'},
     {'1': '_phone'},
     {'1': '_expires_at'},
     {'1': '_device_name'},
+    {'1': '_phone_verification_code'},
+    {'1': '_email_verification_code'},
   ],
 };
 
@@ -39,11 +43,35 @@ final $typed_data.Uint8List createAccountRequestDescriptor = $convert.base64Deco
     'dGhvZEgAUgVlbWFpbIgBARIvCgVwaG9uZRgEIAEoCzIULnJlbGxtLkNvbnRhY3RNZXRob2RIAV'
     'IFcGhvbmWIAQESPgoKZXhwaXJlc19hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3Rh'
     'bXBIAlIJZXhwaXJlc0F0iAEBEiQKC2RldmljZV9uYW1lGAYgASgJSANSCmRldmljZU5hbWWIAQ'
-    'FCCAoGX2VtYWlsQggKBl9waG9uZUINCgtfZXhwaXJlc19hdEIOCgxfZGV2aWNlX25hbWU=');
+    'ESOwoXcGhvbmVfdmVyaWZpY2F0aW9uX2NvZGUYByABKAlIBFIVcGhvbmVWZXJpZmljYXRpb25D'
+    'b2RliAEBEjsKF2VtYWlsX3ZlcmlmaWNhdGlvbl9jb2RlGAggASgJSAVSFWVtYWlsVmVyaWZpY2'
+    'F0aW9uQ29kZYgBAUIICgZfZW1haWxCCAoGX3Bob25lQg0KC19leHBpcmVzX2F0Qg4KDF9kZXZp'
+    'Y2VfbmFtZUIaChhfcGhvbmVfdmVyaWZpY2F0aW9uX2NvZGVCGgoYX2VtYWlsX3ZlcmlmaWNhdG'
+    'lvbl9jb2Rl');
 
 @$core.Deprecated('Use loginRequestDescriptor instead')
 const LoginRequest$json = {
   '1': 'LoginRequest',
+  '2': [
+    {'1': 'username_password', '3': 1, '4': 1, '5': 11, '6': '.rellm.UsernamePasswordLoginRequest', '9': 0, '10': 'usernamePassword'},
+    {'1': 'sms', '3': 2, '4': 1, '5': 11, '6': '.rellm.SMSLoginRequest', '9': 0, '10': 'sms'},
+    {'1': 'email', '3': 3, '4': 1, '5': 11, '6': '.rellm.EmailLoginRequest', '9': 0, '10': 'email'},
+  ],
+  '8': [
+    {'1': 'request'},
+  ],
+};
+
+/// Descriptor for `LoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List loginRequestDescriptor = $convert.base64Decode(
+    'CgxMb2dpblJlcXVlc3QSUgoRdXNlcm5hbWVfcGFzc3dvcmQYASABKAsyIy5yZWxsbS5Vc2Vybm'
+    'FtZVBhc3N3b3JkTG9naW5SZXF1ZXN0SABSEHVzZXJuYW1lUGFzc3dvcmQSKgoDc21zGAIgASgL'
+    'MhYucmVsbG0uU01TTG9naW5SZXF1ZXN0SABSA3NtcxIwCgVlbWFpbBgDIAEoCzIYLnJlbGxtLk'
+    'VtYWlsTG9naW5SZXF1ZXN0SABSBWVtYWlsQgkKB3JlcXVlc3Q=');
+
+@$core.Deprecated('Use usernamePasswordLoginRequestDescriptor instead')
+const UsernamePasswordLoginRequest$json = {
+  '1': 'UsernamePasswordLoginRequest',
   '2': [
     {'1': 'username', '3': 1, '4': 1, '5': 9, '10': 'username'},
     {'1': 'password', '3': 2, '4': 1, '5': 9, '10': 'password'},
@@ -58,13 +86,69 @@ const LoginRequest$json = {
   ],
 };
 
-/// Descriptor for `LoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List loginRequestDescriptor = $convert.base64Decode(
-    'CgxMb2dpblJlcXVlc3QSGgoIdXNlcm5hbWUYASABKAlSCHVzZXJuYW1lEhoKCHBhc3N3b3JkGA'
-    'IgASgJUghwYXNzd29yZBI+CgpleHBpcmVzX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRp'
-    'bWVzdGFtcEgAUglleHBpcmVzQXSIAQESJAoLZGV2aWNlX25hbWUYBCABKAlIAVIKZGV2aWNlTm'
-    'FtZYgBARIcCgd1c2VyX2lkGAUgASgJSAJSBnVzZXJJZIgBAUINCgtfZXhwaXJlc19hdEIOCgxf'
-    'ZGV2aWNlX25hbWVCCgoIX3VzZXJfaWQ=');
+/// Descriptor for `UsernamePasswordLoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List usernamePasswordLoginRequestDescriptor = $convert.base64Decode(
+    'ChxVc2VybmFtZVBhc3N3b3JkTG9naW5SZXF1ZXN0EhoKCHVzZXJuYW1lGAEgASgJUgh1c2Vybm'
+    'FtZRIaCghwYXNzd29yZBgCIAEoCVIIcGFzc3dvcmQSPgoKZXhwaXJlc19hdBgDIAEoCzIaLmdv'
+    'b2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAFIJZXhwaXJlc0F0iAEBEiQKC2RldmljZV9uYW1lGA'
+    'QgASgJSAFSCmRldmljZU5hbWWIAQESHAoHdXNlcl9pZBgFIAEoCUgCUgZ1c2VySWSIAQFCDQoL'
+    'X2V4cGlyZXNfYXRCDgoMX2RldmljZV9uYW1lQgoKCF91c2VyX2lk');
+
+@$core.Deprecated('Use sMSLoginRequestDescriptor instead')
+const SMSLoginRequest$json = {
+  '1': 'SMSLoginRequest',
+  '2': [
+    {'1': 'phone_number', '3': 1, '4': 1, '5': 9, '10': 'phoneNumber'},
+    {'1': 'code', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'code', '17': true},
+    {'1': 'expires_at', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'expiresAt', '17': true},
+    {'1': 'device_name', '3': 4, '4': 1, '5': 9, '9': 2, '10': 'deviceName', '17': true},
+    {'1': 'user_id', '3': 5, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
+    {'1': 'consent_to_contact', '3': 6, '4': 1, '5': 8, '10': 'consentToContact'},
+  ],
+  '8': [
+    {'1': '_code'},
+    {'1': '_expires_at'},
+    {'1': '_device_name'},
+    {'1': '_user_id'},
+  ],
+};
+
+/// Descriptor for `SMSLoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sMSLoginRequestDescriptor = $convert.base64Decode(
+    'Cg9TTVNMb2dpblJlcXVlc3QSIQoMcGhvbmVfbnVtYmVyGAEgASgJUgtwaG9uZU51bWJlchIXCg'
+    'Rjb2RlGAIgASgJSABSBGNvZGWIAQESPgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90'
+    'b2J1Zi5UaW1lc3RhbXBIAVIJZXhwaXJlc0F0iAEBEiQKC2RldmljZV9uYW1lGAQgASgJSAJSCm'
+    'RldmljZU5hbWWIAQESHAoHdXNlcl9pZBgFIAEoCUgDUgZ1c2VySWSIAQESLAoSY29uc2VudF90'
+    'b19jb250YWN0GAYgASgIUhBjb25zZW50VG9Db250YWN0QgcKBV9jb2RlQg0KC19leHBpcmVzX2'
+    'F0Qg4KDF9kZXZpY2VfbmFtZUIKCghfdXNlcl9pZA==');
+
+@$core.Deprecated('Use emailLoginRequestDescriptor instead')
+const EmailLoginRequest$json = {
+  '1': 'EmailLoginRequest',
+  '2': [
+    {'1': 'email', '3': 1, '4': 1, '5': 9, '10': 'email'},
+    {'1': 'code', '3': 2, '4': 1, '5': 9, '9': 0, '10': 'code', '17': true},
+    {'1': 'expires_at', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'expiresAt', '17': true},
+    {'1': 'device_name', '3': 4, '4': 1, '5': 9, '9': 2, '10': 'deviceName', '17': true},
+    {'1': 'user_id', '3': 5, '4': 1, '5': 9, '9': 3, '10': 'userId', '17': true},
+    {'1': 'consent_to_contact', '3': 6, '4': 1, '5': 8, '10': 'consentToContact'},
+  ],
+  '8': [
+    {'1': '_code'},
+    {'1': '_expires_at'},
+    {'1': '_device_name'},
+    {'1': '_user_id'},
+  ],
+};
+
+/// Descriptor for `EmailLoginRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List emailLoginRequestDescriptor = $convert.base64Decode(
+    'ChFFbWFpbExvZ2luUmVxdWVzdBIUCgVlbWFpbBgBIAEoCVIFZW1haWwSFwoEY29kZRgCIAEoCU'
+    'gAUgRjb2RliAEBEj4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0'
+    'YW1wSAFSCWV4cGlyZXNBdIgBARIkCgtkZXZpY2VfbmFtZRgEIAEoCUgCUgpkZXZpY2VOYW1liA'
+    'EBEhwKB3VzZXJfaWQYBSABKAlIA1IGdXNlcklkiAEBEiwKEmNvbnNlbnRfdG9fY29udGFjdBgG'
+    'IAEoCFIQY29uc2VudFRvQ29udGFjdEIHCgVfY29kZUINCgtfZXhwaXJlc19hdEIOCgxfZGV2aW'
+    'NlX25hbWVCCgoIX3VzZXJfaWQ=');
 
 @$core.Deprecated('Use createThirdPartyRefreshTokenRequestDescriptor instead')
 const CreateThirdPartyRefreshTokenRequest$json = {
@@ -93,6 +177,10 @@ const RefreshTokenResponse$json = {
     {'1': 'refresh_token', '3': 1, '4': 1, '5': 11, '6': '.rellm.ExpirableToken', '10': 'refreshToken'},
     {'1': 'access_token', '3': 2, '4': 1, '5': 11, '6': '.rellm.ExpirableToken', '10': 'accessToken'},
     {'1': 'user', '3': 3, '4': 1, '5': 11, '6': '.rellm.User', '10': 'user'},
+    {'1': 'verification_challenge', '3': 4, '4': 1, '5': 11, '6': '.rellm.VerificationChallenge', '9': 0, '10': 'verificationChallenge', '17': true},
+  ],
+  '8': [
+    {'1': '_verification_challenge'},
   ],
 };
 
@@ -101,7 +189,26 @@ final $typed_data.Uint8List refreshTokenResponseDescriptor = $convert.base64Deco
     'ChRSZWZyZXNoVG9rZW5SZXNwb25zZRI6Cg1yZWZyZXNoX3Rva2VuGAEgASgLMhUucmVsbG0uRX'
     'hwaXJhYmxlVG9rZW5SDHJlZnJlc2hUb2tlbhI4CgxhY2Nlc3NfdG9rZW4YAiABKAsyFS5yZWxs'
     'bS5FeHBpcmFibGVUb2tlblILYWNjZXNzVG9rZW4SHwoEdXNlchgDIAEoCzILLnJlbGxtLlVzZX'
-    'JSBHVzZXI=');
+    'JSBHVzZXISWAoWdmVyaWZpY2F0aW9uX2NoYWxsZW5nZRgEIAEoCzIcLnJlbGxtLlZlcmlmaWNh'
+    'dGlvbkNoYWxsZW5nZUgAUhV2ZXJpZmljYXRpb25DaGFsbGVuZ2WIAQFCGQoXX3ZlcmlmaWNhdG'
+    'lvbl9jaGFsbGVuZ2U=');
+
+@$core.Deprecated('Use verificationChallengeDescriptor instead')
+const VerificationChallenge$json = {
+  '1': 'VerificationChallenge',
+  '2': [
+    {'1': 'sent_to', '3': 1, '4': 3, '5': 9, '10': 'sentTo'},
+    {'1': 'expires_at', '3': 2, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'expiresAt'},
+    {'1': 'resend_available_at', '3': 3, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'resendAvailableAt'},
+  ],
+};
+
+/// Descriptor for `VerificationChallenge`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List verificationChallengeDescriptor = $convert.base64Decode(
+    'ChVWZXJpZmljYXRpb25DaGFsbGVuZ2USFwoHc2VudF90bxgBIAMoCVIGc2VudFRvEjkKCmV4cG'
+    'lyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wUglleHBpcmVzQXQSSgoT'
+    'cmVzZW5kX2F2YWlsYWJsZV9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBSEX'
+    'Jlc2VuZEF2YWlsYWJsZUF0');
 
 @$core.Deprecated('Use expirableTokenDescriptor instead')
 const ExpirableToken$json = {

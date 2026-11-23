@@ -60,7 +60,7 @@ pub async fn get_and_test_bucket() -> Result<Box<Bucket>, S3Error> {
                     log::warn!("Object storage bucket already created by a concurrent caller");
                 }
                 Err(e) => {
-                    log::error!("Failed to create object storage Bucket: {:?}", e);
+                    log::error!("Failed to create object storage Bucket: {:?}", crate::logic::log_redaction::safe_error(&e));
                     return Err(e);
                 }
                 Ok(_) => log::warn!("Object storage bucket created"),

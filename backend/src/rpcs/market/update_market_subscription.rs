@@ -164,7 +164,7 @@ fn apply_fulfillment_notes(
     // `fulfillment_notes`/`fulfillment_status` keys in every `*SubscriptionDetails`.
     let mut stored_notes: Vec<FulfillmentNote> = match existing.details.get("fulfillment_notes") {
         Some(value) if !value.is_null() => serde_json::from_value(value.clone()).map_err(|e| {
-            log::error!("Failed to parse fulfillment_notes of subscription {}: {:?}", existing.id, e);
+            log::error!("Failed to parse fulfillment_notes of subscription {}: {:?}", existing.id, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "invalid_stored_details")
         })?,
         _ => vec![],
@@ -214,7 +214,7 @@ fn apply_fulfillment_notes(
     }
 
     let notes_json = serde_json::to_value(&stored_notes).map_err(|e| {
-        log::error!("Failed to serialize fulfillment_notes: {:?}", e);
+        log::error!("Failed to serialize fulfillment_notes: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_serialize_details")
     })?;
 
@@ -234,7 +234,7 @@ fn apply_fulfillment_notes(
         )
         .get_result::<models::MarketSubscription>(conn)
         .map_err(|e| {
-            log::error!("Failed to update market subscription: {:?}", e);
+            log::error!("Failed to update market subscription: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_update_subscription")
         })?;
 

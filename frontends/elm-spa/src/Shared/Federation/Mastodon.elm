@@ -35,6 +35,7 @@ module Shared.Federation.Mastodon exposing
     , fetchEmbeddedStatus
     , fetchStatus
     , fetchStatusWithQuotes
+    , fetchStatusUri
     , fetchThread
     , fetchThreadAs
     , lookupAccount
@@ -116,7 +117,17 @@ that's read-only: Rellm's own star button still can't actually push a real favou
 -}
 type alias Status =
     { id : String
+
+    -- Where this status sits in the timeline it came from, which is what `pageOf` pages by: its own
+    -- `id`, except for a boost (decoded as the original post it wraps, see `decoder`), where it's the
+    -- boost's id -- the original is older, and paging from it would skip everything in between.
+    , timelineId : String
     , url : Maybe String
+
+    -- The status' ActivityPub id: always present, identical on every instance (unlike `id`) and
+    -- what `search?resolve=true` is built to resolve -- see `resolveStatusId`. `url` is just its HTML
+    -- page, and is `null` on some statuses.
+    , uri : Maybe String
     , content : String
     , createdAt : Time.Posix
     , inReplyToId : Maybe String
@@ -162,11 +173,25 @@ mirroring `accountDecoder`'s own `locked`-as-9th-field trick below.
 -}
 decoder : Decoder Status
 decoder =
+    -- A boost (`reblog` set) is just a wrapper with `url: null` and empty content -- the post that
+    -- matters is the nested original, so that's what a boost decodes as.
+    Decode.oneOf
+        [ Decode.map2 (\boostId original -> { original | timelineId = boostId })
+            (Decode.field "id" Decode.string)
+            (Decode.field "reblog" (Decode.lazy (\_ -> statusDecoder)))
+        , statusDecoder
+        ]
+
+
+statusDecoder : Decoder Status
+statusDecoder =
     Decode.map8
         (\id url content createdAt inReplyToId authorUsername authorDisplayName authorAvatarUrl ->
-            \mediaAttachments sensitive favouritesCount repliesCount quote authorAcct ->
+            \mediaAttachments sensitive favouritesCount repliesCount quote authorAcct uri ->
                 { id = id
+                , timelineId = id
                 , url = url
+                , uri = uri
                 , content = content
                 , createdAt = createdAt
                 , inReplyToId = inReplyToId
@@ -195,6 +220,7 @@ decoder =
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.field "replies_count" Decode.int, Decode.succeed 0 ]))
         |> Decode.andThen (\f -> Decode.map f quoteDecoder)
         |> Decode.andThen (\f -> Decode.map f (Decode.oneOf [ Decode.at [ "account", "acct" ] Decode.string, Decode.at [ "account", "username" ] Decode.string ]))
+        |> Decode.andThen (\f -> Decode.map f (Decode.maybe (Decode.field "uri" Decode.string)))
 
 
 {-| `quote.quoted_status` (a full `Status`) if the server inlined it, else just `quote.quoted_status_id`
@@ -279,7 +305,7 @@ toPostWith { includeSensitiveMedia, quoteDepth } instanceHost status =
         | id = status.id
         , author = Just (toAuthor instanceHost status)
         , content = Just status.content
-        , link = status.url
+        , link = orElseMaybe status.url status.uri
         , context =
             if status.inReplyToId /= Nothing then
                 REPLY
@@ -441,7 +467,7 @@ the statuses older than it -- or `Nothing` once a page comes back empty, the end
 pageOf : String -> List Status -> ( List Post, Maybe String )
 pageOf instanceHost statuses =
     ( List.map (toPost instanceHost) statuses
-    , statuses |> List.reverse |> List.head |> Maybe.map .id
+    , statuses |> List.reverse |> List.head |> Maybe.map .timelineId
     )
 
 
@@ -723,7 +749,49 @@ setFavourite favourite instanceHost accessToken statusId =
         }
 
 
-{-| `GET /api/v2/search?resolve=true` for a status' public `url` -- the id that same status has on
+orElseMaybe : Maybe a -> Maybe a -> Maybe a
+orElseMaybe first fallback =
+    case first of
+        Just _ ->
+            first
+
+        Nothing ->
+            fallback
+
+
+{-| `GET /api/v1/statuses/:id` on `instanceHost` (unauthenticated -- public statuses only) for just the
+status' ActivityPub `uri` (else its `url`): the one identifier every other instance can resolve to its own
+copy, see `resolveStatusId`. Fails if neither is present.
+-}
+fetchStatusUri : String -> String -> Task Http.Error String
+fetchStatusUri instanceHost statusId =
+    Http.task
+        { method = "GET"
+        , headers = []
+        , url = "https://" ++ instanceHost ++ "/api/v1/statuses/" ++ Url.percentEncode statusId
+        , body = Http.emptyBody
+        , resolver =
+            jsonResolver
+                (Decode.map2 orElseMaybe
+                    (Decode.maybe (Decode.field "uri" Decode.string))
+                    (Decode.maybe (Decode.field "url" Decode.string))
+                    |> Decode.andThen
+                        (\found ->
+                            case found of
+                                Just id ->
+                                    Decode.succeed id
+
+                                Nothing ->
+                                    Decode.fail "status has no uri"
+                        )
+                )
+                (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , timeout = Just 10000
+        }
+
+
+{-| `GET /api/v2/search?resolve=true` for a status' ActivityPub `uri` (or, failing that, its public
+`url`; `fetchStatusUri` finds whichever exists) -- the id that same status has on
 `instanceHost`, which is what that instance's favourite endpoint needs. A status' id is only
 meaningful to the instance it came from, so starring a post viewed through some other instance first
 has to find (federating it in, if needed) its copy on the connected account's own one. Fails (an

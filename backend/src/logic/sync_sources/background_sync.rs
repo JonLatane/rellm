@@ -109,7 +109,7 @@ fn ensure_worker() {
         });
     if let Err(e) = spawned {
         WORKER_RUNNING.store(false, Ordering::SeqCst);
-        log::error!("Failed to spawn the background sync worker: {:?}", e);
+        log::error!("Failed to spawn the background sync worker: {:?}", crate::logic::log_redaction::safe_error(&e));
     }
 }
 
@@ -146,7 +146,7 @@ fn worker_loop() {
 /// Runs `f` with a pooled connection, which is released as soon as it returns.
 fn with_conn<T>(f: impl FnOnce(&mut PgPooledConnection) -> Result<T, Status>) -> Result<T, Status> {
     let mut conn = POOL.get().map_err(|e| {
-        log::error!("Background sync couldn't get a DB connection: {:?}", e);
+        log::error!("Background sync couldn't get a DB connection: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Unavailable, "db_connection_unavailable")
     })?;
     f(&mut conn)
@@ -158,7 +158,7 @@ fn sync_one(source_id: i64) {
         Ok(source) => source,
         // Deleted since the edit that queued this -- nothing to sync.
         Err(e) => {
-            log::info!("Background sync of SyncSource {} skipped: {:?}", source_id, e);
+            log::info!("Background sync of SyncSource {} skipped: {:?}", source_id, crate::logic::log_redaction::safe_error(&e));
             return;
         }
     };
@@ -172,6 +172,6 @@ fn sync_one(source_id: i64) {
     };
     match result {
         Ok(()) => log::info!("Background sync of SyncSource {} finished.", source_id),
-        Err(e) => log::error!("Background sync of SyncSource {} failed: {:?}", source_id, e),
+        Err(e) => log::error!("Background sync of SyncSource {} failed: {:?}", source_id, crate::logic::log_redaction::safe_error(&e)),
     }
 }

@@ -43,7 +43,7 @@ pub fn load_media_lookup(
     Some(
         models::get_all_media(media_ids.to_owned(), conn)
             .unwrap_or_else(|e| {
-                log::error!("Error loading media references: {:?}", e);
+                log::error!("Error loading media references: {:?}", crate::logic::log_redaction::safe_error(&e));
                 vec![]
             })
             .iter()

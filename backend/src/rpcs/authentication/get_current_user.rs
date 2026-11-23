@@ -10,11 +10,7 @@ pub fn get_current_user(
     user: &models::User,
     conn: &mut PgPooledConnection,
 ) -> Result<protos::User, Status> {
-    log::info!(
-        "GetCurrentUser called for user {}, user_id={}",
-        &user.username,
-        user.id
-    );
+    log::info!("GetCurrentUser called for user_id={}", user.id);
 
     let avatar: Option<models::MediaReference> = match user.avatar_media_id {
         None => None,
@@ -24,6 +20,6 @@ pub fn get_current_user(
     let lookup = avatar.to_media_lookup();
     let mut result = user.to_proto(&None, &None, lookup.as_ref(), &Some(user), Some(conn));
     attach_own_advanced_data(&mut result, user, conn);
-    log::info!("GetCurrentUser::response={:?}", &result);
+    log::info!("GetCurrentUser: ok");
     Ok(result)
 }

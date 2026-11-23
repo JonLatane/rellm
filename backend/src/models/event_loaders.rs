@@ -40,7 +40,7 @@ pub fn get_sync_sources_for_user(
             log::error!(
                 "Failed to load sync sources for user_id={}: {:?}",
                 user_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_sync_sources")
         })
@@ -67,7 +67,7 @@ pub fn get_sync_sources_for_users(
             log::error!(
                 "Failed to load sync sources for user_ids={:?}: {:?}",
                 user_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_sync_sources")
         })
@@ -153,7 +153,7 @@ pub fn get_occasions(
             log::error!(
                 "Failed to load occasions for event_id={}: {:?}",
                 event_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_occasions")
         })
@@ -213,7 +213,7 @@ pub fn get_rsvps(
             log::error!(
                 "Failed to load event rsvps for occasion_id={}: {:?}",
                 occasion_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_rsvps")
         })

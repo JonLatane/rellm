@@ -1543,6 +1543,112 @@
   font-size: 0.85rem;
 }
 
+/* SMS/email sign-in and sign-up -- see `Shared.AccountsPanel.ContactAuthView`. The "Sign in with"
+   chooser is a row of pill buttons styled like `.accounts-panel-tab` (wrapping on narrow panels);
+   the code step and create-account contact fields reuse `.account-form-field` for their inputs. */
+.login-method-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* `main.css`'s base text-input look only names text/password/url inputs; the phone/email fields need
+   the same. */
+.account-form-field input[type="tel"],
+.account-form-field input[type="email"] {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  padding-right: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.login-method-label,
+.contact-auth-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* The Rellm tab pane forces single-line ellipsis text (see `.add-account-server-panes`), which would
+   cut these sentences off -- they need to wrap. */
+.add-account-server-pane .login-method-label,
+.add-account-server-pane .contact-auth-hint,
+.add-account-server-pane .contact-code-sent,
+.add-account-server-pane .create-contact-consent {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.login-method-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.login-method-button {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.login-method-button.selected {
+  background: var(--panel-bg);
+  border-color: var(--fg);
+  opacity: 1;
+}
+
+.contact-code-step,
+.create-contact-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.contact-code-sent {
+  margin: 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.contact-code-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* A one-time code reads better spaced out and in a fixed-width face. */
+.contact-code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.25em;
+}
+
+.contact-code-resend {
+  align-self: flex-start;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+}
+
+.contact-code-resend:disabled {
+  opacity: 0.6;
+}
+
+.create-contact-consent {
+  display: block;
+  font-size: 0.85rem;
+}
+
 /* Create Account confirmation, shown after "Create Account" is clicked,
    before the account is actually created -- see UI.elm's
    `createAccountConfirmationModal`. */

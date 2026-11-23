@@ -52,7 +52,7 @@ pub fn get_sync_destinations_for_user(
             log::error!(
                 "Failed to load sync destinations for user_id={}: {:?}",
                 user_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_sync_destinations")
         })

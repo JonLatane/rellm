@@ -64,7 +64,7 @@ async fn main() {
                     skipped += 1;
                 }
                 Err(e) => {
-                    log::error!("Media {}: failed to strip resized sizes: {:?}", item.id, e);
+                    log::error!("Media {}: failed to strip resized sizes: {:?}", item.id, rellm::logic::log_redaction::safe_error(&e));
                     skipped += 1;
                 }
             }

@@ -153,7 +153,7 @@ async fn docs_path(path: &str) -> CacheResponse<Result<NamedFile, Status>> {
     };
     CacheResponse::public(
         result.map_err(|e| {
-            log::error!("docs_path: {:?}", e);
+            log::error!("docs_path: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::NotFound
         }),
         60,

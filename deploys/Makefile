@@ -16,6 +16,7 @@ NAMESPACE_FREE_TARGETS := copy_server_configuration copy_server_cluster_configur
 	create_ingress remove_ingress deploy_ingress_ensure_namespace deploy_ingress_crds deploy_ingress_controller_create deploy_ingress_controller_update deploy_ingress_controller_delete deploy_ingress_monitor_rollout deploy_ingress_restart get_ingress_external_ip list_ingress_domains \
 	create_email update_email restart_email remove_email create_email_admin_secret deploy_email_get_ip deploy_email_restart deploy_email_monitor_rollout deploy_email_admin_port_forward deploy_email_admin_stop_port_forwarding list_email_domains \
 	create_central_storage update_central_storage delete_central_storage restart_central_storage get_central_storage_all wait_central_postgres_ready wait_central_object_storage_ready get_central_postgres_pvc_size get_central_object_storage_pvc_size resize_central_postgres_pvc resize_central_object_storage_pvc \
+	create_central_embedding update_central_embedding delete_central_embedding restart_central_embedding wait_central_embedding_ready \
 	deploy_certmanager \
 	test
 # Skipped only if *every* goal is one of those (and there is at least one -- the default goal needs
@@ -106,8 +107,9 @@ deploy_be_internal_insecure_update:
 create_internal_central_data_backend: deploy_ensure_namespace k8s/server_internal_central_data.$(NAMESPACE).generated.yaml k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml
 	kubectl create -f k8s/server_internal_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
 	kubectl create -f k8s/preview_generator_central_data.$(NAMESPACE).generated.yaml --save-config -n $(NAMESPACE)
-# This is how manifest changes (new env vars, ports, replicas, ...) get rolled out -- CI only bumps
-# image tags (see .github/workflows/scripts/set_backend_images.sh), never manifests. The manifests'
+# This is how manifest changes (new env vars, ports, replicas, ...) get rolled out by hand. CI applies
+# these same manifests on every deploy (.github/workflows/scripts/apply_backend_manifests.sh), so this is
+# for rolling a change out ahead of a deploy, or to change replica counts (CI never writes them). The manifests'
 # own image tags are just the base version, so this KEEPS whatever images the namespace's
 # Deployments are running right now (CI's `<version>-<sha>` tags) instead of resetting them; pass
 # REPO_IMAGES=1 to deploy the manifests' tags as written instead. Regenerates the per-namespace
@@ -368,7 +370,7 @@ wait_backend_postgres_ready:
 # upgrade_backend_postgres. Override the output path with DUMP_FILE=path/to/file.sql.
 DUMP_FILE ?= $(PG_BACKUP_DIR)/$(NAMESPACE)-$(shell date +%Y%m%d%H%M%S).sql
 dump_backend_postgres:
-	@mkdir -p $(PG_BACKUP_DIR)
+	@mkdir -p "$(PG_BACKUP_DIR)"
 	rm -f /tmp/pgpf-$(NAMESPACE).log; \
 	kubectl port-forward -n $(NAMESPACE) rellm-postgres-0 $(PG_UPGRADE_LOCAL_PORT):5432 >/tmp/pgpf-$(NAMESPACE).log 2>&1 & \
 	echo $$! > /tmp/pgpf-$(NAMESPACE).pid; \
@@ -380,7 +382,7 @@ dump_backend_postgres:
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 		exit 1; \
 	fi; \
-	PGPASSWORD="$(pg_password)" pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f $(DUMP_FILE); \
+	PGPASSWORD="$(pg_password)" pg_dump -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm --clean --if-exists -f "$(DUMP_FILE)"; \
 	DUMP_STATUS=$$?; \
 	kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 	rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -407,7 +409,7 @@ restore_backend_postgres:
 			rm -f /tmp/pgpf-$(NAMESPACE).pid; \
 			exit 1; \
 		fi; \
-		PGPASSWORD="$(pg_password)" psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f $(DUMP_FILE); \
+		PGPASSWORD="$(pg_password)" psql -h localhost -p $(PG_UPGRADE_LOCAL_PORT) -U admin -d rellm -v ON_ERROR_STOP=1 -f "$(DUMP_FILE)"; \
 		RESTORE_STATUS=$$?; \
 		kill $$(cat /tmp/pgpf-$(NAMESPACE).pid) 2>/dev/null; \
 		rm -f /tmp/pgpf-$(NAMESPACE).pid; \
@@ -424,12 +426,12 @@ restore_backend_postgres:
 # version, clean it up by hand with delete_backend_postgres_old_data.
 upgrade_backend_postgres:
 	@echo "== Upgrading Postgres in namespace $(NAMESPACE) (see k8s/k8s-postgres-$(K8S_PROVIDER).yaml for target version) =="
-	$(MAKE) dump_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE=$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql
+	$(MAKE) dump_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE="$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql"
 	$(MAKE) stop_backend NAMESPACE=$(NAMESPACE)
 	$(MAKE) stop_backend_postgres NAMESPACE=$(NAMESPACE)
 	$(MAKE) update_backend_postgres NAMESPACE=$(NAMESPACE)
 	$(MAKE) wait_backend_postgres_ready NAMESPACE=$(NAMESPACE)
-	$(MAKE) restore_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE=$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql
+	$(MAKE) restore_backend_postgres NAMESPACE=$(NAMESPACE) DUMP_FILE="$(PG_BACKUP_DIR)/$(NAMESPACE)-preupgrade.sql"
 	$(MAKE) start_backend NAMESPACE=$(NAMESPACE)
 	@echo "== Done. Verify the app, then (once confident) run: make delete_backend_postgres_old_data NAMESPACE=$(NAMESPACE) =="
 
@@ -582,6 +584,68 @@ resize_central_postgres_pvc:
 	@$(MAKE) -C central_storage resize_central_postgres_pvc
 resize_central_object_storage_pvc:
 	@$(MAKE) -C central_storage resize_central_object_storage_pvc
+# The cluster's embedding model service for semantic search (see SEMANTIC_SEARCH.md and create_backend_embedding below).
+create_central_embedding:
+	@$(MAKE) -C central_storage create_central_embedding
+update_central_embedding:
+	@$(MAKE) -C central_storage update_central_embedding
+delete_central_embedding:
+	@$(MAKE) -C central_storage delete_central_embedding
+restart_central_embedding:
+	@$(MAKE) -C central_storage restart_central_embedding
+wait_central_embedding_ready:
+	@$(MAKE) -C central_storage wait_central_embedding_ready
+
+############################################################################
+# SEMANTIC SEARCH (embeddings): see k8s/SEMANTIC_SEARCH.md. Needs the cluster's embedding model service (one per
+# cluster, `rellm deploy create_central_embedding`); then each namespace that should use it runs
+# `rellm deploy create_backend_embedding -n <ns>`. A namespace's server/jobs Deployments read their settings from its
+# `rellm-embedding` Secret (every key optional), so nothing changes for a namespace that never runs these. The
+# optional per-namespace vector index is `create_backend_vector`.
+############################################################################
+embedding_service_url = http://rellm-central-embedding.$(STORAGE_NAMESPACE).svc.cluster.local:8090
+# `kubectl rollout restart` for each named Deployment that exists in NAMESPACE (the env change needs a new pod).
+restart_backend_deployments = @for d in $(1); do if kubectl get deployment $$d -n $(NAMESPACE) >/dev/null 2>&1; then kubectl rollout restart deployment $$d -n $(NAMESPACE); fi; done
+
+# Writes the embedding-service URL and secret (copied from the cluster's) into this namespace's rellm-embedding
+# Secret, creating it if needed and leaving its other keys alone. Idempotent; doesn't restart anything.
+create_backend_embedding_secret: deploy_ensure_namespace
+	@kubectl get secret rellm-central-embedding-credentials -n $(STORAGE_NAMESPACE) >/dev/null 2>&1 || (echo "The cluster's embedding service isn't set up (no rellm-central-embedding-credentials in $(STORAGE_NAMESPACE)). Run: rellm deploy create_central_embedding" >&2 && exit 1)
+	@secret="$$(kubectl get secret rellm-central-embedding-credentials -n $(STORAGE_NAMESPACE) -o jsonpath='{.data.secret}' | base64 --decode)"; \
+	if kubectl get secret rellm-embedding -n $(NAMESPACE) >/dev/null 2>&1; then \
+		kubectl patch secret rellm-embedding -n $(NAMESPACE) --type merge -p "{\"stringData\":{\"embedding-service-url\":\"$(embedding_service_url)\",\"embedding-service-secret\":\"$$secret\"}}"; \
+	else \
+		kubectl create secret generic rellm-embedding -n $(NAMESPACE) --from-literal=embedding-service-url=$(embedding_service_url) --from-literal=embedding-service-secret="$$secret"; \
+	fi
+# Points this namespace's server(s) and jobs at the cluster's embedding service (restarting them to pick it up).
+create_backend_embedding: create_backend_embedding_secret
+	$(call restart_backend_deployments,rellm rellm-jobs)
+	@kubectl get deployment rellm -n $(NAMESPACE) -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null | grep -q RELLM_EMBEDDING_SERVICE_URL || echo "NOTE: this namespace's Deployments predate semantic search support, so they can't read the new Secret yet. Roll out the current manifests first (rellm deploy update_internal_backend / update_external_backend / update_internal_central_data_backend -n $(NAMESPACE); see 'Rolling out manifest changes' in README.md), then re-run this target."
+# Turns it off for this namespace (and removes its vector index), keeping everything else. Embeddings already stored
+# stay in the database.
+delete_backend_embedding: delete_backend_vector
+	kubectl delete secret rellm-embedding -n $(NAMESPACE) --ignore-not-found
+	$(call restart_backend_deployments,rellm rellm-jobs)
+
+# The per-namespace vector search index (optional; searches scan Postgres without it). Generates its secret, deploys it
+# (the central-storage variant if this namespace is on central storage), and points the servers at it.
+create_backend_vector: create_backend_embedding_secret
+	@if ! kubectl get secret rellm-embedding -n $(NAMESPACE) -o jsonpath='{.data.vector-service-secret}' 2>/dev/null | grep -q .; then \
+		command -v openssl >/dev/null || (echo "openssl is required to generate credentials" >&2 && exit 1); \
+		kubectl patch secret rellm-embedding -n $(NAMESPACE) --type merge -p "{\"stringData\":{\"vector-service-secret\":\"$$(openssl rand -hex 24)\"}}"; \
+	fi
+	kubectl patch secret rellm-embedding -n $(NAMESPACE) --type merge -p '{"stringData":{"vector-service-url":"http://rellm-vector:8091"}}'
+	$(MAKE) --no-print-directory update_backend_vector
+	$(call restart_backend_deployments,rellm)
+update_backend_vector:
+	@if kubectl get secret rellm-central-data -n $(NAMESPACE) >/dev/null 2>&1; then f=k8s/vector_search_service_central_data.yaml; else f=k8s/vector_search_service.yaml; fi; \
+	kubectl apply -f $$f -n $(NAMESPACE)
+delete_backend_vector:
+	- kubectl delete -f k8s/vector_search_service.yaml -n $(NAMESPACE)
+	@if kubectl get secret rellm-embedding -n $(NAMESPACE) >/dev/null 2>&1; then \
+		kubectl patch secret rellm-embedding -n $(NAMESPACE) --type merge -p '{"data":{"vector-service-url":null,"vector-service-secret":null}}'; \
+	fi
+	$(call restart_backend_deployments,rellm)
 
 ############################################################################
 # TLS CERTIFICATE-RELATED TARGETS: passthroughs to deploys/generated_certs/Makefile.

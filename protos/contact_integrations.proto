@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package rellm;
+
+import "google/protobuf/timestamp.proto";
+
+// A live health report for every SMS and email integration an admin has configured -- the response to
+// [`GetContactIntegrationsStatus`](#grpc-api-GetContactIntegrationsStatus). Everything here is
+// gathered *on demand* by actually calling each provider's own API (and, for email, looking up the
+// sending domains' SPF/DKIM/DMARC DNS records), so it reflects reality right now rather than what
+// the admin last typed into the form -- and it's therefore slow (several outbound HTTP calls, run
+// in parallel), which is why it's its own RPC instead of part of
+// [`ServerConfiguration`](#rellm-ServerConfiguration). Contains no secrets.
+message ContactIntegrationsStatus {
+  // When the server gathered this report.
+  google.protobuf.Timestamp checked_at = 1;
+  // One entry per SMS provider (Twilio/Bird/Telnyx) that is enabled or has any configuration
+  // stored, in the order the server would try them for verification codes.
+  repeated ProviderStatus sms_providers = 2;
+  // One entry per email provider (Stalwart/Postmark/SendGrid/Mailgun) that is enabled or has any
+  // configuration stored, in the order the server would try them.
+  repeated ProviderStatus email_providers = 3;
+  // DNS-level email authentication (SPF/DKIM/DMARC) for each distinct domain the enabled email
+  // providers send from. Independent of which provider is used -- this is what receiving mail
+  // servers (Gmail, Outlook, ...) actually check.
+  repeated EmailDomainStatus email_domains = 4;
+}
+
+// Overall verdict for a provider, domain, or single check. Ordered roughly from best to worst so
+// a UI can pick the "worst" of a list.
+enum StatusLevel {
+  // The check wasn't run, or the provider doesn't expose enough information to tell.
+  STATUS_LEVEL_UNKNOWN = 0;
+  // Everything looks right.
+  STATUS_LEVEL_OK = 1;
+  // Purely informational (e.g. an account's plan name); neither good nor bad.
+  STATUS_LEVEL_INFO = 2;
+  // Works, but something deserves an admin's attention (a trial account, a DMARC policy of
+  // `none`, an unregistered 10DLC campaign, a low balance, ...).
+  STATUS_LEVEL_WARNING = 3;
+  // Broken or about to break (bad credentials, unverified sending domain, missing DKIM, ...).
+  STATUS_LEVEL_ERROR = 4;
+  // Not configured/enabled, so nothing to check.
+  STATUS_LEVEL_DISABLED = 5;
+}
+
+// The health of one SMS or email provider integration.
+message ProviderStatus {
+  // Stable lowercase identifier: `twilio`, `bird`, `telnyx`, `postmark`, `sendgrid`, `mailgun` or
+  // `stalwart`.
+  string provider = 1;
+  // Human-friendly name, e.g. "Twilio", "SendGrid".
+  string display_name = 2;
+  // Whether the admin has switched this provider on.
+  bool enabled = 3;
+  // Whether it has all the credentials/settings it needs to attempt a send.
+  bool configured = 4;
+  // The overall verdict: the worst `level` among `checks`, or `STATUS_LEVEL_DISABLED`.
+  StatusLevel level = 5;
+  // A one-sentence, plain-language summary suitable for a headline, e.g. "Ready to send -- 1 thing
+  // needs attention."
+  string summary = 6;
+  // Individual pass/warn/fail checks, e.g. "API credentials valid", "Sender number can send SMS",
+  // "Domain authenticated (DKIM + SPF)".
+  repeated StatusCheck checks = 7;
+  // Numbers the provider reported, e.g. account balance, messages sent in the last 30 days,
+  // delivery/bounce rates.
+  repeated StatusMetric metrics = 8;
+  // A link to this provider's own dashboard, if it has a stable one.
+  optional string dashboard_url = 9;
+}
+
+// One pass/warn/fail line within a [`ProviderStatus`](#rellm-ProviderStatus) or
+// [`EmailDomainStatus`](#rellm-EmailDomainStatus).
+message StatusCheck {
+  // Short name, e.g. "API credentials".
+  string name = 1;
+  StatusLevel level = 2;
+  // What was found, e.g. "Authenticated as account AC12…".
+  string detail = 3;
+  // Optional advice for fixing a `WARNING`/`ERROR`, e.g. "Add a DMARC record at
+  // _dmarc.example.com."
+  optional string fix_hint = 4;
+}
+
+// A single labelled number/string a provider reported, e.g. `{label: "Balance", value: "$12.34"}`.
+message StatusMetric {
+  string label = 1;
+  // Already formatted for display.
+  string value = 2;
+  // Optional extra context, e.g. "last 30 days".
+  optional string detail = 3;
+}
+
+// Email-authentication (SPF/DKIM/DMARC) state for one sending domain, from live DNS lookups plus
+// whatever the providers' APIs report about domain verification.
+message EmailDomainStatus {
+  // The domain, e.g. `example.com` (the domain of the `from_address` the providers send as).
+  string domain = 1;
+  // Names of the providers (see `ProviderStatus.provider`) that send from this domain.
+  repeated string used_by = 2;
+  StatusLevel level = 3;
+  string summary = 4;
+  // The domain's parsed DMARC record. Always present; `record_found` says whether one exists.
+  DmarcStatus dmarc = 5;
+  // SPF, DKIM, MX, ... checks -- DNS lookups plus provider-reported verification state.
+  repeated StatusCheck checks = 6;
+}
+
+// A parsed DMARC record (`_dmarc.<domain>` TXT) -- RFC 7489 tags in friendly form.
+message DmarcStatus {
+  // Whether a `v=DMARC1` TXT record exists at `_dmarc.<domain>`.
+  bool record_found = 1;
+  // The raw record, e.g. `v=DMARC1; p=reject; rua=mailto:dmarc@example.com`. Empty if none.
+  string raw_record = 2;
+  // Requested handling for failing mail (`p=`): `none` (monitor only), `quarantine` or `reject`.
+  // Empty if no record.
+  string policy = 3;
+  // Policy for subdomains (`sp=`); empty means "same as `policy`".
+  string subdomain_policy = 4;
+  // Percentage of failing mail the policy applies to (`pct=`, default 100).
+  int32 percentage = 5;
+  // Where aggregate reports are sent (`rua=`).
+  repeated string aggregate_report_uris = 6;
+  // Where forensic reports are sent (`ruf=`).
+  repeated string forensic_report_uris = 7;
+  // DKIM alignment (`adkim=`): `relaxed` (default) or `strict`.
+  string dkim_alignment = 8;
+  // SPF alignment (`aspf=`): `relaxed` (default) or `strict`.
+  string spf_alignment = 9;
+  StatusLevel level = 10;
+  // One friendly sentence, e.g. "Enforced (reject) for 100% of failing mail."
+  string summary = 11;
+}

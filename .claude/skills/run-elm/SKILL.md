@@ -5,6 +5,8 @@ description: Run, build, screenshot, or regenerate protos for the local Elm SPA 
 
 Rellm's Elm frontend lives in `frontends/elm-spa` and is driven through its own `Makefile`. Paths below are relative to the repo root unless noted.
 
+> **In a Claude cloud/remote session** the commands below (`make run`, `make build`, `elm make`, `make test`) fail: Elm's package site is blocked and the global `elm` on PATH is an older 0.19.1 than the pinned 0.19.3. Use the **`elm-sandbox`** skill instead -- it has the setup, a `check.sh` (compile + elm-review + tests), and a static server + stubbed-network example for driving the app.
+
 ## Running the dev server
 
 ```

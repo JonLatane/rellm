@@ -1,6 +1,6 @@
 [package]
 name = "rellm"
-version = "0.5.553"
+version = "0.5.554"
 edition = "2024"
 
 authors = ["Jon Latané <jonlatane@gmail.com>"]
@@ -115,14 +115,60 @@ reqwest = { version = "0.13", default-features = false, features = [
   # tonic's "tls-ring" feature.
   "rustls-no-provider",
 ] }
+# SMTP submission (STARTTLS/implicit TLS + AUTH) for `logic::contact_methods::stalwart_email`. Explicit
+# features: `ring` + `webpki-roots` keep us off the aws-lc-rs backend (see the note on `reqwest`) and
+# off native-tls/openssl; the default `pool`/`hostname` features aren't needed.
+lettre = { version = "0.11.23", default-features = false, features = [
+  "smtp-transport",
+  "builder",
+  "rustls",
+  "ring",
+  "webpki-roots",
+] }
 rrule = "0.14"
+# Local text embeddings (ONNX Runtime) for semantic search/reranking -- see `logic::embeddings`. rustls
+# variants only (no OpenSSL), matching tonic/reqwest above. The model itself is downloaded from
+# Hugging Face on first use (by the `generate_embeddings` job, or the server's own warm-up thread).
+fastembed = { version = "7.7", default-features = false, optional = true, features = [
+  "ort-download-binaries-rustls-tls",
+  "hf-hub-rustls-tls",
+] }
+# fastembed's Hugging Face Hub client (same version and TLS features as its `hf-hub-rustls-tls`): the embedding service
+# uses it directly to fetch models fastembed has no built-in entry for (see `logic/embeddings/local_embedder.rs`).
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "rustls-tls"], optional = true }
+# fastembed's ONNX Runtime binding and tokenizer crate (same versions; fastembed enables the binary download and TLS
+# features): used directly by `OnnxEngine` for models fastembed doesn't know.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std"], optional = true }
+tokenizers = { version = "0.23", default-features = false, features = ["onig"], optional = true }
 mail-parser = "0.11.5"
 feed-rs = "2.4.0"
 rss = { version = "2.1.2", default-features = false, features = ["builders"] }
 atom_syndication = { version = "0.12.10", default-features = false, features = ["builders"] }
+psl = "2"
+
+# In-memory approximate nearest-neighbor index (USearch, C++ via cxx) for the per-namespace
+# `vector_search_service`. Off by default: nothing else needs it, and it adds a C++ build.
+usearch = { version = "2.26", optional = true }
 
 [features]
 static_pq = ["dep:pq-sys"]
+# Builds `vector_search_service` and its tests.
+vector-service = ["dep:usearch"]
+# The ONLY place a text-embedding model is ever loaded: `embedding_service` (the cluster-shared model service) and its
+# tests. The Rellm server and its jobs are built WITHOUT it, so no model code (fastembed / ONNX Runtime) is even linked
+# into them -- they embed by calling that service (see `logic::embeddings::model_service`).
+embedding-service = ["dep:fastembed", "dep:hf-hub", "dep:ort", "dep:tokenizers"]
+
+
+[[bin]]
+name = "vector_search_service"
+path = "src/bin/vector_search_service.rs"
+required-features = ["vector-service"]
+
+[[bin]]
+name = "embedding_service"
+path = "src/bin/embedding_service.rs"
+required-features = ["embedding-service"]
 
 [build-dependencies]
 tonic-prost-build = "0.14.6"

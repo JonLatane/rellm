@@ -36,7 +36,7 @@ pub fn verify_credentials_at(base_url: &str, access_token: &str) -> Result<Strin
         log::error!(
             "Mastodon verify_credentials failed ({}): {:?}",
             status,
-            body
+            crate::logic::log_redaction::summarize(&body)
         );
         return Err(Status::new(
             Code::FailedPrecondition,
@@ -49,7 +49,7 @@ pub fn verify_credentials_at(base_url: &str, access_token: &str) -> Result<Strin
         .ok_or_else(|| {
             log::error!(
                 "Mastodon verify_credentials response missing username: {:?}",
-                body
+                crate::logic::log_redaction::summarize(&body)
             );
             Status::new(Code::FailedPrecondition, "mastodon_token_invalid")
         })
@@ -102,8 +102,8 @@ pub fn post_status_at(
             Ok(id) => media_ids.push(id),
             Err(e) => log::error!(
                 "Failed to upload media {:?} to Mastodon, skipping: {:?}",
-                media.url,
-                e
+                crate::logic::log_redaction::redact_url(&media.url),
+                crate::logic::log_redaction::safe_error(&e)
             ),
         }
     }
@@ -127,7 +127,7 @@ pub fn post_status_at(
         "mastodon_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Mastodon post_status failed ({}): {:?}", status, body);
+        log::error!("Mastodon post_status failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(Code::FailedPrecondition, "mastodon_post_failed"));
     }
     let id = body
@@ -135,7 +135,7 @@ pub fn post_status_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Mastodon post_status response missing id: {:?}", body);
+            log::error!("Mastodon post_status response missing id: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::Internal, "mastodon_post_failed")
         })?;
     let url = body
@@ -143,7 +143,7 @@ pub fn post_status_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Mastodon post_status response missing url: {:?}", body);
+            log::error!("Mastodon post_status response missing url: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::Internal, "mastodon_post_failed")
         })?;
     Ok((id, url))
@@ -163,13 +163,13 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .get(&media_url)
             .send()
             .map_err(|e| {
-                log::error!("Failed to fetch media {:?} for Mastodon upload: {:?}", media_url, e);
+                log::error!("Failed to fetch media {:?} for Mastodon upload: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "mastodon_media_fetch_failed")
             })?;
         if !response.status().is_success() {
             log::error!(
                 "Fetching media {:?} for Mastodon upload failed ({})",
-                media_url,
+                crate::logic::log_redaction::redact_url(&media_url),
                 response.status()
             );
             return Err(Status::new(
@@ -178,7 +178,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             ));
         }
         response.bytes().map(|b| b.to_vec()).map_err(|e| {
-            log::error!("Failed to read media {:?} bytes: {:?}", media_url, e);
+            log::error!("Failed to read media {:?} bytes: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "mastodon_media_fetch_failed")
         })
     })?;
@@ -190,7 +190,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .file_name("media")
             .mime_str(&content_type)
             .map_err(|e| {
-                log::error!("Invalid media content type {:?}: {:?}", content_type, e);
+                log::error!("Invalid media content type {:?}: {:?}", content_type, crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "mastodon_request_failed")
             })?;
         let form = reqwest::blocking::multipart::Form::new().part("file", part);
@@ -200,26 +200,26 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
             .multipart(form)
             .send()
             .map_err(|e| {
-                log::error!("Mastodon media upload request failed: {:?}", e);
+                log::error!("Mastodon media upload request failed: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "mastodon_request_failed")
             })?;
         let status = response.status();
         let text = response.text().map_err(|e| {
-            log::error!("Failed to read Mastodon media upload response body: {:?}", e);
+            log::error!("Failed to read Mastodon media upload response body: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "mastodon_request_failed")
         })?;
         let value: serde_json::Value = if text.trim().is_empty() {
             serde_json::Value::Null
         } else {
             serde_json::from_str(&text).map_err(|e| {
-                log::error!("Failed to parse Mastodon media upload response as JSON: {:?} ({})", e, text);
+                log::error!("Failed to parse Mastodon media upload response as JSON: {:?} ({})", crate::logic::log_redaction::safe_error(&e), crate::logic::log_redaction::summarize(&text));
                 Status::new(Code::FailedPrecondition, "mastodon_request_failed")
             })?
         };
         Ok((status, value))
     })?;
     if !status.is_success() {
-        log::error!("Mastodon media upload failed ({}): {:?}", status, body);
+        log::error!("Mastodon media upload failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "mastodon_media_upload_failed",
@@ -229,7 +229,7 @@ fn upload_media_at(base_url: &str, access_token: &str, media: &MediaAttachment) 
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Mastodon media upload response missing id: {:?}", body);
+            log::error!("Mastodon media upload response missing id: {:?}", crate::logic::log_redaction::summarize(&body));
             Status::new(Code::Internal, "mastodon_media_upload_failed")
         })
 }

@@ -27,6 +27,7 @@ module Shared.AccountsPanel exposing
     , enabledServers
     , freshFocusedAccount
     , grpcErrorToString
+    , verificationCodeInputId
     , hasAdminAccount
     , init
     , isFocusedAccount
@@ -67,14 +68,17 @@ import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Ports
 import Process
-import Proto.Rellm exposing (AccessTokenResponse, BlueskyServer, ContactMethod, CustomCSSConfiguration, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm exposing (EmailLoginRequest, SMSLoginRequest, UsernamePasswordLoginRequest, AccessTokenResponse, BlueskyServer, ContactMethod, CustomCSSConfiguration, FederatedServer, GetPushSubscriptionStatusResponse, MastodonServer, PushSubscription, RefreshTokenResponse, ServerConfiguration, ServerInfo, User)
+import Proto.Rellm.LoginRequest.Request as LoginRequest
 import Proto.Rellm.Rellm as Rellm
+import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Proto.Rellm.WebUserInterface exposing (WebUserInterface)
 import Request exposing (Request)
 import Set exposing (Set)
 import Shared.AccountsPanel.BlueskyAccounts as BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.BlueskyAppViews as BlueskyAppViews exposing (BlueskyAppView)
+import Shared.AccountsPanel.ContactAuth as ContactAuth
 import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.MastodonAccounts as MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers as MastodonServers exposing (BrowsedMastodonInstance, MastodonInstanceInfo)
@@ -195,6 +199,21 @@ type alias Model =
     -- `NewAccountBackClicked`, a successful `GotAuthResult`, or the RellmServer
     -- field changing (`setServerField`).
     , newAccountType : Maybe NewAccountType
+
+    -- The SMS/email halves of the login and create-account forms: which "Sign in with" method is
+    -- picked, the phone/email/code fields, and any two-phase verification challenge awaiting its
+    -- code -- see `ContactAuth`. Idle (`ContactAuth.initial`, password method) unless the server
+    -- offers SMS/email and the user picks it, so servers without those features behave exactly as
+    -- before. Reset alongside `newAccountType` (`setServerField`, `HideAddAccountFormClicked`, a
+    -- successful `GotAuthResult`).
+    , contactAuth : ContactAuth.State
+
+    -- Id of the latest login/create-account request (`sendLoginRequest`, `sendContactLogin`,
+    -- `sendCreateAccount`; either phase), echoed back by its `GotAuthResult`. Anything that resets
+    -- the form (`invalidateAuthRequest`: server edit, method change, back, hiding the form, ...)
+    -- bumps it, so a reply to a request the user has since abandoned is ignored instead of landing
+    -- on a form that no longer matches it. See `ContactAuth.replyIsCurrent`.
+    , authRequestId : Int
 
     -- Set once `ChooseCreateAccountClicked` (the Username-step "Create
     -- Account" button) has resolved the target server's configuration, until
@@ -456,6 +475,11 @@ type Msg
     | ChooseCreateAccountClicked
     | NewAccountBackClicked
     | HideAddAccountFormClicked
+    | ContactAuthMsg ContactAuth.Msg
+    | SendLoginCodeClicked
+    | SubmitLoginCodeClicked
+    | ResendCreateCodeClicked
+    | CreateAccountInsteadClicked
     | GotCreateAccountServerInfo (Result Grpc.Error ( Connection, ServerConfiguration ))
     | GotCreateAccountModalViewport (Result Dom.Error Dom.Viewport)
     | AccessTokenResponseReceived RellmAccount AccessTokenResponse
@@ -463,7 +487,7 @@ type Msg
     | ConfirmCreateAccountClicked
     | GotCreateAccountAcceptedTime Time.Posix
     | CancelCreateAccountClicked
-    | GotAuthResult (Result Grpc.Error ( Connection, ServerConfiguration, RefreshTokenResponse ))
+    | GotAuthResult Int (Result Grpc.Error ( Connection, ServerConfiguration, RefreshTokenResponse ))
     | FederatedAccountReceived RellmAccount
     | GotReconnectResult String Bool Bool (Result Grpc.Error ( Connection, ServerConfiguration ))
     | GotMainServerResult (Result Grpc.Error ( Connection, ServerConfiguration ))
@@ -823,7 +847,7 @@ updateFocusedAccountFromUser : User -> Model -> Model
 updateFocusedAccountFromUser updatedUser model =
     case freshFocusedAccount model of
         Just account ->
-            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone, email = updatedUser.email } model.accounts }
+            { model | accounts = RellmAccounts.upsertRellmAccount { account | phone = updatedUser.phone, email = updatedUser.email, hasPassword = updatedUser.hasPassword } model.accounts }
 
         Nothing ->
             model
@@ -1613,6 +1637,8 @@ init req flags blueskyAccountsFlags mastodonAccountsAndServersFlags =
       , addAccountServerFormType = Nothing
       , reauthenticatingAccount = Nothing
       , newAccountType = Nothing
+      , contactAuth = ContactAuth.initial
+      , authRequestId = 0
       , createAccountConfirmation = Nothing
       , acceptedCreateAccount = Nothing
       , browsingHost = browsingHost
@@ -1709,6 +1735,13 @@ subscriptions model =
         , Ports.pushSubscriptionChecked PushSubscriptionCheckReceived
         , Ports.pushSubscriptionChangeReceived PushSubscriptionChangeReceived
         , Ports.facebookLoginResult GotMastodonLoginResult
+
+        -- Only while a verification code is awaited: ticks the resend/expiry countdowns.
+        , if model.contactAuth.loginChallenge /= Nothing || model.contactAuth.createChallenge /= Nothing then
+            Time.every 1000 (ContactAuth.Tick >> ContactAuthMsg)
+
+          else
+            Sub.none
         ]
 
 
@@ -1783,8 +1816,8 @@ update req msg model =
         -- A login/create cancelled (`HideAddAccountFormClicked` resets the status to `Idle`) while
         -- its request was in flight: drop the late result rather than signing in behind the
         -- user's back. Both senders (`LoginClicked`/`CreateAccountClicked`) set `Submitting` first.
-        GotAuthResult _ ->
-            if model.accountForm.status /= Submitting then
+        GotAuthResult requestId _ ->
+            if not (ContactAuth.replyIsCurrent { currentId = model.authRequestId, replyId = requestId, submitting = model.accountForm.status == Submitting }) then
                 ( model, Cmd.none )
 
             else
@@ -1906,6 +1939,259 @@ syncItemAnimations model =
     }
 
 
+{-| DOM id of the verification code `<input>` (`UI.ContactAuthView.codeStep`), focused once a code's
+been sent.
+-}
+verificationCodeInputId : String
+verificationCodeInputId =
+    "account-form-code"
+
+
+{-| Shows the code step for a first-phase `verification_challenge` (login or create-account, per
+`newAccountType`), clears any stale code, starts the countdown clock and focuses the code field.
+-}
+applyVerificationChallenge : RefreshTokenResponse -> Model -> ( Model, Cmd Msg )
+applyVerificationChallenge resp model =
+    case resp.verificationChallenge of
+        Just challenge ->
+            let
+                contactAuth : ContactAuth.State
+                contactAuth =
+                    model.contactAuth
+            in
+            ( updateForm (\f -> { f | status = Idle })
+                (if model.newAccountType == Just CreateNewAccount then
+                    { model | contactAuth = { contactAuth | createPhoneCode = "", createEmailCode = "", createChallenge = Just (ContactAuth.challengeFromProto challenge) } }
+
+                 else
+                    { model | contactAuth = { contactAuth | code = "", loginChallenge = Just (ContactAuth.challengeFromProto challenge) } }
+                )
+            , Cmd.batch
+                [ Task.perform (ContactAuth.Tick >> ContactAuthMsg) Time.now
+                , Task.attempt (\_ -> NoOp) (Dom.focus verificationCodeInputId)
+                ]
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Abandons whatever login/create-account request is in flight: bumps `authRequestId` so its reply is
+ignored (`ContactAuth.replyIsCurrent`), and frees the form from `Submitting` (nothing is left to
+wait for). Run by everything that resets the form -- server edit, method change, back, hiding the
+form.
+-}
+invalidateAuthRequest : Model -> Model
+invalidateAuthRequest model =
+    { model | authRequestId = model.authRequestId + 1 }
+        |> updateForm
+            (\f ->
+                if f.status == Submitting then
+                    { f | status = Idle }
+
+                else
+                    f
+            )
+
+
+{-| `grpcErrorToString`, with friendlier wording for the SMS/email verification errors
+(`ContactAuth.friendlyMessage`). Anything else -- every password login/create-account error
+included -- is formatted exactly as before.
+-}
+authErrorToString : Grpc.Error -> String
+authErrorToString err =
+    case err of
+        Grpc.BadStatus { errMessage } ->
+            ContactAuth.friendlyMessage errMessage
+                |> Maybe.withDefault (grpcErrorToString err)
+
+        _ ->
+            grpcErrorToString err
+
+
+{-| Backing out of the create-account step: forgets the phone/email/consent/codes typed there (and
+any pending challenge), keeping the picked login method and its field.
+-}
+resetContactCreate : ContactAuth.State -> ContactAuth.State
+resetContactCreate state =
+    { state
+        | createPhone = ""
+        , createEmail = ""
+        , createConsent = False
+        , createPhoneCode = ""
+        , createEmailCode = ""
+        , createChallenge = Nothing
+    }
+
+
+{-| Sends the SMS/email `Login` RPC for `model.contactAuth`: the first phase (no code, which makes
+the server text/email one -- also what "Resend" does) or, with `withCode`, the second phase with the
+code typed. The answer arrives as `GotAuthResult` like every other login: tokens on success, or a
+`verification_challenge` the first time.
+-}
+sendContactLogin : Request -> Bool -> Model -> ( Model, Cmd Msg )
+sendContactLogin req withCode model =
+    let
+        state : ContactAuth.State
+        state =
+            model.contactAuth
+
+        code : Maybe String
+        code =
+            if withCode then
+                Just state.code
+
+            else
+                Nothing
+
+        body : Maybe (LoginRequest.Request UsernamePasswordLoginRequest SMSLoginRequest EmailLoginRequest)
+        body =
+            case state.method of
+                ContactAuth.SmsMethod ->
+                    Just
+                        (LoginRequest.Sms
+                            { phoneNumber = ContactAuth.normalizePhone state.contact
+                            , code = code
+                            , expiresAt = Nothing
+                            , deviceName = Nothing
+                            , userId = Nothing
+                            , consentToContact = state.loginConsent
+                            }
+                        )
+
+                ContactAuth.EmailMethod ->
+                    Just
+                        (LoginRequest.Email
+                            { email = ContactAuth.emailValue state.contact
+                            , code = code
+                            , expiresAt = Nothing
+                            , deviceName = Nothing
+                            , userId = Nothing
+                            , consentToContact = state.loginConsent
+                            }
+                        )
+
+                ContactAuth.PasswordMethod ->
+                    Nothing
+    in
+    case body of
+        Nothing ->
+            ( model, Cmd.none )
+
+        Just request ->
+            ( { model | authRequestId = model.authRequestId + 1 }
+                |> updateForm (\f -> { f | status = Submitting })
+                |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
+            , RellmServers.resolveHost (RellmServers.isSecure req) model.servers (String.trim model.accountForm.server)
+                |> Task.andThen
+                    (\( connection, config ) ->
+                        Grpc.new Rellm.login { request = Just request }
+                            |> Grpc.setHost (RellmServers.connectionUrl connection)
+                            |> Grpc.toTask
+                            |> Task.map (\resp -> ( connection, config, resp ))
+                    )
+                |> Task.attempt (GotAuthResult (model.authRequestId + 1))
+            )
+
+
+{-| Sends the `CreateAccount` RPC for the accepted server/username and the Password step's fields
+-- plus, when the server verifies contact methods at sign-up (`ContactAuth.createPhoneEnabled`/
+`createEmailEnabled`) and one was typed, that phone/email as a `ContactMethod` with the consent the
+backend requires before it may message it. `withCodes` is the second phase: it adds the codes typed
+for the pending challenge; without it (the first request, or "Resend") the server just sends them.
+A server without those features never sees a phone/email, so this is the classic request.
+-}
+sendCreateAccount : Bool -> Model -> ( Model, Cmd Msg )
+sendCreateAccount withCodes model =
+    case model.acceptedCreateAccount of
+        Nothing ->
+            -- The submit button only renders once `newAccountType`
+            -- is `Just CreateNewAccount`, which only happens once
+            -- `acceptedCreateAccount` is set (`ConfirmCreateAccountClicked`)
+            -- -- unreachable in practice.
+            ( model, Cmd.none )
+
+        Just accepted ->
+            case ( RellmServers.connectionOf accepted.server, accepted.server.connected ) of
+                ( Just connection, Just { configuration } ) ->
+                    let
+                        form : AccountForm
+                        form =
+                            model.accountForm
+
+                        state : ContactAuth.State
+                        state =
+                            model.contactAuth
+
+                        contactMethod : String -> String -> Maybe ContactMethod
+                        contactMethod scheme value =
+                            if String.isEmpty value then
+                                Nothing
+
+                            else
+                                Just
+                                    { value = Just (scheme ++ value)
+                                    , visibility = PRIVATE
+                                    , supportedByServer = False
+                                    , verifiedAt = Nothing
+                                    , verificationInProgress = Nothing
+                                    , consentState = CONTACTCONSENTGRANTED
+                                    , consentHistory = []
+
+                                    -- Set by the server: a contact method verified at sign-up is
+                                    -- implicitly a sign-in method.
+                                    , useForSignIn = Nothing
+                                    }
+
+                        phone : Maybe ContactMethod
+                        phone =
+                            if ContactAuth.createPhoneEnabled configuration then
+                                contactMethod "tel:" (ContactAuth.normalizePhone state.createPhone)
+
+                            else
+                                Nothing
+
+                        email : Maybe ContactMethod
+                        email =
+                            if ContactAuth.createEmailEnabled configuration then
+                                contactMethod "mailto:" (ContactAuth.emailValue state.createEmail)
+
+                            else
+                                Nothing
+
+                        code : String -> Maybe ContactMethod -> Maybe String
+                        code typed contact =
+                            if withCodes && contact /= Nothing && typed /= "" then
+                                Just typed
+
+                            else
+                                Nothing
+                    in
+                    ( { model | authRequestId = model.authRequestId + 1 }
+                        |> updateForm (\f -> { f | status = Submitting })
+                    , Grpc.new Rellm.createAccount
+                        { username = accepted.username
+                        , password = form.password
+                        , email = email
+                        , phone = phone
+                        , expiresAt = Nothing
+                        , deviceName = Nothing
+                        , phoneVerificationCode = code state.createPhoneCode phone
+                        , emailVerificationCode = code state.createEmailCode email
+                        }
+                        |> Grpc.setHost (RellmServers.connectionUrl connection)
+                        |> Grpc.toTask
+                        |> Task.map (\resp -> ( connection, configuration, resp ))
+                        |> Task.attempt (GotAuthResult (model.authRequestId + 1))
+                    )
+
+                -- `accepted.server` was built by `RellmServers.rellmServerFrom` (see
+                -- `GotCreateAccountServerInfo`), which is always connected --
+                -- unreachable in practice.
+                _ ->
+                    ( model, Cmd.none )
+
+
 sendUpdate : Request -> Msg -> Model -> ( Model, Cmd Msg )
 sendUpdate req msg model =
     case msg of
@@ -1965,7 +2251,8 @@ sendUpdate req msg model =
                     )
 
         NewAccountBackClicked ->
-            ( { model | newAccountType = Nothing, acceptedCreateAccount = Nothing }
+            ( { model | newAccountType = Nothing, acceptedCreateAccount = Nothing, contactAuth = resetContactCreate model.contactAuth }
+                |> invalidateAuthRequest
                 |> updateForm (\f -> { f | password = "", showPasswordAsText = False })
             , Cmd.none
             )
@@ -1975,7 +2262,8 @@ sendUpdate req msg model =
             -- to the Username step (`NewAccountBackClicked`'s own reset), no pending create-account
             -- confirmation, password cleared, and no in-flight/errored status -- an `Idle` status is
             -- also what makes a still-pending `GotAuthResult` get ignored (see its guard clause).
-            ( { model | addAccountServerFormType = Nothing, reauthenticatingAccount = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing }
+            ( { model | addAccountServerFormType = Nothing, reauthenticatingAccount = Nothing, newAccountType = Nothing, acceptedCreateAccount = Nothing, createAccountConfirmation = Nothing, contactAuth = ContactAuth.initial }
+                |> invalidateAuthRequest
                 |> updateForm (\f -> { f | password = "", showPasswordAsText = False, status = Idle })
             , Cmd.none
             )
@@ -1990,64 +2278,64 @@ sendUpdate req msg model =
                 server =
                     String.trim form.server
             in
-            ( model
+            ( { model | authRequestId = model.authRequestId + 1 }
                 |> updateForm (\f -> { f | status = Submitting })
                 |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
             , RellmServers.resolveHost (RellmServers.isSecure req) model.servers server
                 |> Task.andThen
                     (\( connection, config ) ->
                         Grpc.new Rellm.login
-                            { username = form.username
-                            , password = form.password
-                            , expiresAt = Nothing
-                            , deviceName = Nothing
-                            , userId = Nothing
+                            { request =
+                                Just
+                                    (LoginRequest.UsernamePassword
+                                        { username = form.username
+                                        , password = form.password
+                                        , expiresAt = Nothing
+                                        , deviceName = Nothing
+                                        , userId = Nothing
+                                        }
+                                    )
                             }
                             |> Grpc.setHost (RellmServers.connectionUrl connection)
                             |> Grpc.toTask
                             |> Task.map (\resp -> ( connection, config, resp ))
                     )
-                |> Task.attempt GotAuthResult
+                |> Task.attempt (GotAuthResult (model.authRequestId + 1))
             )
 
         CreateAccountClicked ->
-            case model.acceptedCreateAccount of
-                Nothing ->
-                    -- The submit button only renders once `newAccountType`
-                    -- is `Just CreateNewAccount`, which only happens once
-                    -- `acceptedCreateAccount` is set (`ConfirmCreateAccountClicked`)
-                    -- -- unreachable in practice.
-                    ( model, Cmd.none )
+            sendCreateAccount True model
 
-                Just accepted ->
-                    case ( RellmServers.connectionOf accepted.server, accepted.server.connected ) of
-                        ( Just connection, Just { configuration } ) ->
-                            let
-                                form : AccountForm
-                                form =
-                                    model.accountForm
-                            in
-                            ( model
-                                |> updateForm (\f -> { f | status = Submitting })
-                            , Grpc.new Rellm.createAccount
-                                { username = accepted.username
-                                , password = form.password
-                                , email = Nothing
-                                , phone = Nothing
-                                , expiresAt = Nothing
-                                , deviceName = Nothing
-                                }
-                                |> Grpc.setHost (RellmServers.connectionUrl connection)
-                                |> Grpc.toTask
-                                |> Task.map (\resp -> ( connection, configuration, resp ))
-                                |> Task.attempt GotAuthResult
-                            )
+        ResendCreateCodeClicked ->
+            sendCreateAccount False model
 
-                        -- `accepted.server` was built by `RellmServers.rellmServerFrom` (see
-                        -- `GotCreateAccountServerInfo`), which is always connected --
-                        -- unreachable in practice.
-                        _ ->
-                            ( model, Cmd.none )
+        ContactAuthMsg contactMsg ->
+            let
+                updated : Model
+                updated =
+                    { model | contactAuth = ContactAuth.update contactMsg model.contactAuth }
+            in
+            ( if ContactAuth.resetsForm contactMsg then
+                invalidateAuthRequest updated
+
+              else
+                updated
+            , Cmd.none
+            )
+
+        SendLoginCodeClicked ->
+            sendContactLogin req False model
+
+        SubmitLoginCodeClicked ->
+            sendContactLogin req True model
+
+        CreateAccountInsteadClicked ->
+            -- Creating an account starts from a username, which only the Password method's form has.
+            ( { model | contactAuth = ContactAuth.update (ContactAuth.MethodSelected ContactAuth.PasswordMethod) model.contactAuth }
+                |> invalidateAuthRequest
+                |> updateForm (\f -> { f | status = clearErrored f.status })
+            , Task.attempt (\_ -> NoOp) (Dom.focus "account-form-username")
+            )
 
         GotCreateAccountServerInfo (Ok ( connection, config )) ->
             let
@@ -2131,7 +2419,7 @@ sendUpdate req msg model =
             , Cmd.none
             )
 
-        GotAuthResult (Ok ( connection, config, resp )) ->
+        GotAuthResult _ (Ok ( connection, config, resp )) ->
             case ( resp.user, resp.refreshToken, resp.accessToken ) of
                 ( Just user, Just refreshToken, Just accessToken ) ->
                     let
@@ -2161,6 +2449,7 @@ sendUpdate req msg model =
                             , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                             , phone = user.phone
                             , email = user.email
+                            , hasPassword = user.hasPassword
                             }
 
                         newModel : Model
@@ -2181,6 +2470,8 @@ sendUpdate req msg model =
                                     { form | password = "", showPasswordAsText = False, status = Idle }
                                 , newAccountType = Nothing
                                 , acceptedCreateAccount = Nothing
+                                , contactAuth = ContactAuth.initial
+                                , authRequestId = model.authRequestId + 1
 
                                 -- Collapse the form (and any reauth filter) so the accounts list re-appears.
                                 , addAccountServerFormType = Nothing
@@ -2189,13 +2480,26 @@ sendUpdate req msg model =
                     in
                     ( newModel, persist newModel )
 
+                -- First phase of a two-phase SMS/email login or create-account: a code went out, and
+                -- the form now asks for it (`UI.ContactAuthView.codeStep`).
                 _ ->
-                    ( updateForm (\f -> { f | status = Errored "Server response was missing user/token data." }) model
-                    , Cmd.none
-                    )
+                    case resp.verificationChallenge of
+                        Just _ ->
+                            if model.newAccountType /= Just CreateNewAccount && model.contactAuth.method == ContactAuth.PasswordMethod then
+                                -- A login code can only be for an SMS/email method; with Password
+                                -- picked there's no step to show it on.
+                                ( updateForm (\f -> { f | status = Idle }) model, Cmd.none )
 
-        GotAuthResult (Err err) ->
-            ( updateForm (\f -> { f | status = Errored (grpcErrorToString err) }) model
+                            else
+                                applyVerificationChallenge resp model
+
+                        Nothing ->
+                            ( updateForm (\f -> { f | status = Errored "Server response was missing user/token data." }) model
+                            , Cmd.none
+                            )
+
+        GotAuthResult _ (Err err) ->
+            ( updateForm (\f -> { f | status = Errored (authErrorToString err) }) model
             , Cmd.none
             )
 
@@ -3544,6 +3848,8 @@ sendUpdate req msg model =
                 | addAccountServerFormType = Just RellmServerFormType
                 , reauthenticatingAccount = Just ( account.server, account.username )
                 , newAccountType = Just LoginToAccount
+                , contactAuth = ContactAuth.initial
+                , authRequestId = model.authRequestId + 1
                 , accountForm =
                     { server = account.server
                     , username = account.username
@@ -4826,6 +5132,8 @@ hasInProgressAddAccountInput model =
     (String.trim form.username /= "")
         || (String.trim form.password /= "")
         || (model.newAccountType /= Nothing)
+        || (String.trim model.contactAuth.contact /= "")
+        || (model.contactAuth.loginChallenge /= Nothing)
         || not (isKnownServer model form.server)
         || (String.trim model.browseMastodonInstanceInput /= "")
         || (String.trim model.blueskyConnectForm.handle /= "")
@@ -4917,7 +5225,8 @@ applies.
 -}
 setServerField : String -> Model -> Model
 setServerField server model =
-    { model | newAccountType = Nothing, createAccountConfirmation = Nothing, acceptedCreateAccount = Nothing }
+    { model | newAccountType = Nothing, createAccountConfirmation = Nothing, acceptedCreateAccount = Nothing, contactAuth = ContactAuth.initial }
+        |> invalidateAuthRequest
         |> updateForm (\form -> { form | server = server, status = clearErrored form.status })
         |> updateAddServerForm (\f -> { f | status = clearErrored f.status })
 

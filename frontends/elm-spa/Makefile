@@ -35,6 +35,7 @@ setup_proto_build:
 # Generate into a temp dir, then sync src/Proto in one step (and only touch files whose
 # contents changed) so the elm-spa dev server rebuilds once instead of per-file.
 protos:
+	@../../protos/check_protoc_version.sh
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
 		protoc --elm_out="$$tmp" -I../../protos ../../protos/*.proto && \
 		mkdir -p src/Proto && \

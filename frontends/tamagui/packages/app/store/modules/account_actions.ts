@@ -1,4 +1,4 @@
-import { CreateAccountRequest, FederatedAccount, LoginRequest } from "@rellm/api";
+import { CreateAccountRequest, FederatedAccount, UsernamePasswordLoginRequest } from "@rellm/api";
 import {
   AsyncThunk,
   createAsyncThunk
@@ -15,6 +15,11 @@ export const createAccount = createAsyncThunk<RellmAccount, CreateAccount>(
       ...createAccountRequest,
       deviceName: getDeviceName()
     });
+    // A server may answer with a `verificationChallenge` instead of tokens (SMS/email sign-up is
+    // two-phase). This client only supports password sign-up, so that's an unfinished sign-up.
+    if (!user || !refreshToken || !accessToken) {
+      throw new Error("Account creation did not complete.");
+    }
     return {
       user: user!,
       refreshToken: refreshToken!,
@@ -24,15 +29,25 @@ export const createAccount = createAsyncThunk<RellmAccount, CreateAccount>(
   }
 );
 
-export type Login = RellmServer & LoginRequest & SkipSelection;
+// Password login only: `LoginRequest` is a oneof (`usernamePassword`/`sms`/`email`), and this
+// client doesn't offer the SMS/email methods -- callers keep passing the flat username/password.
+export type Login = RellmServer & UsernamePasswordLoginRequest & SkipSelection;
 export const login = createAsyncThunk<RellmAccount, Login>(
   "accounts/login",
   async (loginRequest) => {
     const client = await getServerClient(loginRequest);
     const { refreshToken, accessToken, user } = await client.login({
-      ...loginRequest,
-      deviceName: getDeviceName()
+      usernamePassword: {
+        username: loginRequest.username,
+        password: loginRequest.password,
+        expiresAt: loginRequest.expiresAt,
+        userId: loginRequest.userId,
+        deviceName: getDeviceName()
+      }
     });
+    if (!user || !refreshToken || !accessToken) {
+      throw new Error("Login did not complete.");
+    }
     return {
       user: user!,
       refreshToken: refreshToken!,

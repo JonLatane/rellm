@@ -80,7 +80,7 @@ pub fn get_ai_providers_for_users(
         .order(ai_providers::created_at.asc())
         .load::<(AIProvider, Author)>(conn)
         .map_err(|e| {
-            log::error!("Failed to load AI model providers for users {:?}: {:?}", user_ids, e);
+            log::error!("Failed to load AI model providers for users {:?}: {:?}", user_ids, crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_ai_providers")
         })
 }
@@ -104,7 +104,7 @@ pub fn get_ai_provider_grants_for_providers(
             log::error!(
                 "Failed to load AI model provider grants for providers {:?}: {:?}",
                 provider_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_ai_provider_grants")
         })
@@ -137,7 +137,7 @@ pub fn get_ai_provider_grants_for_grantees(
             log::error!(
                 "Failed to load AI model provider grants for grantees {:?}: {:?}",
                 grantee_ids,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_load_ai_provider_grants")
         })
@@ -167,7 +167,7 @@ pub fn upsert_ai_provider_grant(
         ))
         .get_result::<AIProviderGrant>(conn)
         .map_err(|e| {
-            log::error!("Failed to grant AI model provider access: {:?}", e);
+            log::error!("Failed to grant AI model provider access: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_grant_ai_provider")
         })
 }
@@ -185,7 +185,7 @@ pub fn delete_ai_provider_grant(
     )
     .execute(conn)
     .map_err(|e| {
-        log::error!("Failed to revoke AI model provider access: {:?}", e);
+        log::error!("Failed to revoke AI model provider access: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "failed_to_revoke_ai_provider")
     })?;
     Ok(())
@@ -202,7 +202,7 @@ pub fn delete_ai_provider_grants(
             log::error!(
                 "Failed to delete grants for AI model provider {}: {:?}",
                 ai_provider_id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
             Status::new(Code::Internal, "failed_to_delete_ai_provider_grants")
         })?;

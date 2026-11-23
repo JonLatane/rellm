@@ -36,11 +36,7 @@ pub fn get_groups(
     //     "GetGroups::request: {:?}, response: {:?}",
     //     request, response
     // );
-    log::info!(
-        "GetGroups::request: {:?}, response_length: {:?}",
-        request,
-        response.groups.len()
-    );
+    log::info!("GetGroups: response_length: {}", response.groups.len());
     Ok(response)
 }
 

@@ -99,7 +99,7 @@ async fn stripe_webhook(
     match handle_checkout_session_completed(session, &stripe_config, &mut conn) {
         Ok(()) => Status::Ok,
         Err(e) => {
-            log::error!("Failed to handle Stripe checkout.session.completed: {:?}", e);
+            log::error!("Failed to handle Stripe checkout.session.completed: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::InternalServerError
         }
     }
@@ -234,7 +234,7 @@ fn process_checkout_session_completed(
         .first::<models::MarketPurchase>(conn)
         .optional()
         .map_err(|e| {
-            log::error!("Failed to check for existing market purchase: {:?}", e);
+            log::error!("Failed to check for existing market purchase: {:?}", crate::logic::log_redaction::safe_error(&e));
             tonic::Status::new(tonic::Code::Internal, "db_error")
         })?
         .is_some();

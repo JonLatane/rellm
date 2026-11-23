@@ -53,7 +53,7 @@ pub(super) fn delete_removed_occasions_impl(
     )
         .execute(conn)
         .map_err(|e| {
-            log::error!("Failed to delete event occasions: {:?}", e);
+            log::error!("Failed to delete event occasions: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_delete_occasions")
         })?;
 

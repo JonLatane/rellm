@@ -120,7 +120,7 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<Array<Text>, _>(&passing)
     .load(conn)
     .unwrap_or_else(|e| {
-        log::error!("Failed to load RSVP counts: {:?}", e);
+        log::error!("Failed to load RSVP counts: {:?}", crate::logic::log_redaction::safe_error(&e));
         vec![]
     });
 
@@ -156,7 +156,7 @@ pub fn load_visible_rsvp_counts_and_ids(
     .bind::<BigInt, _>(MAX_RSVPS_PER_OCCASION)
     .load(conn)
     .unwrap_or_else(|e| {
-        log::error!("Failed to load capped RSVP ids: {:?}", e);
+        log::error!("Failed to load capped RSVP ids: {:?}", crate::logic::log_redaction::safe_error(&e));
         vec![]
     });
 

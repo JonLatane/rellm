@@ -981,7 +981,7 @@ pub fn configure_twilio(
 /// mirroring the invariant `validate_configuration` enforces on the real `ConfigureServer` path
 /// (a real client never reaches these factories, which write straight to the DB, so it's not
 /// re-checked here). Consulted by `contact_verification::verification_available`/
-/// `contact_protocol_supported`, which -- since `ContactIntegrationsTab.elm`'s "Enable SMS
+/// `contact_protocol_supported`, which -- since `SignInAndContactTab.elm`'s "Enable SMS
 /// Sending" toggle -- is the actual gate on both `ContactMethod.supported_by_server` and
 /// `StartContactMethodVerification` itself, not just the provider's own `*_enabled` flag.
 fn supported_contact_protocols_json(sms_enabled: bool) -> Option<serde_json::Value> {

@@ -77,7 +77,7 @@ pub fn create_sync_source(
         })
         .get_result::<models::SyncSource>(conn)
         .map_err(|e| {
-            log::error!("Failed to create sync source: {:?}", e);
+            log::error!("Failed to create sync source: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_create_sync_source")
         })?;
 
@@ -98,7 +98,7 @@ pub fn create_sync_source(
             log::error!(
                 "Failed to delete SyncSource {} after failed initial sync: {:?}",
                 inserted.id,
-                e
+                crate::logic::log_redaction::safe_error(&e)
             );
         }
         return Err(sync_err);

@@ -12,6 +12,9 @@ fn main() {
         // fulfillment chat fields (`fulfillment_status`/`fulfillment_notes`/`notes_last_read`), so a missing
         // key must deserialize to its default rather than fail.
         .type_attribute("MediaStorageSubscriptionDetails", "#[serde(default)]")
+        // `stalwart_config` JSON stored before sending/management fields existed
+        // (`{"stalwart_receiving_enabled": true}`) must still deserialize.
+        .type_attribute("StalwartConfig", "#[serde(default)]")
         .type_attribute("AIGrantSubscriptionDetails", "#[serde(default)]")
         .type_attribute("PermissionsAccessSubscriptionDetails", "#[serde(default)]")
         // Subdomain subscription details are stored as JSON and edited piecemeal (`SaveMarketSubscription`),
@@ -20,7 +23,11 @@ fn main() {
         .type_attribute("SubdomainSettings", "#[serde(default)]")
         .type_attribute("SubdomainPurchaseDetails", "#[serde(default)]")
         .type_attribute("CustomCSSConfiguration", "#[serde(default)]")
-        // Used for updating servers from 0.5.551 -> 0.5.553+. Can be removed
+        // `users.phone`/`users.email` JSON stored before `use_for_sign_in` existed must still
+        // deserialize (it defaults to `false`; the migration that added it turned it on for every
+        // already-verified contact method).
+        .type_attribute("ContactMethod", "#[serde(default)]")
+        // Used for updating servers from 0.5.551 -> 0.5.554+. Can be removed
         // in the distant future.
         // Lets `event_settings` JSON stored before this field existed deserialize
         // instead of erroring, defaulting to CALENDAR_DISPLAY_WEEK (proto enum value 0).
@@ -210,4 +217,15 @@ fn main() {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }
+
+    // The internal services (`internal_protos/`) -- deliberately not part of `../protos`, so they never reach
+    // the generated docs or the frontend clients. Generated Rust is committed, like `src/protos`.
+    let _ = fs::create_dir("./src/internal_protos");
+    tonic_prost_build::configure()
+        .build_server(true)
+        .build_client(true)
+        .out_dir("./src/internal_protos")
+        .compile_protos(&["internal_protos/rellm_internal.proto"], &["internal_protos"])
+        .unwrap_or_else(|e| panic!("internal protobuf compile error: {}", e));
+    println!("cargo:rerun-if-changed=internal_protos/rellm_internal.proto");
 }

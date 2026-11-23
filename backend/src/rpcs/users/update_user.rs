@@ -43,14 +43,27 @@ use crate::rpcs::validations::*;
 /// value, same as every other plain field `update_user` copies over unconditionally -- callers
 /// (e.g. `UserProfilePage.elm`) always resend the user's current phone/email on every save, so an
 /// absent value here means the user genuinely has none.
+///
+/// `use_for_sign_in` (see `ContactMethod.use_for_sign_in`) is taken from client input only when the
+/// contact method is (still) verified: editing `value` switches it off, and asking to switch it on
+/// for an unverified one is `contact_must_be_verified_for_sign_in`. Unset means "unchanged". And
+/// while the contact method *is* a sign-in method and the account has no password (`has_password`),
+/// it can't be turned off, changed or removed -- `password_required_for_sign_in` -- or the account
+/// would be left with no way in.
 fn apply_contact_method_update(
     existing: Option<serde_json::Value>,
     incoming: Option<&ContactMethod>,
+    has_password: bool,
     is_supported: impl Fn(&str) -> bool,
-) -> Option<serde_json::Value> {
-    let incoming = incoming?;
+) -> Result<Option<serde_json::Value>, Status> {
     let existing_cm: Option<ContactMethod> =
         existing.and_then(|v| serde_json::from_value(v).ok());
+    let was_sign_in = existing_cm.as_ref().is_some_and(|cm| cm.use_for_sign_in == Some(true));
+    let password_required = || Status::new(Code::FailedPrecondition, "password_required_for_sign_in");
+    let Some(incoming) = incoming else {
+        // Omitted entirely: clears the stored contact method.
+        return if was_sign_in && !has_password { Err(password_required()) } else { Ok(None) };
+    };
     let value_changed = existing_cm.as_ref().and_then(|cm| cm.value.clone()) != incoming.value;
     let (verified_at, verification_in_progress) = if value_changed {
         (None, None)
@@ -63,6 +76,25 @@ fn apply_contact_method_update(
         )
     };
     let supported_by_server = incoming.value.as_deref().is_some_and(&is_supported);
+
+    let use_for_sign_in = if value_changed {
+        if was_sign_in && !has_password {
+            return Err(password_required());
+        }
+        false
+    } else {
+        let requested = incoming.use_for_sign_in.unwrap_or(was_sign_in);
+        if requested && verified_at.is_none() {
+            return Err(Status::new(
+                Code::FailedPrecondition,
+                "contact_must_be_verified_for_sign_in",
+            ));
+        }
+        if was_sign_in && !requested && !has_password {
+            return Err(password_required());
+        }
+        requested
+    };
 
     let existing_consent_state = existing_cm
         .as_ref()
@@ -81,7 +113,7 @@ fn apply_contact_method_update(
         });
     }
 
-    Some(
+    Ok(Some(
         serde_json::to_value(ContactMethod {
             value: incoming.value.clone(),
             visibility: incoming.visibility,
@@ -90,9 +122,10 @@ fn apply_contact_method_update(
             verification_in_progress,
             consent_state: requested_consent_state as i32,
             consent_history,
+            use_for_sign_in: Some(use_for_sign_in),
         })
         .unwrap(),
-    )
+    ))
 }
 
 pub fn update_user(
@@ -133,6 +166,8 @@ pub fn update_user(
         moderator
     );
 
+    // Set when a contact-method change is refused inside the transaction (see below).
+    let mut refused: Option<Status> = None;
     let transaction_result: Result<models::User, diesel::result::Error> = conn
         .transaction::<models::User, diesel::result::Error, _>(|conn| {
             let mut existing_user = users::table
@@ -168,16 +203,32 @@ pub fn update_user(
                 // request.
                 let tel_supported = contact_protocol_supported(conn, ContactProtocol::Tel);
                 let mailto_supported = contact_protocol_supported(conn, ContactProtocol::Mailto);
-                existing_user.phone = apply_contact_method_update(
+                // A refused contact-method change (`password_required_for_sign_in`, ...) aborts the
+                // whole update; the status is carried out through the `Err` side below.
+                existing_user.phone = match apply_contact_method_update(
                     existing_user.phone.to_owned(),
                     request.phone.as_ref(),
+                    existing_user.has_password,
                     |value| value.starts_with("tel:") && tel_supported,
-                );
-                existing_user.email = apply_contact_method_update(
+                ) {
+                    Ok(v) => v,
+                    Err(status) => {
+                        refused = Some(status);
+                        return Err(RollbackTransaction);
+                    }
+                };
+                existing_user.email = match apply_contact_method_update(
                     existing_user.email.to_owned(),
                     request.email.as_ref(),
+                    existing_user.has_password,
                     |value| value.starts_with("mailto:") && mailto_supported,
-                );
+                ) {
+                    Ok(v) => v,
+                    Err(status) => {
+                        refused = Some(status);
+                        return Err(RollbackTransaction);
+                    }
+                };
             }
             if admin {
                 // `EDIT_CLUSTER_SETTINGS`/`EDIT_SERVER_MEDIA_ALLOCATION`/`VIEW_SERVER_LOGS` are
@@ -209,7 +260,7 @@ pub fn update_user(
             }
             existing_user.updated_at = SystemTime::now().into();
 
-            log::info!("Updating user: {:?}", existing_user);
+            log::info!("Updating user_id={}", existing_user.id);
             match diesel::update(users::table)
                 .filter(users::id.eq(&existing_user.id))
                 .set(&existing_user)
@@ -235,19 +286,23 @@ pub fn update_user(
             // Ok(result.to_proto(&None, &None, None))
         }
         Err(NotFound) => Err(Status::new(Code::NotFound, "user_not_found")),
-        Err(RollbackTransaction) => Err(Status::new(
-            Code::InvalidArgument,
-            "cannot_publish_globally",
-        )),
+        Err(RollbackTransaction) => Err(refused.take().unwrap_or_else(|| {
+            Status::new(Code::InvalidArgument, "cannot_publish_globally")
+        })),
         Err(DatabaseError(UniqueViolation, _)) => {
             Err(Status::new(Code::NotFound, "duplicate_username"))
         }
         Err(e) => {
-            log::error!("Error updating user: {:?}", e);
+            log::error!("Error updating user: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "data_error"))
         }
     };
-    log::info!("UpdateUser::request: {:?}, result: {:?}", &request, result);
+    // Never dump the request/result: both carry the user's username, email and phone.
+    log::info!(
+        "UpdateUser: user_id={:?}, ok={}",
+        &request.id,
+        result.is_ok()
+    );
 
     result
 }

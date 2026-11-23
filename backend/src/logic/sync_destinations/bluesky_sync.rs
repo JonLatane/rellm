@@ -40,7 +40,7 @@ pub fn create_session_at(
         "bluesky_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Bluesky createSession failed ({}): {:?}", status, response);
+        log::error!("Bluesky createSession failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&response));
         return Err(Status::new(
             Code::FailedPrecondition,
             "bluesky_credentials_invalid",
@@ -51,7 +51,7 @@ pub fn create_session_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Bluesky createSession response missing did: {:?}", response);
+            log::error!("Bluesky createSession response missing did: {:?}", crate::logic::log_redaction::summarize(&response));
             Status::new(Code::FailedPrecondition, "bluesky_credentials_invalid")
         })?;
     let access_jwt = response
@@ -61,7 +61,7 @@ pub fn create_session_at(
         .ok_or_else(|| {
             log::error!(
                 "Bluesky createSession response missing accessJwt: {:?}",
-                response
+                crate::logic::log_redaction::summarize(&response)
             );
             Status::new(Code::FailedPrecondition, "bluesky_credentials_invalid")
         })?;
@@ -125,8 +125,8 @@ pub fn post_record_at(
             Ok(blob) => blobs.push(blob),
             Err(e) => log::error!(
                 "Failed to upload image {:?} to Bluesky, skipping: {:?}",
-                image.url,
-                e
+                crate::logic::log_redaction::redact_url(&image.url),
+                crate::logic::log_redaction::safe_error(&e)
             ),
         }
     }
@@ -165,7 +165,7 @@ pub fn post_record_at(
         "bluesky_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Bluesky createRecord failed ({}): {:?}", status, response);
+        log::error!("Bluesky createRecord failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&response));
         return Err(Status::new(Code::FailedPrecondition, "bluesky_post_failed"));
     }
     let uri = response
@@ -175,7 +175,7 @@ pub fn post_record_at(
         .ok_or_else(|| {
             log::error!(
                 "Bluesky createRecord response missing uri: {:?}",
-                response
+                crate::logic::log_redaction::summarize(&response)
             );
             Status::new(Code::Internal, "bluesky_post_failed")
         })?;
@@ -201,13 +201,13 @@ fn upload_blob_at(
             .get(&media_url)
             .send()
             .map_err(|e| {
-                log::error!("Failed to fetch image {:?} for Bluesky upload: {:?}", media_url, e);
+                log::error!("Failed to fetch image {:?} for Bluesky upload: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "bluesky_media_fetch_failed")
             })?;
         if !response.status().is_success() {
             log::error!(
                 "Fetching image {:?} for Bluesky upload failed ({})",
-                media_url,
+                crate::logic::log_redaction::redact_url(&media_url),
                 response.status()
             );
             return Err(Status::new(
@@ -216,7 +216,7 @@ fn upload_blob_at(
             ));
         }
         response.bytes().map(|b| b.to_vec()).map_err(|e| {
-            log::error!("Failed to read image {:?} bytes: {:?}", media_url, e);
+            log::error!("Failed to read image {:?} bytes: {:?}", crate::logic::log_redaction::redact_url(&media_url), crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "bluesky_media_fetch_failed")
         })
     })?;
@@ -231,33 +231,33 @@ fn upload_blob_at(
             .body(bytes)
             .send()
             .map_err(|e| {
-                log::error!("Bluesky uploadBlob request failed: {:?}", e);
+                log::error!("Bluesky uploadBlob request failed: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::FailedPrecondition, "bluesky_request_failed")
             })?;
         let status = response.status();
         let text = response.text().map_err(|e| {
-            log::error!("Failed to read Bluesky uploadBlob response body: {:?}", e);
+            log::error!("Failed to read Bluesky uploadBlob response body: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::FailedPrecondition, "bluesky_request_failed")
         })?;
         let value: serde_json::Value = if text.trim().is_empty() {
             serde_json::Value::Null
         } else {
             serde_json::from_str(&text).map_err(|e| {
-                log::error!("Failed to parse Bluesky uploadBlob response as JSON: {:?} ({})", e, text);
+                log::error!("Failed to parse Bluesky uploadBlob response as JSON: {:?} ({})", crate::logic::log_redaction::safe_error(&e), crate::logic::log_redaction::summarize(&text));
                 Status::new(Code::FailedPrecondition, "bluesky_request_failed")
             })?
         };
         Ok((status, value))
     })?;
     if !status.is_success() {
-        log::error!("Bluesky uploadBlob failed ({}): {:?}", status, body);
+        log::error!("Bluesky uploadBlob failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&body));
         return Err(Status::new(
             Code::FailedPrecondition,
             "bluesky_media_upload_failed",
         ));
     }
     body.get("blob").cloned().ok_or_else(|| {
-        log::error!("Bluesky uploadBlob response missing blob: {:?}", body);
+        log::error!("Bluesky uploadBlob response missing blob: {:?}", crate::logic::log_redaction::summarize(&body));
         Status::new(Code::Internal, "bluesky_media_upload_failed")
     })
 }

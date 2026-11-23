@@ -33,6 +33,7 @@ pub mod logic;
 pub mod marshaling;
 pub mod object_storage_connection;
 pub mod models;
+pub mod internal_protos;
 pub mod protos;
 pub mod rpcs;
 pub mod schema;
@@ -53,10 +54,10 @@ where
     let mut stack = String::from("\n");
     if let Some(cause) = err.source() {
         for (i, e) in std::iter::successors(Some(cause), |e| e.source()).enumerate() {
-            stack.push_str(&format!("   {}: {}\n", i, e));
+            stack.push_str(&format!("   {}: {}\n", i, crate::logic::log_redaction::scrub_text(&e.to_string())));
         }
     }
-    log::error!("[ERROR] {}\nCaused by: {}", err, stack);
+    log::error!("[ERROR] {}\nCaused by: {}", crate::logic::log_redaction::safe_error(&err), stack);
 }
 
 pub fn env_var(name: &str) -> Option<String> {

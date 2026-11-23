@@ -82,7 +82,7 @@ pub(super) fn update_occasions_impl(
             .returning(models::OCCASION_COLUMNS)
             .get_result::<models::Occasion>(conn)
             .map_err(|e| {
-                log::error!("Failed to update event occasion: {:?}", e);
+                log::error!("Failed to update event occasion: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_update_occasion")
             })?;
 
@@ -102,7 +102,7 @@ pub(super) fn update_occasions_impl(
             .returning(models::POST_COLUMNS)
             .get_result::<models::Post>(conn)
             .map_err(|e| {
-                log::error!("Failed to update event occasion post: {:?}", e);
+                log::error!("Failed to update event occasion post: {:?}", crate::logic::log_redaction::safe_error(&e));
                 Status::new(Code::Internal, "failed_to_update_occasion")
             })?;
     }

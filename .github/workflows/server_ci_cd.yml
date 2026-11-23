@@ -1,8 +1,12 @@
-# Deploy steps only bump image tags (.github/workflows/scripts/set_backend_images.sh, i.e.
-# `kubectl set image`) -- they never apply deploys/k8s manifests, so a CI deploy can't change a
-# namespace's storage wiring, replica counts or credentials. Manifest changes are rolled out
-# deliberately (see "Rolling out manifest changes" in deploys/README.md); the
-# manifest_change_notice job flags pushes that need it.
+# Deploy steps APPLY the checked-in manifests for what CI manages -- each central-storage namespace's
+# server, jobs and preview generator, the cluster's embedding service and each namespace's optional
+# vector service -- at the freshly built image tag (.github/workflows/scripts/apply_backend_manifests.sh).
+# That script only updates Deployments that already exist, never touches credentials Secrets, doesn't
+# prune, and never writes `replicas` (server-side apply with the field stripped), so a stopped or
+# scaled-down site stays that way. Manifests CI doesn't apply (namespaces with their own
+# Postgres/object storage, central storage's Postgres/object storage, ingress) are still rolled out
+# deliberately (see "Rolling out manifest changes" in deploys/README.md); the manifest_change_notice
+# job flags pushes that need it.
 name: Server CI/CD
 
 on:
@@ -55,12 +59,15 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.6
+          # The one version everything generates with: protos/PROTOC_VERSION (checked locally by
+          # protos/check_protoc_version.sh). Bump it there, not here.
+          PROTOC_VERSION="$(tr -d '[:space:]' < protos/PROTOC_VERSION)"
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
           sudo unzip -o "$PROTOC_ZIP" -d /usr/local bin/protoc 'include/*'
           rm "$PROTOC_ZIP"
           protoc --version
+          protos/check_protoc_version.sh
       # - name: Install Graphviz
       #   run: sudo apt-get update && sudo apt-get install -y graphviz
       # - uses: subosito/flutter-action@v2
@@ -123,7 +130,11 @@ jobs:
         run: make protos
 
       - name: Check for changes
-        run: git diff --exit-code --ignore-matching-lines='//   protoc +v[\\.0-9]+' --ignore-matching-lines='- `protoc` [0-9]'
+        run: |
+          git diff --exit-code --ignore-matching-lines='//   protoc +v[\\.0-9]+' --ignore-matching-lines='- `protoc` [0-9]' || {
+            echo "::error title=Generated files out of date::CI regenerated protos/docs with protoc $(cat protos/PROTOC_VERSION) and got different output than what's committed. Install that protoc version (or put your new version in protos/PROTOC_VERSION), run \`make\`, and commit the result."
+            exit 1
+          }
 
   test_deploys:
     name: Test Deploy Scripts
@@ -321,13 +332,15 @@ jobs:
           rm "$PROTOC_ZIP"
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
           key: rellm-build-${{ runner.OS }}-github-build
           shared-key: rellm-build-${{ runner.OS }}-github-build
           cache-workspace-crates: true
 
+      # Default features only: no embedding model, ONNX Runtime or USearch code goes into the server or job
+      # binaries (see build_embeddings_binaries for the separate rellm_embeddings image).
       - working-directory: backend
         run: cargo build --release
 
@@ -342,6 +355,52 @@ jobs:
           path: ${{ runner.temp }}/rust-binaries.tar
           if-no-files-found: error
           retention-days: 1
+
+  # The rellm_embeddings image's two binaries (the cluster's embedding model service, which is the ONLY code that
+  # loads a model, and the per-namespace vector search service). Built separately, with their cargo features, so
+  # nothing model-related is ever linked into the server or jobs.
+  build_embeddings_binaries:
+    name: Build Embeddings Binaries
+    runs-on: ubuntu-26.04
+    env:
+      CARGO_INCREMENTAL: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=26.1
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -LO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+          sudo unzip -o "$PROTOC_ZIP" -d /usr/local bin/protoc 'include/*'
+          rm "$PROTOC_ZIP"
+          protoc --version
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
+        with:
+          workspaces: ./backend -> target
+          key: rellm-build-${{ runner.OS }}-github-build-embeddings
+          shared-key: rellm-build-${{ runner.OS }}-github-build-embeddings
+          cache-workspace-crates: true
+
+      - working-directory: backend
+        run: cargo build --release --features embedding-service,vector-service --bin embedding_service --bin vector_search_service
+
+      - name: Collect binaries
+        run: |
+          mkdir -p embeddings-binaries
+          cp backend/target/release/embedding_service backend/target/release/vector_search_service embeddings-binaries/
+      - uses: actions/cache/save@v6
+        with:
+          path: embeddings-binaries
+          key: rust-embeddings-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
 
   build_rust_binaries_macos:
     name: Build Rust Binaries (macOS arm64)
@@ -378,7 +437,7 @@ jobs:
           echo "PQ_LIB_DIR=$(brew --prefix libpq)/lib" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=$(brew --prefix libpq)/lib/pkgconfig" >> $GITHUB_ENV
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
           key: rellm-build-${{ runner.OS }}-arm64-github-build
@@ -427,7 +486,7 @@ jobs:
           rm "$PROTOC_ZIP"
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
           key: rellm-build-${{ runner.OS }}-amd64-static-github-build
@@ -481,7 +540,7 @@ jobs:
           rm "$PROTOC_ZIP"
           protoc --version
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
           key: rellm-build-${{ runner.OS }}-arm64-static-github-build
@@ -504,8 +563,21 @@ jobs:
           retention-days: 1
 
   test_rust_binaries:
-    name: Test Rust Binaries
+    # Two parallel legs (each with its own Postgres/object storage and cache): the default-feature
+    # suite, and the suite with the rellm_embeddings features (model service, USearch vector
+    # service) on. Downstream jobs `needs:` this id, so they wait for both.
+    name: Test Rust Binaries (${{ matrix.name }})
     runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default features
+            slug: default
+            cargo_args: ""
+          - name: embedding features
+            slug: embeddings
+            cargo_args: "--features embedding-service,vector-service"
     # Backs the DB-backed specs under backend/src/tests/ (see src/tests/factories.rs), which run
     # against TEST_DATABASE_URL - a dedicated `rellm_test` DB, analogous to a Rails dev/test
     # split, kept separate from the `rellm_dev` DB used by a real running server. Migrations are
@@ -526,6 +598,10 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres@localhost:5432/rellm_test
       CARGO_INCREMENTAL: "0"
+      # Line tables only (not full DWARF): panics/backtraces still point at source lines, but the
+      # debug build links faster and target/ -- which rust-cache has to tar, upload and restore
+      # (~2 minutes on every run) -- is much smaller.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
       OBJECT_STORAGE_ENDPOINT: http://localhost:9000
       OBJECT_STORAGE_REGION: ""
       OBJECT_STORAGE_BUCKET: rellm-test
@@ -571,16 +647,18 @@ jobs:
           docker logs rellm-test-object-storage
           exit 1
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (pinned: a moved tag can't change what CI runs)
         with:
           workspaces: ./backend -> target
-          key: rellm-test-${{ runner.OS }}-github-test
-          shared-key: rellm-test-${{ runner.OS }}-github-test
-          cache-workspace-crates: true
+          key: rellm-test-${{ runner.OS }}-github-test-${{ matrix.slug }}
+          shared-key: rellm-test-${{ runner.OS }}-github-test-${{ matrix.slug }}
+          # The rellm crate itself is recompiled every run no matter what (its source changed), so
+          # caching its artifacts only adds bytes to restore. Dependencies are what's worth caching.
+          cache-workspace-crates: false
       - working-directory: backend
-        run: cargo test
-      - working-directory: backend
-        run: cargo build
+        run: cargo test ${{ matrix.cargo_args }}
+      # No separate `cargo build` here: the release jobs above already compile every binary, and a
+      # debug build of the same code cost ~2.5 minutes (a third full compile of the rellm crate).
 
   test_tamagui_ui:
     name: Test Tamagui Web UI
@@ -722,6 +800,7 @@ jobs:
           mv backend/target/release/delete_unowned_media backend/target/release/delete_unowned_media__server_release &&
           mv backend/target/release/sync_sources backend/target/release/sync_sources__server_release &&
           mv backend/target/release/update_user_counts backend/target/release/update_user_counts__server_release &&
+          mv backend/target/release/generate_embeddings backend/target/release/generate_embeddings__server_release &&
           mv backend/target/release/convert_media_sizes backend/target/release/convert_media_sizes__server_release &&
           mv backend/target/release/renew_market_subscriptions backend/target/release/renew_market_subscriptions__server_release &&
           mv backend/target/release/generate_link_preview_images backend/target/release/generate_link_preview_images__server_release &&
@@ -801,6 +880,82 @@ jobs:
           file: ./deploys/docker/preview_generator/Dockerfile
           platforms: linux/amd64
 
+  push_embeddings:
+    name: "DockerHub: Embeddings (model + vector services)"
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/experiments/elm-spa'
+    runs-on: ubuntu-26.04
+    needs:
+      - build_embeddings_binaries
+      - test_rust_binaries
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: embeddings-binaries
+          key: rust-embeddings-${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}-${{ github.run_id }}
+          fail-on-cache-miss: true
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push rellm_embeddings image
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }},${{ secrets.DOCKERHUB_USERNAME }}/rellm_embeddings:${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}
+          context: .
+          file: ./deploys/docker/embeddings/Dockerfile
+          platforms: linux/amd64
+
+  # The cluster's ONE embedding model service (rellm-storage/rellm-central-embedding); skipped (not failed)
+  # when the cluster hasn't set it up. Its manifest does a surge rollout (new pod Ready before the old one
+  # stops), so semantic search has no gap. Not a gate for the release/namespace deploys: an embedding
+  # rollout problem shows up as this job failing without holding up the sites.
+  deploy_central_embedding:
+    name: Deploy Central Embedding Service
+    if: github.ref == 'refs/heads/main'
+    needs:
+      - test_deploys
+      - test_rust_binaries
+      - push_embeddings
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Extract Versioning Data
+        id: vars
+        run: |-
+          echo "be_version=$(cat backend/Cargo.toml | grep 'version =' | sed -n 1p | awk '{print $3;}' | sed 's/"//g')" >> $GITHUB_OUTPUT
+          echo "dated_sha_short=$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y%m%d%H%M%S HEAD)-$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig with short-lived credentials
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
+
+      - name: Deploy Embedding Service (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh embedding rellm-storage "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      # The first start of a new pod may re-download the model if the PVC was recreated (~300MB).
+      - name: Verify Embedding deployment
+        run: |
+          [ -n "$(kubectl get deployment rellm-central-embedding -n rellm-storage --ignore-not-found -o name)" ] || { echo "Not deployed on this cluster -- nothing to verify."; exit 0; }
+          kubectl rollout status deployment/rellm-central-embedding -n rellm-storage --timeout 10m
+
   deploy_jonlineio_server:
     name: Deploy Jonline.io Server
     if: github.ref == 'refs/heads/main'
@@ -839,8 +994,8 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n jonline --ignore-not-found=true
 
-      - name: Deploy to Jonline.io via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to Jonline.io via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n jonline --timeout 5m
@@ -863,8 +1018,10 @@ jobs:
     name: Deploy Jonline.io Preview Generator
     if: github.ref == 'refs/heads/main'
     needs:
+      - test_deploys
       - test_rust_binaries
       - push_preview_generator
+      - push_embeddings
     runs-on: ubuntu-26.04
 
     steps:
@@ -884,7 +1041,10 @@ jobs:
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
       - name: Deploy to Jonline.io via DigitalOcean Kubernetes
-        run: .github/workflows/scripts/set_backend_images.sh preview jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector jonline "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
   create_github_release:
     name: "GitHub: Release"
@@ -898,6 +1058,7 @@ jobs:
       - deploy_jonlineio_preview_generator
       - push_server
       - push_preview_generator
+      - push_embeddings
       - test_consistency
       - test_rust_binaries
       - test_flutter_ui
@@ -961,6 +1122,7 @@ jobs:
             - [DockerHub: Rellm Server (jonlatane/rellm:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm/tags?page=1&name=${{ steps.vars.outputs.full_version }})
 
             - [DockerHub: Rellm Preview Generator (jonlatane/rellm_preview_generator:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_preview_generator/tags?page=1&name=${{ steps.vars.outputs.full_version }})
+            - [DockerHub: Rellm Embeddings (jonlatane/rellm_embeddings:${{ steps.vars.outputs.full_version }})](https://hub.docker.com/r/jonlatane/rellm_embeddings/tags?page=1&name=${{ steps.vars.outputs.full_version }})
 
             A macOS (Apple Silicon) build is available via Homebrew:
 
@@ -1060,7 +1222,7 @@ jobs:
           tar -xf "$RUNNER_TEMP/rust-macos-arm64-binaries/rust-macos-arm64-binaries.tar" -C backend/target/release
 
       # Mirrors deploys/docker/server/Dockerfile's /opt layout, but rooted at a
-      # staging dir that becomes /opt/homebrew/etc/rellm on the installed Mac.
+      # staging dir that becomes the formula's libexec (/opt/homebrew/opt/rellm/libexec) on the installed Mac.
       - name: Assemble /opt/homebrew/etc/rellm package layout
         run: |
           set -euo pipefail
@@ -1069,7 +1231,7 @@ jobs:
           mkdir -p "$PKG"
 
           for bin in rellm disable_cdn_grpc delete_expired_tokens delete_unowned_media \
-                     sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post delete_link_preview_images \
+                     sync_sources update_user_counts generate_embeddings convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post delete_link_preview_images \
                      calculate_server_media_usage calculate_server_object_storage_usage \
                      set_permission free_all_cluster_resources to_db_id to_proto_id; do
             cp "backend/target/release/${bin}" "$PKG/${bin}"
@@ -1140,15 +1302,21 @@ jobs:
             depends_on "libpq"
 
             def install
-              (etc/"rellm").install Dir["*"]
+              # libexec (a per-version Cellar dir), NOT etc: Homebrew never overwrites an
+              # existing, differing file under etc -- it writes "<file>.default" beside it --
+              # so installing the binaries there left every upgrade running the first
+              # version's rellm-server (`rellm version` never changed).
+              libexec.install Dir["*"]
               (bin/"rellm").write <<~SCRIPT
           RELLM_FORMULA_HEADER_EOF
 
           # docs/rellm_homebrew.sh is plain, standalone bash aside from the
-          # @@RELLM_ETC@@ placeholder, which becomes Ruby's `#{etc}` interpolation
+          # @@RELLM_ETC@@/rellm placeholder, which becomes Ruby's `#{opt_libexec}` interpolation
           # here -- Homebrew resolves that to the real install prefix at `brew install`
           # time, so it can't be a fixed value baked in at CI time.
-          sed -e 's/@@RELLM_ETC@@/#{etc}/' -e 's/^/                /' docs/rellm_homebrew.sh >> tap/Formula/rellm.rb
+          # The package dir is `#{opt_libexec}` (stable across upgrades, unlike the versioned
+          # Cellar path); the launcher's "@@RELLM_ETC@@/rellm" prefix becomes exactly that.
+          sed -e 's|@@RELLM_ETC@@/rellm|#{opt_libexec}|g' -e 's/^/                /' docs/rellm_homebrew.sh >> tap/Formula/rellm.rb
 
           cat >> tap/Formula/rellm.rb <<'RELLM_FORMULA_FOOTER_EOF'
               SCRIPT
@@ -1284,7 +1452,7 @@ jobs:
           for arch in amd64 arm64; do
             src="backend/target/release-${arch}"
             for bin in rellm disable_cdn_grpc delete_expired_tokens delete_unowned_media \
-                       sync_sources update_user_counts convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post delete_link_preview_images \
+                       sync_sources update_user_counts generate_embeddings convert_media_sizes renew_market_subscriptions generate_link_preview_images regenerate_link_preview_images_for_post delete_link_preview_images \
                        calculate_server_media_usage calculate_server_object_storage_usage \
                        set_permission free_all_cluster_resources to_db_id to_proto_id; do
               cp "${src}/${bin}" "$PKG/${bin}-${arch}"
@@ -1374,14 +1542,17 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n bullcitysocial --ignore-not-found=true
 
-      - name: Deploy to Bull City Social via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to Bull City Social via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n bullcitysocial --timeout 5m
 
-      - name: Deploy Preview Generator (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh preview bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy Preview Generator (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector bullcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Purge Cloudflare cache
         env:
@@ -1414,14 +1585,17 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n oakcitysocial --ignore-not-found=true
 
-      - name: Deploy to Oak City Social via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to Oak City Social via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n oakcitysocial --timeout 5m
 
-      - name: Deploy Preview Generator (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh preview oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy Preview Generator (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector oakcitysocial "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Purge Cloudflare cache
         env:
@@ -1454,14 +1628,17 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n ato-band --ignore-not-found=true
 
-      - name: Deploy to Ato Band via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to Ato Band via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n ato-band --timeout 5m
 
-      - name: Deploy Preview Generator (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh preview ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy Preview Generator (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector ato-band "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Purge Cloudflare cache
         env:
@@ -1494,14 +1671,17 @@ jobs:
       - name: Delete stray CronJobs (background jobs moved to the rellm-jobs Deployment)
         run: kubectl delete cronjob --all -n rellm-org --ignore-not-found=true
 
-      - name: Deploy to rellm.org via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to rellm.org via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n rellm-org --timeout 5m
 
-      - name: Deploy Preview Generator (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh preview rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy Preview Generator (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector rellm-org "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Purge Cloudflare cache
         env:
@@ -1531,14 +1711,17 @@ jobs:
       - name: Save DigitalOcean kubeconfig with short-lived credentials
         run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 rellm-be
 
-      - name: Deploy to neurospicysteve.bullcity.social via DigitalOcean Kubernetes (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh server neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy to neurospicysteve.bullcity.social via DigitalOcean Kubernetes (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh server neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
       - name: Verify Server deployment
         run: kubectl rollout status deployment/rellm -n neurospicysteve-bullcity-social --timeout 5m
 
-      - name: Deploy Preview Generator (image tag only)
-        run: .github/workflows/scripts/set_backend_images.sh preview neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+      - name: Deploy Preview Generator (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh preview neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
+
+      - name: Deploy Vector Search Service, if this namespace has one (apply manifests)
+        run: .github/workflows/scripts/apply_backend_manifests.sh vector neurospicysteve-bullcity-social "${{ steps.vars.outputs.be_version }}-${{ steps.vars.outputs.dated_sha_short }}" "${{ secrets.DOCKERHUB_USERNAME }}"
 
   bounce_traefik_production:
     name: Bounce Traefik (Production)
@@ -1572,9 +1755,10 @@ jobs:
           kubectl rollout restart deployment traefik -n traefik-ingress
           kubectl rollout status deployment traefik -n traefik-ingress --timeout 5m
 
-  # CI only updates image tags (see the header comment), so when a push changes the deploy
-  # manifests, say so loudly: the new image will run against the OLD manifests until someone rolls
-  # them out.
+  # CI applies only some manifests (see the header comment): the central-storage namespaces' server,
+  # preview generator and vector service, and the cluster's embedding service. When a push changes any
+  # OTHER deploy manifest, say so loudly: the new image will run against the OLD manifest until someone
+  # rolls it out.
   manifest_change_notice:
     name: Notice if deploy manifests changed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -1585,15 +1769,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Warn when deploy manifests changed
+      - name: Warn when deploy manifests CI doesn't apply changed
         run: |-
-          changed="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- deploys/k8s deploys/central_storage/k8s 2>/dev/null | tr '\n' ' ' || true)"
+          changed="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- deploys/k8s deploys/central_storage/k8s \
+            ':!deploys/k8s/server_internal_central_data.yaml' ':!deploys/k8s/preview_generator_central_data.yaml' \
+            ':!deploys/k8s/vector_search_service_central_data.yaml' ':!deploys/central_storage/k8s/k8s-central-embedding-service.yaml' \
+            2>/dev/null | tr '\n' ' ' || true)"
           if [ -n "$changed" ]; then
-            echo "::warning title=Deploy manifests changed::CI only updates image tags. Roll out manifest changes yourself (deploys/README.md, 'Rolling out manifest changes'): $changed"
+            echo "::warning title=Deploy manifests changed::CI doesn't apply these. Roll them out yourself (deploys/README.md, 'Rolling out manifest changes'): $changed"
             {
               echo "### Deploy manifests changed -- manual rollout needed"
-              echo "CI only bumps image tags, so the new images are running against the previous manifests."
+              echo "CI applies only the central-storage server/preview/vector manifests and the embedding service's; these changed but weren't applied."
               echo "Changed: \`$changed\`"
-              echo "Roll out with: \`NAMESPACE=<ns> make update_internal_central_data_backend\` for each namespace."
             } >> "$GITHUB_STEP_SUMMARY"
           fi

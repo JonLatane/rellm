@@ -15,6 +15,7 @@
     - [Deleting your deployment](#deleting-your-deployment)
     - [Multiple Deployments](#multiple-deployments)
       - [Rellm Ingress: sharing one LoadBalancer across many domains (recommended)](#rellm-ingress-sharing-one-loadbalancer-across-many-domains-recommended)
+      - [Semantic search (embeddings)](#semantic-search-embeddings)
       - [Central Storage: sharing Postgres/object storage across many namespaces](#central-storage-sharing-postgresobject-storage-across-many-namespaces)
       - [Example Kubernetes Cluster Setups](#example-kubernetes-cluster-setups)
         - [K8s cluster with multiple Kubernetes LoadBalancers (without a shared ingress)](#k8s-cluster-with-multiple-kubernetes-loadbalancers-without-a-shared-ingress)
@@ -58,7 +59,7 @@ As a user or a contributor, it's helpful to understand that Rellm deployment is 
   * `mc`, the MinIO Client (`brew install minio/stable/mc`) -- only for [central storage](./central_storage/README.md) provisioning/transitions
   * `tmux` -- only for `view_tmux_logs` (see [Viewing Logs](#viewing-logs))
 * `Dockerfile`s in `deploys/docker`
-  * As a user, these are really just for reference, as you'll likely be deploying pre-built images from [jonlatane/rellm](https://hub.docker.com/r/jonlatane/rellm).
+  * As a user, these are really just for reference, as you'll likely be deploying pre-built images from [jonlatane/rellm](https://hub.docker.com/r/jonlatane/rellm) (plus [jonlatane/rellm_preview_generator](https://hub.docker.com/r/jonlatane/rellm_preview_generator) and, for semantic search, [jonlatane/rellm_embeddings](https://hub.docker.com/r/jonlatane/rellm_embeddings), see [k8s/SEMANTIC_SEARCH.md](k8s/SEMANTIC_SEARCH.md)).
 * Kubernetes `.yml` files in `deploys/k8s` and `deploys/generated_certs/k8s` (for using Rellm's Cert-Manager integration)
   * `.template.yml` files are used to generate `.yml` files for managing your own deployment.
 
@@ -109,7 +110,7 @@ That's it! You've created object storage and Postgres servers (with randomly gen
 * **Per-namespace deploys** (`create_backend_data`, and the `create_*_backend` targets, which run it first): `create_backend_data_credentials` generates a random Postgres password and object storage credentials into a `rellm-data-credentials` Secret in the namespace. The Postgres/object storage manifests and the server manifests all read it via `secretKeyRef`; the dump/restore targets (`dump_backend_postgres`, ...) read the password from the same Secret (or take `PG_PASSWORD=...`). It **never regenerates an existing Secret**: Postgres and the object storage server only read their credentials when initializing an empty volume, so a "new" value would silently stop matching the real one.
 * **[Central storage](./central_storage/README.md)**: the shared instances' own admin credentials are random Secrets in `rellm-storage`, and every namespace on them gets its own Postgres role and object storage user -- named after the namespace, random passwords, each restricted to only that namespace's database/bucket -- in a `rellm-central-data` Secret.
 * **Getting them back out:** `rellm deploy get_all_storage_credentials` prints every one of those Secrets, decoded, across all namespaces (no namespace needed). Run it and put the output in a password manager -- these Secrets are the only copy. In particular, deleting a namespace (`kubectl delete namespace`) deletes its Secret while the data volumes survive (`reclaimPolicy: Retain`), and without the saved password you can't get back into that Postgres data.
-* **Namespaces deployed before this existed** have their credentials inline in the running Deployments/StatefulSets. Run `deploys/data_migrations/adopt_legacy_data_credentials.sh <namespace>` once per namespace *before its next manifest rollout* (`rellm deploy update_*`; see [Rolling out manifest changes](#rolling-out-manifest-changes)) -- it creates the Secret from the namespace's live values (verifying they all agree; nothing is restarted or changed) so the new manifests keep working against the same data. CI's image-only deploys don't need it. Those inline values were the old checked-in defaults, so treat them as compromised: the real fix is moving the namespace to central storage ([`transition_jonline_namespace_to_central_storage.sh`](./central_storage/README.md#transitioning-an-existing-namespace)), which issues fresh random credentials.
+* **Namespaces deployed before this existed** have their credentials inline in the running Deployments/StatefulSets. Run `deploys/data_migrations/adopt_legacy_data_credentials.sh <namespace>` once per namespace *before its next manifest rollout* (`rellm deploy update_*`; see [Rolling out manifest changes](#rolling-out-manifest-changes)) -- it creates the Secret from the namespace's live values (verifying they all agree; nothing is restarted or changed) so the new manifests keep working against the same data. CI's deploys (which only apply central-storage namespaces' manifests) don't need it. Those inline values were the old checked-in defaults, so treat them as compromised: the real fix is moving the namespace to central storage ([`transition_jonline_namespace_to_central_storage.sh`](./central_storage/README.md#transitioning-an-existing-namespace)), which issues fresh random credentials.
 * **Rotating** a credential means changing it in the running server *and* the Secret (Postgres: `ALTER ROLE ... PASSWORD`; object storage: the server's root credentials env / `mc admin user`), then restarting the consumers. There's no target for it yet -- and never delete a `rellm-*credentials` Secret while its data volume lives on.
 
 ### Validating your deployment
@@ -241,6 +242,32 @@ rellm deploy add_ingress_domain -n my_namespace --domain my.domain.example.com
 
 See [`deploys/ingress/README.md`](./ingress/README.md) for the full walkthrough, including how to cut a domain over from its own LoadBalancer without downtime.
 
+#### Semantic search (embeddings)
+Semantic search (finding posts, events, media and people by meaning, not just matching words) needs the `rellm_embeddings` image: one **embedding model service per cluster** (the only code that ever loads a model -- the server and jobs images contain none) and, optionally, one **vector index per namespace**. Without the service, search is plain full-text and Settings → Search says so. Everything here is generated by the deploy system, random secrets included, and needs `kubectl`, `make` and `openssl` locally.
+
+1. **Once per cluster** (no `-n`): the model service, in the `rellm-storage` namespace.
+
+   ```bash
+   rellm deploy create_central_embedding
+   rellm deploy wait_central_embedding_ready      # the first start downloads the model (~300MB)
+   ```
+
+   This creates a random shared secret (`rellm-central-embedding-credentials`, never regenerated if it exists), the model-cache PVC, the Service and the Deployment. The model is chosen by the cluster (`RELLM_EMBEDDING_SERVICE_MODEL` in the manifest); every namespace uses it.
+2. **Per namespace** that should use it: **`create_backend_embedding`** copies the shared secret and service URL into the namespace's `rellm-embedding` Secret and restarts its `rellm` and `rellm-jobs` Deployments.
+
+   ```bash
+   rellm deploy create_backend_embedding -n my_namespace
+   ```
+
+   The `generate_embeddings` job then fills in embeddings in the background (a backlog takes several runs), and searches start using them as they land. The target is safe to re-run. Namespaces deployed before this feature existed need their manifests [rolled out](#rolling-out-manifest-changes) once first (`rellm deploy update_internal_central_data_backend -n my_namespace`, or `update_internal_backend` / `update_external_backend`), because the new optional environment variables only arrive with new manifests; the target prints a note if so.
+3. **Optional, per namespace:** a vector index, so searches don't have to scan Postgres for candidates. It generates its own secret, deploys the index (the central-storage variant if the namespace uses central storage) and points the servers at it. Skip it on small instances.
+
+   ```bash
+   rellm deploy create_backend_vector -n my_namespace
+   ```
+
+To check it: the model service's logs (`kubectl logs deployment/rellm-central-embedding -n rellm-storage`), and Settings → Search on the server shows the model in use. To roll a release's new image or manifest: `rellm deploy update_central_embedding` (and `update_backend_vector -n my_namespace`). To turn it off: `rellm deploy delete_backend_vector -n my_namespace`, `rellm deploy delete_backend_embedding -n my_namespace`, and for the whole cluster `rellm deploy delete_central_embedding --confirm rellm-storage` (search falls back to full-text everywhere). See [`k8s/SEMANTIC_SEARCH.md`](./k8s/SEMANTIC_SEARCH.md) for the architecture and how the services authenticate.
+
 #### Central Storage: sharing Postgres/object storage across many namespaces
 Each namespace's Postgres and object storage above is its own StatefulSet - 2 PVCs per namespace. Most managed Kubernetes offerings cap how many PVCs a cluster can attach at all (DigitalOcean's DOKS: 15), so that runs out fast once you're hosting more than a handful of domains, regardless of how cheap or expensive each individual domain's traffic is. [`deploys/central_storage/`](./central_storage/README.md) sets up one shared Postgres + object storage instance (2 PVCs, full stop) that any number of *new* namespaces can point at instead, each with its own database and bucket (named after the namespace) inside the shared instance rather than an instance of its own.
 
@@ -271,6 +298,7 @@ This is how the Rellm author's own cluster runs, and the setup to use if you wan
 | **Traefik** - one `LoadBalancer`/external IP routing every domain by SNI/`Host`, plus plain TCP `:25` for mail | `traefik-ingress` | a `LoadBalancer` per site (~$12/mo each) | [`ingress/`](./ingress/README.md) |
 | **Stalwart** - one internet-facing SMTP server; hands each domain's mail to that site's `rellm` | `rellm-email` | a mail server per site | [`email/`](./email/README.md) |
 | **Central storage** - one Postgres + one Silo (2 PVCs total); each site gets its own database/bucket and a role/user restricted to just that | `rellm-storage` | 2 PVCs per site (DOKS caps a cluster at 15) | [`central_storage/`](./central_storage/README.md) |
+| **Embedding service** (optional) - one model that every site's search and `generate_embeddings` job calls | `rellm-storage` | ~0.75GB of RAM, once per cluster | [Semantic search](#semantic-search-embeddings) |
 
 Each site is then just a namespace holding `rellm` (x2), `rellm-jobs`, `rellm-preview-generator`, its `rellm-tls` certificate Secret and its `rellm-central-data` credentials Secret. See the [diagram](https://github.com/JonLatane/rellm/blob/main/docs/architecture/Traefik_Kubernetes_Deployment.svg). Sites deploy from CI by image tag only ([Rolling out manifest changes](#rolling-out-manifest-changes)).
 
@@ -318,6 +346,12 @@ Do these once per cluster, in this order.
       On a fresh volume Stalwart boots into the wizard. Choose **RocksDB** for storage (its PVC holds only Stalwart's own config and queue - never user mailboxes) and send logging to the **console** so `kubectl logs -n rellm-email deployment/stalwart` shows something. Stop the port-forward when done.
    4. Confirm your provider lets inbound traffic reach port 25 (some block it by default and need a ticket), and that the Traefik LoadBalancer forwards TCP `:25`. `rellm deploy deploy_email_get_ip` prints the IP your MX records resolve to - it's the same ingress IP.
    5. Smoke test, bypassing DNS: `openssl s_client -connect <ingress-ip>:25 -crlf` should show Stalwart's `220 ... ESMTP` banner. Full details and troubleshooting: [`email/README.md`](./email/README.md).
+5. **Embedding service (optional)** - the shared model behind semantic search. Do it any time; sites opt in individually (see [Adding a site](#adding-a-site), step 6):
+
+   ```bash
+   rellm deploy create_central_embedding
+   rellm deploy wait_central_embedding_ready
+   ```
 
 #### Adding a site
 Per site (shown for namespace `my-site` and domain `my-site.example.com`; the namespace name becomes its database, bucket and credentials' name, so use lowercase letters, digits and `-`, at least 3 characters).
@@ -372,13 +406,19 @@ Per site (shown for namespace `my-site` and domain `my-site.example.com`; the na
    ```
 
    `550 5.1.2 Relay not allowed` with the domain listed means Stalwart cached an earlier "no such domain": `rellm deploy deploy_email_restart`, then retry.
-6. **Save the credentials** - these Secrets are the only copy: `rellm deploy get_all_storage_credentials`.
-7. **Keep it current in CI.** CI only bumps image tags on namespaces it knows about, so add a deploy job for the new namespace in `.github/workflows/server_ci_cd.yml` (copy an existing one, such as `deploy_rellm_org`). Until then the site runs the image from step 2 (the manifests' base version).
+6. **Semantic search (optional)** - needs the embedding service from the one-time setup and step 2 deployed. `create_backend_embedding` points the site's server and jobs at it (restarting them); `create_backend_vector` adds the optional per-site vector index:
+
+   ```bash
+   rellm deploy create_backend_embedding -n my-site
+   rellm deploy create_backend_vector -n my-site       # optional
+   ```
+7. **Save the credentials** - these Secrets are the only copy: `rellm deploy get_all_storage_credentials`.
+8. **Keep it current in CI.** CI only deploys namespaces it knows about, so add a deploy job for the new namespace in `.github/workflows/server_ci_cd.yml` (copy an existing one, such as `deploy_rellm_org`). Until then the site runs the image from step 2 (the manifests' base version).
 
 #### Day-to-day
 - **Deploys:** push to `main`; CI bumps each site's image tags. Manifest changes are rolled out deliberately - see [Rolling out manifest changes](#rolling-out-manifest-changes).
 - **Capacity:** `rellm deploy get_central_postgres_pvc_size get_central_object_storage_pvc_size`, and grow with the `resize_central_*_pvc` targets. The central Postgres and Silo are shared by every site and have no backup or upgrade path yet (see [Central Storage](#central-storage-sharing-postgresobject-storage-across-many-namespaces)).
-- **Retiring a site:** delete its namespace, then `rellm deploy delete_backend_central_data -n my-site --confirm my-site` to permanently remove its database, bucket and credentials. `rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com` and `rellm deploy remove_email_domain -n my-site --domain my-site.example.com` take it out of Traefik and Stalwart.
+- **Retiring a site:** delete its namespace (that removes its `rellm-embedding` Secret and vector index with it), then `rellm deploy delete_backend_central_data -n my-site --confirm my-site` to permanently remove its database, bucket and credentials. `rellm deploy remove_ingress_domain -n my-site --domain my-site.example.com` and `rellm deploy remove_email_domain -n my-site --domain my-site.example.com` take it out of Traefik and Stalwart.
 
 ### Upgrading your deployed PostgreSQL
 _(This section covers a namespace's own Postgres. [Central storage](./central_storage/README.md)'s shared Postgres has no dump/upgrade targets yet.)_
@@ -392,13 +432,13 @@ rellm deploy upgrade_backend_postgres -n my_namespace
 This handles the whole migration: it dumps your current database (via a temporary port-forward, no `kubectl exec` needed), stops the app and the old Postgres, brings up the new version (initdb'd fresh on a new PVC subPath, so the old data directory is never touched), restores the dump into it, then restarts the app. Your old version's data stays on disk as an instant rollback until you're confident in the new one, at which point `rellm deploy delete_backend_postgres_old_data -n my_namespace` permanently deletes it.
 
 ### Rolling out manifest changes
-CI deploys are **image-only**: `.github/workflows/server_ci_cd.yml` runs `kubectl set image` for each namespace's `rellm`, `rellm-jobs` and `rellm-preview-generator` Deployments and never applies a manifest. That makes a CI deploy independent of how a namespace is configured (central or own storage) and safe during a storage transition -- it can't change replicas, env, credentials or wiring, so a site you've scaled down for a cutover stays down. The cost: **changes under `deploys/k8s/` (a new env var, port, Service entry, replica count, a new Deployment...) are not rolled out by CI** -- the new image runs against the old manifests until you roll them out. The `manifest_change_notice` CI job warns on any push that touches those files. To roll out, per namespace:
+CI deploys **apply** manifests for what it manages: `.github/workflows/server_ci_cd.yml` runs `.github/workflows/scripts/apply_backend_manifests.sh`, which applies the central-storage server (`rellm`, `rellm-jobs`), preview generator and optional vector manifests per namespace, and the cluster's embedding service manifest, with the images set to the new build's tag -- so a change to those files (a new env var, port, replica count...) rolls out with the next deploy. Guard rails: it only updates Deployments that already exist (a brand-new namespace must be provisioned first), never touches credentials Secrets or PVCs, and never prunes (a resource you delete from a manifest has to be deleted by hand). It also **never writes `replicas`**: the field is stripped from what's applied and the apply is server-side, so a site you've parked at 0 for a storage cutover (or stopped with `stop_backend`, even mid-deploy) stays down while still getting the new manifest and image. The flip side: a replica count changed in a manifest isn't rolled out by CI -- use `rellm deploy update_internal_central_data_backend` or `kubectl scale`. **Everything CI does not apply is still manual:** namespaces on their own Postgres/object storage (`server_internal.yaml`, `server_external.yaml`, ...), central Postgres/object storage/Valkey, ingress, and the Makefile-generated Secrets. The `manifest_change_notice` CI job warns on any push that touches such a file. To roll out, per namespace:
 
 ```bash
 rellm deploy update_internal_central_data_backend -n my_namespace
 ```
 
-This regenerates that namespace's manifests from the templates and applies them, **keeping whatever images the Deployments are running** (CI's `<version>-<sha>` tags) rather than resetting them to the manifests' base version (`REPO_IMAGES=1` to deploy the manifests' tags as written). Do it for every namespace, and do it *before* (or together with) deploying code that needs the new config. A brand-new namespace has no Deployments for CI to update: create it with `rellm deploy create_backend_central_data create_internal_central_data_backend -n my_namespace`, then CI keeps its image current.
+This regenerates that namespace's manifests from the templates and applies them, **keeping whatever images the Deployments are running** (CI's `<version>-<sha>` tags) rather than resetting them to the manifests' base version (`REPO_IMAGES=1` to deploy the manifests' tags as written). Use this for manifests CI doesn't apply, or to apply one ahead of a deploy. A brand-new namespace has no Deployments for CI to update: create it with `rellm deploy create_backend_central_data create_internal_central_data_backend -n my_namespace`, then CI keeps its image current.
 
 ### Environment Variables
 Settings other than the namespace are `VAR=value` arguments to `rellm deploy` (e.g. `rellm deploy resize_central_postgres_pvc SIZE=20Gi`), or plain environment variables (`SIZE=20Gi rellm deploy resize_central_postgres_pvc`) -- including anything you `export` in your shell or set in `~/.rellm`. Prefer the flags in your commands: `-n`/`--namespace` over `NAMESPACE`, `--domain` over `DOMAIN` and `--confirm` over `CONFIRM`. Everything else has no flag equivalent, and mostly only matters for the one target noted.
@@ -441,7 +481,7 @@ Everything above is `make`. `deploys/Makefile` is the single source of truth for
 * **Bundle `deploys/`.** CI's `create_homebrew_release`/`create_linux_release` jobs `cp -R deploys/.` into the package's `opt/deploys` (tracked files only -- no generated certs, backups, etc.), next to the Rellm binaries. Homebrew's launcher knows that path at install time; the Linux launcher works it out at runtime from wherever the tarball was extracted.
 * **`rellm deploy <args...>`** sources [`distributables.sh`](./distributables.sh) -- the implementation both launchers share -- and calls its `_rellm_deploys_run`, which checks that `make` is installed, translates the kubectl-style flags described above, and runs `make -C <opt/deploys> <args>`.
 * **Tab-completion** for `rellm deploy <TAB>` calls `rellm --list-deploy-targets` (`_rellm_deploys_list_targets` in `distributables.sh`), which asks `make` itself to dump the Makefile's targets rather than parsing it. New targets are completed automatically; nothing to register. After `-n`/`--namespace` it calls `rellm --list-namespaces` (`_rellm_deploys_list_namespaces`: `kubectl get namespaces` with a short timeout, empty on any failure), and a leading `-` completes the flags `distributables.sh` translates -- so a new flag needs adding to the completion scripts in both launchers as well. `rellm help <TAB>` completes `deploys`.
-* **`rellm help deploys`** calls `_rellm_deploys_help` in `distributables.sh`: it shows `deploys/README.md` (the copy bundled in the package) in `$PAGER`, falling back to `less`, then `more`, and just prints it when stdout isn't a terminal. Plain `rellm help` says this is a local copy of the GitHub page for the package's release (`https://github.com/JonLatane/rellm/blob/v<release>/deploys/README.md`, where `<release>` is what `rellm-server --version` prints, e.g. `0.5.553-20261005123456-abc1234`), or of the `main` branch if it can't run the server binary (e.g. running a launcher standalone from a clone).
+* **`rellm help deploys`** calls `_rellm_deploys_help` in `distributables.sh`: it shows `deploys/README.md` (the copy bundled in the package) in `$PAGER`, falling back to `less`, then `more`, and just prints it when stdout isn't a terminal. Plain `rellm help` says this is a local copy of the GitHub page for the package's release (`https://github.com/JonLatane/rellm/blob/v<release>/deploys/README.md`, where `<release>` is what `rellm-server --version` prints, e.g. `0.5.554-20261005123456-abc1234`), or of the `main` branch if it can't run the server binary (e.g. running a launcher standalone from a clone).
 * **Help text.** Each launcher has its own copy of the `rellm help` text (including the `Deployment` section and the log commands). Keep the two in sync with each other and with this document.
 
 The launchers also run Rellm's own binaries, jobs and local dev dependencies (see their headers), which has nothing to do with `deploys/`. Both are plain `bash` that must keep working on macOS's stock bash 3.2 (hence, for instance, no `source <(...)` and care with empty arrays under `set -u`), and the Homebrew one is embedded in a Ruby heredoc, so it can't contain Ruby's string interpolation syntax (see its header).
@@ -496,7 +536,7 @@ And the structure of this document's examples -- keep it when editing them: `-n`
 ### Adding or changing a target
 * Put it in `deploys/Makefile` (or in a subdirectory's Makefile **and** add the passthrough there; see above). Document it in [End-User Deployment](#end-user-deployment) as a `rellm deploy` command, with any new variable in [Environment Variables](#environment-variables). Then run `make -C deploys test` ([Tests](#tests)): it fails if a subdirectory target has no passthrough, a cluster-wide target is missing from `NAMESPACE_FREE_TARGETS`, or a documented command doesn't exist -- and add tests for anything with logic of its own.
 * Validate arguments before touching the cluster, and anything destructive or that takes a site down should require explicit confirmation (`CONFIRM=<namespace>`, or `--yes` for scripts) after printing what it's about to do.
-* Rolling out `deploys/k8s/` manifest changes is manual, per namespace (see [Rolling out manifest changes](#rolling-out-manifest-changes)); CI only bumps image tags.
+* CI applies only the central-storage server/preview/vector manifests and the embedding service's; any other `deploys/k8s/` manifest change is rolled out manually, per namespace (see [Rolling out manifest changes](#rolling-out-manifest-changes)).
 
 ### Credentials rule
 This is a standing rule for contributors: a manifest or script must never contain an inline password, and a new consumer of a credential reads it from the relevant Secret via `secretKeyRef`. (See [Credentials](#credentials) for how every credential is generated.)
@@ -506,7 +546,7 @@ Everything routine is a `make` target; the shell scripts under `deploys/` are fo
 
 * **`deploys/`** -- tasks that may recur, or that other things call:
   * `transition_jonline_namespace_to_central_storage.sh` (`make transition_backend_to_central_data`): moves a namespace onto [central storage](./central_storage/README.md), with downtime, verifying the copy and leaving the old storage untouched.
-  * `.github/workflows/scripts/set_backend_images.sh`: what CI runs to deploy -- bumps the image tags of a namespace's `rellm`/`rellm-jobs`/`rellm-preview-generator` Deployments (`kubectl set image`) and nothing else.
+  * `.github/workflows/scripts/apply_backend_manifests.sh`: what CI runs to deploy -- applies the central-storage server/preview/vector manifests per namespace and the cluster's embedding service manifest at the new image tag. Never writes `replicas`. `.github/workflows/scripts/set_backend_images.sh` (`kubectl set image`, nothing else) is the manual image-only alternative.
   * `copy_server_configuration.sh` (`make copy_server_configuration`): copies one `server_configurations` column between two namespaces' databases (per-namespace or central). Convenience wrappers: `make copy_server_cluster_configuration` (`cluster_resources`, rewriting its `namespace_id` to the target) and `make copy_server_vapid_configuration` (`web_push_config`). All take `SOURCE=` and `TARGET=`.
   * `kubernetes_logs.sh` (`make view_logs`, `view_server_logs`, `view_job_logs`, `view_preview_generator_logs`, `view_tmux_logs`): see [Viewing Logs](#viewing-logs).
   * `distributables.sh`: sourced by the Homebrew/Linux `rellm` launchers; not run directly. It also turns `rellm deploy`'s `-n`/`--namespace`, `--domain`, `--confirm`, `--tail` and `--lines` flags into `NAMESPACE=`, `DOMAIN=`, `CONFIRM=`, `LOG_TAIL=1` and `LOG_LINES=`.

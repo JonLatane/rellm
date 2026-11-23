@@ -1,5 +1,6 @@
 module UI exposing (imageOrInitial, layout, pageTitle, themeToggle, webUiToggleRow)
 
+import Components.ContactSignIn as ContactSignIn
 import Components.Events as Events
 import Components.FulfillmentThreads as Fulfillment
 import Components.Markdown as Markdown
@@ -15,7 +16,7 @@ import Html.Attributes exposing (alt, attribute, checked, class, classList, disa
 import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn, stopPropagationOn)
 import Html.Keyed
 import Json.Decode as Decode
-import Proto.Rellm exposing (BlueskyServer, ContactConsentChange, ContactMethod, FederatedServer, MastodonServer)
+import Proto.Rellm exposing (BlueskyServer, ContactConsentChange, ContactMethod, FederatedServer, MastodonServer, ServerConfiguration)
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.DefaultPostsSort exposing (DefaultPostsSort(..))
 import Proto.Rellm.NavigationTabStyle exposing (NavigationTabStyle)
@@ -27,6 +28,8 @@ import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.BlueskyAccounts exposing (BlueskyAccount)
 import Shared.AccountsPanel.BlueskyAppViews as BlueskyAppViews exposing (BlueskyAppView)
+import Shared.AccountsPanel.ContactAuth as ContactAuth
+import Shared.AccountsPanel.ContactAuthView as ContactAuthView
 import Shared.AccountsPanel.DebugTab as DebugTab
 import Shared.AccountsPanel.MastodonAccounts exposing (MastodonAccount)
 import Shared.AccountsPanel.MastodonServers exposing (BrowsedMastodonInstance)
@@ -53,6 +56,7 @@ import Shared.StarredPanel as StarredPanel
 import Shared.Time as SharedTime
 import Shared.UserPreferences as UserPreferences
 import UI.Classes exposing (classes, hostnameToCSSClass, openClosedClass)
+import UI.CornerBadges as CornerBadges
 import UI.CustomCssStylesheet as CustomCssStylesheet
 import UI.CustomNav as CustomNav
 import UI.Drag
@@ -2801,8 +2805,15 @@ contactMethodsMenuItem shared account =
                     Shared.ContactMethodPhoneConsentToggled
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneHistoryToggled)
                     account.phone
+                , ContactSignIn.view
+                    { hasPassword = account.hasPassword
+                    , methodLabel = "phone number"
+                    , busy = contactMethods.phoneConsentStatus == RellmAccounts.Submitting
+                    , toggleMsg = Shared.ContactMethodPhoneSignInToggled
+                    }
+                    account.phone
                 , contactMethodPhoneVerificationView contactMethods account.phone
-                , contactMethodDeleteButton (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
+                , contactMethodDeleteButton (ContactSignIn.locked account.hasPassword account.phone) (\cm -> Shared.ConfirmPhoneDelete cm account.server) "Delete Phone" account.phone
                 , hr [ class "profile-contact-methods-separator" ] []
                 , contactMethodEmailView account contactMethods
                 , contactMethodConsentView shared
@@ -2813,7 +2824,14 @@ contactMethodsMenuItem shared account =
                     Shared.ContactMethodEmailConsentToggled
                     (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailHistoryToggled)
                     account.email
-                , contactMethodDeleteButton (\cm -> Shared.ConfirmEmailDelete cm account.server) "Delete Email" account.email
+                , ContactSignIn.view
+                    { hasPassword = account.hasPassword
+                    , methodLabel = "email address"
+                    , busy = contactMethods.emailConsentStatus == RellmAccounts.Submitting
+                    , toggleMsg = Shared.ContactMethodEmailSignInToggled
+                    }
+                    account.email
+                , contactMethodDeleteButton (ContactSignIn.locked account.hasPassword account.email) (\cm -> Shared.ConfirmEmailDelete cm account.server) "Delete Email" account.email
                 ]
             ]
         ]
@@ -2880,7 +2898,7 @@ contactMethodPhoneView account contactMethods =
                  , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "tel:" account.phone) ]
                  ]
                     ++ (account.phone |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
-                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneEditClicked) ] [ text "Edit Phone" ] ]
+                    ++ [ button [ class "profile-edit-button", disabled (ContactSignIn.locked account.hasPassword account.phone), onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodPhoneEditClicked) ] [ text "Edit Phone" ] ]
                 )
 
 
@@ -2912,7 +2930,7 @@ contactMethodEmailView account contactMethods =
                  , span [ class "profile-contact-method-value" ] [ text (RellmAccounts.contactMethodDisplayValue "mailto:" account.email) ]
                  ]
                     ++ (account.email |> Maybe.map (\cm -> [ contactMethodVerifiedBadge cm, contactMethodVisibilityBadge cm ]) |> Maybe.withDefault [])
-                    ++ [ button [ class "profile-edit-button", onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailEditClicked) ] [ text "Edit Email" ] ]
+                    ++ [ button [ class "profile-edit-button", disabled (ContactSignIn.locked account.hasPassword account.email), onClick (Shared.AccountsPanelMsg AccountsPanel.ContactMethodEmailEditClicked) ] [ text "Edit Email" ] ]
                 )
 
 
@@ -3096,8 +3114,8 @@ re-verifying if it's ever added back -- see `Shared.DeleteConfirmation`'s own do
 that page's copy both fire `Shared.ConfirmDelete`'s RPC directly rather than routing through
 `Shared.AccountsPanel.Model`. Hidden entirely once there's nothing to delete.
 -}
-contactMethodDeleteButton : (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Shared.Msg
-contactMethodDeleteButton toConfirmation label maybeContactMethod =
+contactMethodDeleteButton : Bool -> (ContactMethod -> Shared.DeleteConfirmation) -> String -> Maybe ContactMethod -> Html Shared.Msg
+contactMethodDeleteButton isLocked toConfirmation label maybeContactMethod =
     case maybeContactMethod of
         Nothing ->
             text ""
@@ -3107,6 +3125,10 @@ contactMethodDeleteButton toConfirmation label maybeContactMethod =
                 [ button
                     [ class "profile-delete-button"
                     , onClick (Shared.RequestDelete (toConfirmation contactMethod))
+
+                    -- A sign-in contact method of a passwordless account can't go (see
+                    -- `Components.ContactSignIn`, whose note under the checkbox says why).
+                    , disabled isLocked
                     ]
                     [ text label ]
                 ]
@@ -3834,9 +3856,50 @@ rellmAddAccountServerForm shared currentRoute =
         loginPasswordInvalid =
             String.isEmpty form.password
 
+        -- SMS/email sign-up and login (see `ContactAuth`): everything below is inert -- and the form
+        -- exactly the classic one -- unless the server's `authentication_features` offer them.
+        -- Which login methods the Server field's host offers (just Password unless it enables more).
+        contactState : ContactAuth.State
+        contactState =
+            accountsPanelModel.contactAuth
+
+        availableMethods : List ContactAuth.LoginMethod
+        availableMethods =
+            RellmServers.rellmServerForHost accountsPanelModel.servers (String.trim form.server)
+                |> Maybe.andThen .connected
+                |> Maybe.map (.configuration >> ContactAuth.loginMethods)
+                |> Maybe.withDefault [ ContactAuth.PasswordMethod ]
+
+        -- The accepted server's sign-up options, once past the policy modal.
+        acceptedConfiguration : Maybe ServerConfiguration
+        acceptedConfiguration =
+            accountsPanelModel.acceptedCreateAccount
+                |> Maybe.map (.server >> RellmServers.configurationOf)
+
+        createPhoneEnabled : Bool
+        createPhoneEnabled =
+            acceptedConfiguration |> Maybe.map ContactAuth.createPhoneEnabled |> Maybe.withDefault False
+
+        createEmailEnabled : Bool
+        createEmailEnabled =
+            acceptedConfiguration |> Maybe.map ContactAuth.createEmailEnabled |> Maybe.withDefault False
+
+        createContactOffered : Bool
+        createContactOffered =
+            createPhoneEnabled || createEmailEnabled
+
+        createProblem : Maybe String
+        createProblem =
+            ContactAuth.createFormProblem { phoneEnabled = createPhoneEnabled, emailEnabled = createEmailEnabled } form.password contactState
+
+        -- Without SMS/email sign-up this is the classic 8-character check, unchanged.
         createPasswordInvalid : Bool
         createPasswordInvalid =
-            String.length form.password < 8
+            if createContactOffered then
+                createProblem /= Nothing
+
+            else
+                String.length form.password < 8
 
         -- Username/password auth is only ever offered for our own main
         -- server, unless an admin has flipped
@@ -3876,8 +3939,66 @@ rellmAddAccountServerForm shared currentRoute =
             if newAccountType == Just AccountsPanel.CreateNewAccount then
                 AccountsPanel.CreateAccountClicked
 
+            else if contactMode then
+                if contactState.loginChallenge == Nothing then
+                    AccountsPanel.SendLoginCodeClicked
+
+                else
+                    AccountsPanel.SubmitLoginCodeClicked
+
             else
                 AccountsPanel.LoginClicked
+
+        -- Whether the form is on an SMS/email login (its first step asks for a phone/email, its
+        -- second for the code) rather than the username/password one, and each step's own
+        -- "can't submit yet".
+        contactMode : Bool
+        contactMode =
+            knownServer
+                && showUsernamePasswordFields
+                && newAccountType
+                == Nothing
+                && contactState.method
+                /= ContactAuth.PasswordMethod
+                && List.member contactState.method availableMethods
+
+        loginCodeInvalid : Bool
+        loginCodeInvalid =
+            not (ContactAuth.codeIsComplete contactState.code)
+
+        createCodesInvalid : Bool
+        createCodesInvalid =
+            case contactState.createChallenge of
+                Just challenge ->
+                    not (ContactAuth.createCodesComplete challenge contactState)
+
+                Nothing ->
+                    False
+
+        -- The Login/Create buttons (and Enter) only go through when this says the current step is
+        -- valid; otherwise Enter is a no-op, same as the Password step's own checks.
+        submitInvalid : Bool
+        submitInvalid =
+            if newAccountType == Just AccountsPanel.CreateNewAccount then
+                createUsernameInvalid || createPasswordInvalid || createCodesInvalid
+
+            else if contactMode then
+                if contactState.loginChallenge == Nothing then
+                    ContactAuth.loginContactInvalid contactState
+
+                else
+                    loginCodeInvalid
+
+            else
+                loginUsernameInvalid || loginPasswordInvalid
+
+        resendMsg : AccountsPanel.Msg
+        resendMsg =
+            if newAccountType == Just AccountsPanel.CreateNewAccount then
+                AccountsPanel.ResendCreateCodeClicked
+
+            else
+                AccountsPanel.SendLoginCodeClicked
     in
     Html.form
         [ class "account-form"
@@ -3909,7 +4030,7 @@ rellmAddAccountServerForm shared currentRoute =
         -- event to swallow.
         , onSubmit
             (Shared.AccountsPanelMsg
-                (if newAccountType == Nothing then
+                (if (newAccountType == Nothing && not contactMode) || (newAccountType /= Nothing && submitInvalid) || (contactMode && submitInvalid) then
                     AccountsPanel.NoOp
 
                  else
@@ -3958,7 +4079,10 @@ rellmAddAccountServerForm shared currentRoute =
                     )
                 ]
             )
-        , collapsible showUsernamePasswordFields
+        , collapsible (knownServer && showUsernamePasswordFields && newAccountType == Nothing && contactState.loginChallenge == Nothing && List.length availableMethods > 1)
+            []
+            (ContactAuthView.loginMethodChooser Shared.AccountsPanelMsg availableMethods contactState.method submitting)
+        , collapsible (showUsernamePasswordFields && not contactMode)
             []
             (div [ class "account-form-field" ]
                 [ input
@@ -3995,7 +4119,53 @@ rellmAddAccountServerForm shared currentRoute =
                     "Clear username"
                 ]
             )
-        , collapsible (showUsernamePasswordFields && newAccountType /= Nothing)
+        , collapsible (contactMode && contactState.loginChallenge == Nothing)
+            []
+            (div []
+                [ ContactAuthView.contactField Shared.AccountsPanelMsg
+                    contactState.method
+                    contactState.contact
+                    submitting
+                    (if ContactAuth.loginContactInvalid contactState then
+                        AccountsPanel.NoOp
+
+                     else
+                        AccountsPanel.SendLoginCodeClicked
+                    )
+                , ContactAuthView.loginConsentCheckbox Shared.AccountsPanelMsg
+                    contactState.method
+                    contactState.loginConsent
+                    submitting
+                ]
+            )
+        , collapsible (contactMode && contactState.loginChallenge /= Nothing)
+            []
+            (case contactState.loginChallenge of
+                Just challenge ->
+                    ContactAuthView.codeStep Shared.AccountsPanelMsg
+                        { challenge = challenge
+                        , now = contactState.now
+                        , fields =
+                            [ { id = AccountsPanel.verificationCodeInputId
+                              , placeholder = "6-digit code"
+                              , value = contactState.code
+                              , onChange = ContactAuth.CodeChanged
+                              }
+                            ]
+                        , submitMsg =
+                            if loginCodeInvalid then
+                                AccountsPanel.NoOp
+
+                            else
+                                AccountsPanel.SubmitLoginCodeClicked
+                        , resendMsg = resendMsg
+                        , disabled = submitting
+                        }
+
+                Nothing ->
+                    text ""
+            )
+        , collapsible (showUsernamePasswordFields && newAccountType /= Nothing && contactState.createChallenge == Nothing)
             []
             (case newAccountType of
                 Just accountType ->
@@ -4031,7 +4201,13 @@ rellmAddAccountServerForm shared currentRoute =
                                  else
                                     "current-password"
                                 )
-                            , placeholder "Password"
+                            , placeholder
+                                (if accountType == AccountsPanel.CreateNewAccount && createContactOffered then
+                                    "Password (optional)"
+
+                                 else
+                                    "Password"
+                                )
                             , value form.password
                             , onInput (AccountsPanel.PasswordChanged >> Shared.AccountsPanelMsg)
                             , onEnter
@@ -4084,31 +4260,120 @@ rellmAddAccountServerForm shared currentRoute =
                 Nothing ->
                     text ""
             )
+        , collapsible
+            (showUsernamePasswordFields
+                && newAccountType
+                == Just AccountsPanel.CreateNewAccount
+                && createContactOffered
+                && contactState.createChallenge
+                == Nothing
+            )
+            []
+            (ContactAuthView.createContactFields Shared.AccountsPanelMsg
+                { phoneEnabled = createPhoneEnabled
+                , emailEnabled = createEmailEnabled
+                , state = contactState
+                , passwordEmpty = String.isEmpty form.password
+                , problem = createProblem
+                , disabled = accountFieldsDisabled
+                , submitMsg =
+                    if createUsernameInvalid || createPasswordInvalid then
+                        AccountsPanel.NoOp
+
+                    else
+                        submitMsg
+                }
+            )
+        , collapsible (newAccountType == Just AccountsPanel.CreateNewAccount && contactState.createChallenge /= Nothing)
+            []
+            (case contactState.createChallenge of
+                Just challenge ->
+                    ContactAuthView.codeStep Shared.AccountsPanelMsg
+                        { challenge = challenge
+                        , now = contactState.now
+                        , fields =
+                            List.concat
+                                [ if ContactAuth.createWantsPhoneCode challenge then
+                                    [ { id = AccountsPanel.verificationCodeInputId
+                                      , placeholder = "Code from the text message"
+                                      , value = contactState.createPhoneCode
+                                      , onChange = ContactAuth.CreatePhoneCodeChanged
+                                      }
+                                    ]
+
+                                  else
+                                    []
+                                , if ContactAuth.createWantsEmailCode challenge then
+                                    [ { id =
+                                            if ContactAuth.createWantsPhoneCode challenge then
+                                                "account-form-code-email"
+
+                                            else
+                                                AccountsPanel.verificationCodeInputId
+                                      , placeholder = "Code from the email"
+                                      , value = contactState.createEmailCode
+                                      , onChange = ContactAuth.CreateEmailCodeChanged
+                                      }
+                                    ]
+
+                                  else
+                                    []
+                                ]
+                        , submitMsg =
+                            if createCodesInvalid then
+                                AccountsPanel.NoOp
+
+                            else
+                                submitMsg
+                        , resendMsg = resendMsg
+                        , disabled = submitting
+                        }
+
+                Nothing ->
+                    text ""
+            )
         , collapsible showUsernamePasswordFields
             []
             (div [ class "account-form-buttons" ]
                 (case newAccountType of
                     Nothing ->
-                        [ button
-                            [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
-                            , disabled (accountFieldsDisabled || loginUsernameInvalid)
-                            , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
+                        if contactMode then
+                            contactLoginButtons shared
+                                { codeSent = contactState.loginChallenge /= Nothing
+                                , disabled = accountFieldsDisabled
+                                , submitDisabled = accountFieldsDisabled || submitInvalid
+                                }
+
+                        else
+                            [ button
+                                [ type_ "button"
+                                , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseLoginClicked)
+                                , disabled (accountFieldsDisabled || loginUsernameInvalid)
+                                , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-primary" ]
+                                ]
+                                [ text "Login" ]
+                            , button
+                                [ type_ "button"
+                                , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseCreateAccountClicked)
+                                , disabled (accountFieldsDisabled || createUsernameInvalid)
+                                , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-nav" ]
+                                ]
+                                [ text "Create Account" ]
                             ]
-                            [ text "Login" ]
-                        , button
-                            [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.ChooseCreateAccountClicked)
-                            , disabled (accountFieldsDisabled || createUsernameInvalid)
-                            , classes [ hostnameToCSSClass <| formThemeHost shared.accounts, "background-color-nav" ]
-                            ]
-                            [ text "Create Account" ]
-                        ]
 
                     Just accountType ->
                         [ button
                             [ type_ "button"
-                            , onClick (Shared.AccountsPanelMsg AccountsPanel.NewAccountBackClicked)
+                            , onClick
+                                (Shared.AccountsPanelMsg
+                                    (if contactState.createChallenge /= Nothing then
+                                        -- Back from the code step to the sign-up fields, keeping them.
+                                        AccountsPanel.ContactAuthMsg ContactAuth.CreateChallengeDismissed
+
+                                     else
+                                        AccountsPanel.NewAccountBackClicked
+                                    )
+                                )
                             , disabled accountFieldsDisabled
 
                             -- Deliberately untinted (unlike the submit
@@ -4134,7 +4399,7 @@ rellmAddAccountServerForm shared currentRoute =
                             , disabled
                                 (accountFieldsDisabled
                                     || (if accountType == AccountsPanel.CreateNewAccount then
-                                            createUsernameInvalid || createPasswordInvalid
+                                            createUsernameInvalid || createPasswordInvalid || createCodesInvalid
 
                                         else
                                             loginUsernameInvalid || loginPasswordInvalid
@@ -4170,6 +4435,53 @@ rellmAddAccountServerForm shared currentRoute =
 
             _ ->
                 text ""
+        ]
+
+
+{-| The button row of an SMS/email login: "Create Account" (which switches back to the Password method,
+the only one with a username field) + "Send Code" before a code's been sent; "Back" + "Login" once it
+has. The primary button is the form's real `submit` (see the form's own doc).
+-}
+contactLoginButtons : Shared.Model -> { codeSent : Bool, disabled : Bool, submitDisabled : Bool } -> List (Html Shared.Msg)
+contactLoginButtons shared { codeSent, disabled, submitDisabled } =
+    let
+        themeClass : String
+        themeClass =
+            hostnameToCSSClass <| formThemeHost shared.accounts
+    in
+    if codeSent then
+        [ button
+            [ type_ "button"
+            , onClick (Shared.AccountsPanelMsg (AccountsPanel.ContactAuthMsg ContactAuth.LoginChallengeDismissed))
+            , Html.Attributes.disabled disabled
+            , class "back-button"
+            ]
+            [ text "← Back" ]
+        , button
+            [ type_ "submit"
+            , Html.Attributes.disabled submitDisabled
+            , classes [ themeClass, "background-color-primary" ]
+            ]
+            [ text "Login" ]
+        ]
+
+    else
+        -- The `submit` button stays second in both states: Elm patches the row's buttons in place, so
+        -- a `type="button"` (Back) that became the `submit` (Send Code) mid-click would submit the
+        -- form -- a resend -- on the very click that dismissed the code step.
+        [ button
+            [ type_ "button"
+            , onClick (Shared.AccountsPanelMsg AccountsPanel.CreateAccountInsteadClicked)
+            , Html.Attributes.disabled disabled
+            , classes [ themeClass, "background-color-nav" ]
+            ]
+            [ text "Create Account" ]
+        , button
+            [ type_ "submit"
+            , Html.Attributes.disabled submitDisabled
+            , classes [ themeClass, "background-color-primary" ]
+            ]
+            [ text "Send Code" ]
         ]
 
 
@@ -4677,61 +4989,13 @@ starredPostsToggle shared =
             , title "Starred"
             ]
             (text "⭐"
-                :: cornerBadges shared.accounts.mainFrontendHost
+                :: CornerBadges.view shared.accounts.mainFrontendHost
+                    [ Nothing, Just (StarredPanel.serverStarsLoading shared.panels.starredPanel) ]
                     [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
-                    , nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
+                    , CornerBadges.nonZero (StarredPanel.serverTabCount shared.panels.starredPanel)
                     ]
             )
         ]
-
-
-{-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `cornerBadges`).
--}
-nonZero : Int -> Maybe Int
-nonZero n =
-    if n > 0 then
-        Just n
-
-    else
-        Nothing
-
-
-{-| The count badges in a nav toggle's corners -- our "summed count" style, used by both the Starred and
-Messages buttons. Counts fill the corners in a fixed order: top-right, bottom-right, bottom-left, then
-(for a fourth) top-left. A `Nothing` leaves its corner empty (a count that's hidden at zero) but still
-holds its place, so a given kind of count always lands in the same corner.
-
-  - Starred: top-right is the stars in this browser, bottom-right the server-side stars (when any).
-  - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
-    Fulfillment orders awaiting a host admin (server admins).
-
--}
-cornerBadges : String -> List (Maybe Int) -> List (Html msg)
-cornerBadges mainFrontendHost counts =
-    let
-        corners : List String
-        corners =
-            [ "corner-badge-top-right", "corner-badge-bottom-right", "corner-badge-bottom-left", "corner-badge-top-left" ]
-
-        badge : String -> Maybe Int -> Html msg
-        badge corner maybeCount =
-            case maybeCount of
-                Just count ->
-                    span
-                        [ classes
-                            [ "starred-count-badge"
-                            , corner
-                            , hostnameToCSSClass mainFrontendHost
-                            , "background-color-nav"
-                            , "border-color-primary-text"
-                            ]
-                        ]
-                        [ text (String.fromInt count) ]
-
-                Nothing ->
-                    text ""
-    in
-    List.map2 badge corners counts
 
 
 {-| The Starred panel's content -- see `starredPostsToggle` for why this
@@ -4802,7 +5066,7 @@ mirrors `starredPostsToggle`'s own "only show once there's something behind
 it" gating and `.starred-menu`/separately-mounted-panel structure (see
 `messagingPanel`, mounted as a `.navbar` direct child in `headerNav`, same
 reasoning as `starredPanel`). The unread badges (`MessagingPanel.unreadCounts`, one per corner --
-see `cornerBadges` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
+see `UI.CornerBadges` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
 hidden at `0` rather than shown as a literal "0" -- unlike Starred's count,
 which is always known from boot (`starredPostIds` persists locally), this one
 only reflects whatever's actually been fetched so far (see that function's
@@ -4816,6 +5080,11 @@ messagingToggle shared currentRoute =
         unreadCounts : { messages : Int, subscriptions : Int, fulfillment : Int }
         unreadCounts =
             MessagingPanel.unreadCounts shared.panels.messagingPanel
+
+        -- Which of the three counts is being (re)fetched right now -- each badge spins on its own.
+        refreshing : { messages : Bool, subscriptions : Bool, fulfillment : Bool }
+        refreshing =
+            MessagingPanel.refreshing shared.panels.messagingPanel
 
         -- Highlighted the same way `postsLink`/`eventsLink`/etc. highlight
         -- themselves for their own `currentRoute` -- just `background-color-nav`
@@ -4847,10 +5116,11 @@ messagingToggle shared currentRoute =
             , title "Messages"
             ]
             (text "✉️"
-                :: cornerBadges shared.accounts.mainFrontendHost
-                    [ nonZero unreadCounts.messages
-                    , nonZero unreadCounts.subscriptions
-                    , nonZero unreadCounts.fulfillment
+                :: CornerBadges.view shared.accounts.mainFrontendHost
+                    [ Just refreshing.messages, Just refreshing.subscriptions, Just refreshing.fulfillment ]
+                    [ CornerBadges.nonZero unreadCounts.messages
+                    , CornerBadges.nonZero unreadCounts.subscriptions
+                    , CornerBadges.nonZero unreadCounts.fulfillment
                     ]
             )
         ]

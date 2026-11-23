@@ -39,7 +39,7 @@ pub fn reset_data(
             Ok(())
         }
         Err(e) => {
-            log::error!("Data reset failed. Error: {:?}", e);
+            log::error!("Data reset failed. Error: {:?}", crate::logic::log_redaction::safe_error(&e));
             Err(Status::new(Code::Internal, "error_updating"))
         }
     }

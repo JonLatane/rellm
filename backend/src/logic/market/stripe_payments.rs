@@ -168,7 +168,7 @@ pub fn create_checkout_session_at(
         "stripe_request_failed",
     )?;
     if !status.is_success() {
-        log::error!("Stripe CreateCheckoutSession failed ({}): {:?}", status, response_body);
+        log::error!("Stripe CreateCheckoutSession failed ({}): {:?}", status, crate::logic::log_redaction::summarize(&response_body));
         // Stripe's own `error.message` is genuinely useful here (e.g. "The Checkout Session's
         // total amount due must add up to at least $0.50 USD" for a too-cheap product) -- surfaced
         // to the client via the Status message itself (the `Grpc.BadStatus` -> `errMessage` path
@@ -192,7 +192,7 @@ pub fn create_checkout_session_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Stripe CreateCheckoutSession response missing url: {:?}", response_body);
+            log::error!("Stripe CreateCheckoutSession response missing url: {:?}", crate::logic::log_redaction::summarize(&response_body));
             Status::new(Code::Internal, "stripe_checkout_session_missing_url")
         })
 }
@@ -248,7 +248,7 @@ pub fn get_payment_intent_payment_method_at(
             "Stripe GetPaymentIntent({}) failed ({}): {:?}",
             payment_intent_id,
             status,
-            response_body
+            crate::logic::log_redaction::summarize(&response_body)
         );
         return Err(Status::new(Code::FailedPrecondition, "stripe_get_payment_intent_failed"));
     }
@@ -282,7 +282,7 @@ pub fn get_payment_method_card_at(
             "Stripe GetPaymentMethod({}) failed ({}): {:?}",
             payment_method_id,
             status,
-            response_body
+            crate::logic::log_redaction::summarize(&response_body)
         );
         return Err(Status::new(Code::FailedPrecondition, "stripe_get_payment_method_failed"));
     }
@@ -338,7 +338,7 @@ pub fn create_off_session_payment_intent_at(
             "Stripe off-session PaymentIntent did not succeed ({}, status={}): {:?}",
             status,
             stripe_status,
-            response_body
+            crate::logic::log_redaction::summarize(&response_body)
         );
         return Err(Status::new(Code::FailedPrecondition, "stripe_payment_intent_failed"));
     }
@@ -347,7 +347,7 @@ pub fn create_off_session_payment_intent_at(
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| {
-            log::error!("Stripe PaymentIntent response missing id: {:?}", response_body);
+            log::error!("Stripe PaymentIntent response missing id: {:?}", crate::logic::log_redaction::summarize(&response_body));
             Status::new(Code::Internal, "stripe_payment_intent_missing_id")
         })?;
     Ok(OffSessionPaymentIntentResult { id })

@@ -1,8 +1,8 @@
 mod create_account;
-pub use create_account::create_account;
+pub use create_account::{create_account, create_account_at};
 
 mod login;
-pub use login::login;
+pub use login::{login, login_at};
 
 mod access_token;
 pub use access_token::access_token;

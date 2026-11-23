@@ -28,7 +28,7 @@ pub async fn acquire_cluster_lock(resources: &ClusterResources, wanted: &[Cluste
         match try_lock_cluster_resources(resources, wanted).await {
             Ok(true) => return true,
             Ok(false) => log::info!("Cluster resource lock held by another namespace; waiting..."),
-            Err(e) => log::warn!("Error calling LockClusterResources: {:?}", e),
+            Err(e) => log::warn!("Error calling LockClusterResources: {:?}", crate::logic::log_redaction::safe_error(&e)),
         }
         if tokio::time::Instant::now() >= deadline {
             return false;
@@ -76,7 +76,7 @@ pub async fn release_cluster_lock(resources: &ClusterResources, held: &[ClusterR
     if let Err(e) = result {
         log::error!(
             "Error calling FreeClusterResources (lock may be stuck held): {:?}",
-            e
+            crate::logic::log_redaction::safe_error(&e)
         );
     }
 }

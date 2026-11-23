@@ -14,10 +14,10 @@ import 'dart:core' as $core;
 import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import 'google/protobuf/timestamp.pb.dart' as $13;
+import 'google/protobuf/timestamp.pb.dart' as $14;
 import 'market.pbenum.dart';
 import 'media.pb.dart' as $5;
-import 'permissions.pbenum.dart' as $15;
+import 'permissions.pbenum.dart' as $16;
 import 'server_configuration.pb.dart' as $2;
 
 export 'market.pbenum.dart';
@@ -51,8 +51,8 @@ class MarketProduct extends $pb.GeneratedMessage {
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
     PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
     SubdomainSubscriptionDetails? subdomainSubscriptionDetails,
-    $13.Timestamp? createdAt,
-    $13.Timestamp? delistedAt,
+    $14.Timestamp? createdAt,
+    $14.Timestamp? delistedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -125,8 +125,8 @@ class MarketProduct extends $pb.GeneratedMessage {
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
     ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
     ..aOM<SubdomainSubscriptionDetails>(14, _omitFieldNames ? '' : 'subdomainSubscriptionDetails', subBuilder: SubdomainSubscriptionDetails.create)
-    ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(21, _omitFieldNames ? '' : 'delistedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(21, _omitFieldNames ? '' : 'delistedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -296,30 +296,30 @@ class MarketProduct extends $pb.GeneratedMessage {
   /// When this product was created. Server-stamped -- `CreateMarketProduct` ignores any client-sent
   /// value.
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(12);
+  $14.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
-  set createdAt($13.Timestamp v) { setField(20, v); }
+  set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(12);
+  $14.Timestamp ensureCreatedAt() => $_ensure(12);
 
   /// If set, the MarketProduct is not purchasable -- still shown to admins (see
   /// `GetMarketProductsResponse.market_products`' own doc), but hidden from every other caller and
   /// rejected by `MakeMarketPurchase`. Note: clients toggle listings by setting this, but the server
   /// will always set it to the time of the request, not the time sent *by* the request.
   @$pb.TagNumber(21)
-  $13.Timestamp get delistedAt => $_getN(13);
+  $14.Timestamp get delistedAt => $_getN(13);
   @$pb.TagNumber(21)
-  set delistedAt($13.Timestamp v) { setField(21, v); }
+  set delistedAt($14.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
   $core.bool hasDelistedAt() => $_has(13);
   @$pb.TagNumber(21)
   void clearDelistedAt() => clearField(21);
   @$pb.TagNumber(21)
-  $13.Timestamp ensureDelistedAt() => $_ensure(13);
+  $14.Timestamp ensureDelistedAt() => $_ensure(13);
 }
 
 /// Request to get products available for purchase on a Rellm server. *Unauthenticated* --
@@ -697,7 +697,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     RellmHostingPurchaseDetails? rellmHostingPurchaseDetails,
     PermissionsAccessPurchaseDetails? permissionsAccessPurchaseDetails,
     SubdomainPurchaseDetails? subdomainPurchaseDetails,
-    $13.Timestamp? createdAt,
+    $14.Timestamp? createdAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -767,7 +767,7 @@ class MarketPurchase extends $pb.GeneratedMessage {
     ..aOM<RellmHostingPurchaseDetails>(12, _omitFieldNames ? '' : 'rellmHostingPurchaseDetails', subBuilder: RellmHostingPurchaseDetails.create)
     ..aOM<PermissionsAccessPurchaseDetails>(13, _omitFieldNames ? '' : 'permissionsAccessPurchaseDetails', subBuilder: PermissionsAccessPurchaseDetails.create)
     ..aOM<SubdomainPurchaseDetails>(14, _omitFieldNames ? '' : 'subdomainPurchaseDetails', subBuilder: SubdomainPurchaseDetails.create)
-    ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -927,15 +927,15 @@ class MarketPurchase extends $pb.GeneratedMessage {
   /// When this purchase was recorded -- i.e. when the Stripe webhook/renewal job actually processed
   /// it, not when the buyer started checkout.
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(12);
+  $14.Timestamp get createdAt => $_getN(12);
   @$pb.TagNumber(20)
-  set createdAt($13.Timestamp v) { setField(20, v); }
+  set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(12);
+  $14.Timestamp ensureCreatedAt() => $_ensure(12);
 }
 
 /// A single successful charge against a `MarketPurchase` -- one row per completed Stripe
@@ -949,7 +949,7 @@ class MarketPayment extends $pb.GeneratedMessage {
     $core.int? currency,
     $core.String? marketPurchaseId,
     MarketPaymentMethod? method,
-    $13.Timestamp? createdAt,
+    $14.Timestamp? createdAt,
   }) {
     final $result = create();
     if (amount != null) {
@@ -978,7 +978,7 @@ class MarketPayment extends $pb.GeneratedMessage {
     ..a<$core.int>(2, _omitFieldNames ? '' : 'currency', $pb.PbFieldType.OU3)
     ..aOS(3, _omitFieldNames ? '' : 'marketPurchaseId')
     ..aOM<MarketPaymentMethod>(4, _omitFieldNames ? '' : 'method', subBuilder: MarketPaymentMethod.create)
-    ..aOM<$13.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1048,15 +1048,15 @@ class MarketPayment extends $pb.GeneratedMessage {
 
   /// When this charge succeeded.
   @$pb.TagNumber(10)
-  $13.Timestamp get createdAt => $_getN(4);
+  $14.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
-  set createdAt($13.Timestamp v) { setField(10, v); }
+  set createdAt($14.Timestamp v) { setField(10, v); }
   @$pb.TagNumber(10)
   $core.bool hasCreatedAt() => $_has(4);
   @$pb.TagNumber(10)
   void clearCreatedAt() => clearField(10);
   @$pb.TagNumber(10)
-  $13.Timestamp ensureCreatedAt() => $_ensure(4);
+  $14.Timestamp ensureCreatedAt() => $_ensure(4);
 }
 
 /// Card details for a MarketPayment, resolved from Stripe at charge time (Stripe's own
@@ -1167,7 +1167,7 @@ class MarketRefund extends $pb.GeneratedMessage {
     $core.int? currency,
     $core.String? marketPurchaseId,
     MarketRefundMethod? method,
-    $13.Timestamp? createdAt,
+    $14.Timestamp? createdAt,
   }) {
     final $result = create();
     if (amount != null) {
@@ -1196,7 +1196,7 @@ class MarketRefund extends $pb.GeneratedMessage {
     ..a<$core.int>(2, _omitFieldNames ? '' : 'currency', $pb.PbFieldType.OU3)
     ..aOS(3, _omitFieldNames ? '' : 'marketPurchaseId')
     ..aOM<MarketRefundMethod>(4, _omitFieldNames ? '' : 'method', subBuilder: MarketRefundMethod.create)
-    ..aOM<$13.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(10, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -1269,15 +1269,15 @@ class MarketRefund extends $pb.GeneratedMessage {
 
   /// When this refund was issued.
   @$pb.TagNumber(10)
-  $13.Timestamp get createdAt => $_getN(4);
+  $14.Timestamp get createdAt => $_getN(4);
   @$pb.TagNumber(10)
-  set createdAt($13.Timestamp v) { setField(10, v); }
+  set createdAt($14.Timestamp v) { setField(10, v); }
   @$pb.TagNumber(10)
   $core.bool hasCreatedAt() => $_has(4);
   @$pb.TagNumber(10)
   void clearCreatedAt() => clearField(10);
   @$pb.TagNumber(10)
-  $13.Timestamp ensureCreatedAt() => $_ensure(4);
+  $14.Timestamp ensureCreatedAt() => $_ensure(4);
 }
 
 /// Same shape as MarketPaymentMethod -- kept as its own message (rather than reusing
@@ -1671,7 +1671,7 @@ class RellmHostingPurchaseDetails extends $pb.GeneratedMessage {
 /// specifically (never this message) when clawing back a lapsed grant.
 class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessPurchaseDetails({
-    $core.Iterable<$15.Permission>? permissions,
+    $core.Iterable<$16.Permission>? permissions,
     $core.String? name,
     $core.String? description,
   }) {
@@ -1692,7 +1692,7 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessPurchaseDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessPurchaseDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..aOS(3, _omitFieldNames ? '' : 'description')
     ..hasRequiredFields = false
@@ -1722,7 +1722,7 @@ class PermissionsAccessPurchaseDetails extends $pb.GeneratedMessage {
   /// The permissions this purchase granted -- see `logic::market::market_fulfillment::fulfill_purchase`'s
   /// `PermissionsAccess` arm (adds these to the buyer's `User.permissions`, union-style).
   @$pb.TagNumber(1)
-  $core.List<$15.Permission> get permissions => $_getList(0);
+  $core.List<$16.Permission> get permissions => $_getList(0);
 
   /// Admin-authored product name shown for this purchase (e.g. on `/market/fulfillment`'s billing
   /// history) -- copied from `PermissionsAccessSubscriptionDetails.name` at the moment this purchase
@@ -1782,10 +1782,10 @@ class MarketSubscription extends $pb.GeneratedMessage {
     RellmHostingSubscriptionDetails? rellmHostingSubscriptionDetails,
     PermissionsAccessSubscriptionDetails? permissionsAccessSubscriptionDetails,
     SubdomainSubscriptionDetails? subdomainSubscriptionDetails,
-    $13.Timestamp? createdAt,
-    $13.Timestamp? renewsAt,
-    $13.Timestamp? canceledAt,
-    $13.Timestamp? serviceTerminatedAt,
+    $14.Timestamp? createdAt,
+    $14.Timestamp? renewsAt,
+    $14.Timestamp? canceledAt,
+    $14.Timestamp? serviceTerminatedAt,
   }) {
     final $result = create();
     if (id != null) {
@@ -1872,10 +1872,10 @@ class MarketSubscription extends $pb.GeneratedMessage {
     ..aOM<RellmHostingSubscriptionDetails>(12, _omitFieldNames ? '' : 'rellmHostingSubscriptionDetails', subBuilder: RellmHostingSubscriptionDetails.create)
     ..aOM<PermissionsAccessSubscriptionDetails>(13, _omitFieldNames ? '' : 'permissionsAccessSubscriptionDetails', subBuilder: PermissionsAccessSubscriptionDetails.create)
     ..aOM<SubdomainSubscriptionDetails>(14, _omitFieldNames ? '' : 'subdomainSubscriptionDetails', subBuilder: SubdomainSubscriptionDetails.create)
-    ..aOM<$13.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(21, _omitFieldNames ? '' : 'renewsAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(22, _omitFieldNames ? '' : 'canceledAt', subBuilder: $13.Timestamp.create)
-    ..aOM<$13.Timestamp>(23, _omitFieldNames ? '' : 'serviceTerminatedAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(20, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(21, _omitFieldNames ? '' : 'renewsAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(22, _omitFieldNames ? '' : 'canceledAt', subBuilder: $14.Timestamp.create)
+    ..aOM<$14.Timestamp>(23, _omitFieldNames ? '' : 'serviceTerminatedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2064,15 +2064,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// When this subscription was first created (i.e. when the initial `MarketPurchase` was
   /// fulfilled).
   @$pb.TagNumber(20)
-  $13.Timestamp get createdAt => $_getN(14);
+  $14.Timestamp get createdAt => $_getN(14);
   @$pb.TagNumber(20)
-  set createdAt($13.Timestamp v) { setField(20, v); }
+  set createdAt($14.Timestamp v) { setField(20, v); }
   @$pb.TagNumber(20)
   $core.bool hasCreatedAt() => $_has(14);
   @$pb.TagNumber(20)
   void clearCreatedAt() => clearField(20);
   @$pb.TagNumber(20)
-  $13.Timestamp ensureCreatedAt() => $_ensure(14);
+  $14.Timestamp ensureCreatedAt() => $_ensure(14);
 
   /// When the next renewal charge is due. Always unset for a `PURCHASE_PERIOD_INDEFINITE`
   /// subscription (see this message's own doc) -- there is no next charge. Otherwise, advanced by
@@ -2080,15 +2080,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// once `canceled_at` is set, since a canceled subscription never renews again regardless of what
   /// this still says.
   @$pb.TagNumber(21)
-  $13.Timestamp get renewsAt => $_getN(15);
+  $14.Timestamp get renewsAt => $_getN(15);
   @$pb.TagNumber(21)
-  set renewsAt($13.Timestamp v) { setField(21, v); }
+  set renewsAt($14.Timestamp v) { setField(21, v); }
   @$pb.TagNumber(21)
   $core.bool hasRenewsAt() => $_has(15);
   @$pb.TagNumber(21)
   void clearRenewsAt() => clearField(21);
   @$pb.TagNumber(21)
-  $13.Timestamp ensureRenewsAt() => $_ensure(15);
+  $14.Timestamp ensureRenewsAt() => $_ensure(15);
 
   /// Set once the subscription will no longer renew -- either the buyer/admin explicitly canceled it
   /// (CancelMarketSubscription) or a renewal charge failed. The subscription's entitlement (media
@@ -2100,15 +2100,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// `MarketSubscriptionState.SUBSCRIPTION_ACTIVE_BUT_CANCELED` and `state` above, which is what
   /// clients should branch on rather than inspecting this field.
   @$pb.TagNumber(22)
-  $13.Timestamp get canceledAt => $_getN(16);
+  $14.Timestamp get canceledAt => $_getN(16);
   @$pb.TagNumber(22)
-  set canceledAt($13.Timestamp v) { setField(22, v); }
+  set canceledAt($14.Timestamp v) { setField(22, v); }
   @$pb.TagNumber(22)
   $core.bool hasCanceledAt() => $_has(16);
   @$pb.TagNumber(22)
   void clearCanceledAt() => clearField(22);
   @$pb.TagNumber(22)
-  $13.Timestamp ensureCanceledAt() => $_ensure(16);
+  $14.Timestamp ensureCanceledAt() => $_ensure(16);
 
   /// The time permissions were removed, media storage quotas reset, etc. -- i.e. when
   /// `logic::market::market_fulfillment::terminate_entitlement` actually ran for this subscription. Always
@@ -2117,15 +2117,15 @@ class MarketSubscription extends $pb.GeneratedMessage {
   /// (see `canceled_at`'s own doc) -- a buyer who cancels mid-period keeps what they already paid
   /// for through the end of that period.
   @$pb.TagNumber(23)
-  $13.Timestamp get serviceTerminatedAt => $_getN(17);
+  $14.Timestamp get serviceTerminatedAt => $_getN(17);
   @$pb.TagNumber(23)
-  set serviceTerminatedAt($13.Timestamp v) { setField(23, v); }
+  set serviceTerminatedAt($14.Timestamp v) { setField(23, v); }
   @$pb.TagNumber(23)
   $core.bool hasServiceTerminatedAt() => $_has(17);
   @$pb.TagNumber(23)
   void clearServiceTerminatedAt() => clearField(23);
   @$pb.TagNumber(23)
-  $13.Timestamp ensureServiceTerminatedAt() => $_ensure(17);
+  $14.Timestamp ensureServiceTerminatedAt() => $_ensure(17);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_MEDIA_STORAGE` variant --
@@ -2136,7 +2136,7 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
     $fixnum.Int64? allocationBytes,
     FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
-    $13.Timestamp? notesLastRead,
+    $14.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (allocationBytes != null) {
@@ -2161,7 +2161,7 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(1, _omitFieldNames ? '' : 'allocationBytes', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2220,15 +2220,15 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
   $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(2);
 
   @$pb.TagNumber(9)
-  $13.Timestamp get notesLastRead => $_getN(3);
+  $14.Timestamp get notesLastRead => $_getN(3);
   @$pb.TagNumber(9)
-  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasNotesLastRead() => $_has(3);
   @$pb.TagNumber(9)
   void clearNotesLastRead() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureNotesLastRead() => $_ensure(3);
+  $14.Timestamp ensureNotesLastRead() => $_ensure(3);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_PERMISSIONS_ACCESS`
@@ -2238,12 +2238,12 @@ class MediaStorageSubscriptionDetails extends $pb.GeneratedMessage {
 /// tell "what to claw back" apart from "what was originally billed").
 class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessSubscriptionDetails({
-    $core.Iterable<$15.Permission>? permissions,
+    $core.Iterable<$16.Permission>? permissions,
     $core.String? name,
     $core.String? description,
     FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
-    $13.Timestamp? notesLastRead,
+    $14.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (permissions != null) {
@@ -2271,12 +2271,12 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   factory PermissionsAccessSubscriptionDetails.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'PermissionsAccessSubscriptionDetails', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
-    ..pc<$15.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $15.Permission.valueOf, enumValues: $15.Permission.values, defaultEnumValue: $15.Permission.PERMISSION_UNKNOWN)
+    ..pc<$16.Permission>(1, _omitFieldNames ? '' : 'permissions', $pb.PbFieldType.KE, valueOf: $16.Permission.valueOf, enumValues: $16.Permission.values, defaultEnumValue: $16.Permission.PERMISSION_UNKNOWN)
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..aOS(3, _omitFieldNames ? '' : 'description')
     ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2317,7 +2317,7 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   /// but implemented as "only these permissions are purchasable" so a newly-added `Permission` is
   /// never purchasable by default; it has to be deliberately added to that list.
   @$pb.TagNumber(1)
-  $core.List<$15.Permission> get permissions => $_getList(0);
+  $core.List<$16.Permission> get permissions => $_getList(0);
 
   /// Admin-authored product name -- unlike `MediaStorageSubscriptionDetails`/`AIGrantSubscriptionDetails`/
   /// `RellmHostingSubscriptionDetails` (which get an implicit, Elm-computed display name from their
@@ -2370,15 +2370,15 @@ class PermissionsAccessSubscriptionDetails extends $pb.GeneratedMessage {
   $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(4);
 
   @$pb.TagNumber(9)
-  $13.Timestamp get notesLastRead => $_getN(5);
+  $14.Timestamp get notesLastRead => $_getN(5);
   @$pb.TagNumber(9)
-  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasNotesLastRead() => $_has(5);
   @$pb.TagNumber(9)
   void clearNotesLastRead() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureNotesLastRead() => $_ensure(5);
+  $14.Timestamp ensureNotesLastRead() => $_ensure(5);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_AI_GRANTS` variant -- what
@@ -2391,7 +2391,7 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
     $fixnum.Int64? tokens,
     FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
-    $13.Timestamp? notesLastRead,
+    $14.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (aiProviderId != null) {
@@ -2424,7 +2424,7 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
     ..a<$fixnum.Int64>(3, _omitFieldNames ? '' : 'tokens', $pb.PbFieldType.OU6, defaultOrMaker: $fixnum.Int64.ZERO)
     ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2497,15 +2497,15 @@ class AIGrantSubscriptionDetails extends $pb.GeneratedMessage {
   $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(4);
 
   @$pb.TagNumber(9)
-  $13.Timestamp get notesLastRead => $_getN(5);
+  $14.Timestamp get notesLastRead => $_getN(5);
   @$pb.TagNumber(9)
-  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasNotesLastRead() => $_has(5);
   @$pb.TagNumber(9)
   void clearNotesLastRead() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureNotesLastRead() => $_ensure(5);
+  $14.Timestamp ensureNotesLastRead() => $_ensure(5);
 }
 
 /// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_RELLM_HOSTING` variant --
@@ -2524,7 +2524,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     $core.String? additionalInformation,
     FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
-    $13.Timestamp? notesLastRead,
+    $14.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (dbSizeBytes != null) {
@@ -2569,7 +2569,7 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
     ..aOS(6, _omitFieldNames ? '' : 'additionalInformation')
     ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2697,15 +2697,15 @@ class RellmHostingSubscriptionDetails extends $pb.GeneratedMessage {
   /// counts on the Messages UI's Fulfillment tab and on subscription listings. Deliberately one
   /// marker for the buyer's side only: admins work orders from `/market/fulfillment`.
   @$pb.TagNumber(9)
-  $13.Timestamp get notesLastRead => $_getN(8);
+  $14.Timestamp get notesLastRead => $_getN(8);
   @$pb.TagNumber(9)
-  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasNotesLastRead() => $_has(8);
   @$pb.TagNumber(9)
   void clearNotesLastRead() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureNotesLastRead() => $_ensure(8);
+  $14.Timestamp ensureNotesLastRead() => $_ensure(8);
 }
 
 /// One entry in a MarketSubscription's `fulfillment_notes` -- see that field's own doc. Immutable
@@ -2716,7 +2716,7 @@ class FulfillmentNote extends $pb.GeneratedMessage {
     $core.String? userId,
     $core.String? note,
     FulfillmentStatus? fulfillmentStatus,
-    $13.Timestamp? createdAt,
+    $14.Timestamp? createdAt,
   }) {
     final $result = create();
     if (userId != null) {
@@ -2741,7 +2741,7 @@ class FulfillmentNote extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'userId')
     ..aOS(2, _omitFieldNames ? '' : 'note')
     ..e<FulfillmentStatus>(3, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
-    ..aOM<$13.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(4, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2811,15 +2811,15 @@ class FulfillmentNote extends $pb.GeneratedMessage {
   /// When this note was added. Server-stamped -- `UpdateMarketSubscription` always ignores whatever
   /// timestamp the client sends for a newly-appended entry.
   @$pb.TagNumber(4)
-  $13.Timestamp get createdAt => $_getN(3);
+  $14.Timestamp get createdAt => $_getN(3);
   @$pb.TagNumber(4)
-  set createdAt($13.Timestamp v) { setField(4, v); }
+  set createdAt($14.Timestamp v) { setField(4, v); }
   @$pb.TagNumber(4)
   $core.bool hasCreatedAt() => $_has(3);
   @$pb.TagNumber(4)
   void clearCreatedAt() => clearField(4);
   @$pb.TagNumber(4)
-  $13.Timestamp ensureCreatedAt() => $_ensure(3);
+  $14.Timestamp ensureCreatedAt() => $_ensure(3);
 }
 
 /// Request to mark a subscription's fulfillment notes read -- see
@@ -2884,7 +2884,7 @@ class SubdomainSubscriptionDetails extends $pb.GeneratedMessage {
     $2.SubdomainSettings? settings,
     FulfillmentStatus? fulfillmentStatus,
     $core.Iterable<FulfillmentNote>? fulfillmentNotes,
-    $13.Timestamp? notesLastRead,
+    $14.Timestamp? notesLastRead,
   }) {
     final $result = create();
     if (settings != null) {
@@ -2909,7 +2909,7 @@ class SubdomainSubscriptionDetails extends $pb.GeneratedMessage {
     ..aOM<$2.SubdomainSettings>(1, _omitFieldNames ? '' : 'settings', subBuilder: $2.SubdomainSettings.create)
     ..e<FulfillmentStatus>(7, _omitFieldNames ? '' : 'fulfillmentStatus', $pb.PbFieldType.OE, defaultOrMaker: FulfillmentStatus.FULFILLMENT_STATUS_AWAITING_HOST_ADMIN, valueOf: FulfillmentStatus.valueOf, enumValues: FulfillmentStatus.values)
     ..pc<FulfillmentNote>(8, _omitFieldNames ? '' : 'fulfillmentNotes', $pb.PbFieldType.PM, subBuilder: FulfillmentNote.create)
-    ..aOM<$13.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $13.Timestamp.create)
+    ..aOM<$14.Timestamp>(9, _omitFieldNames ? '' : 'notesLastRead', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
   ;
 
@@ -2962,15 +2962,15 @@ class SubdomainSubscriptionDetails extends $pb.GeneratedMessage {
   $core.List<FulfillmentNote> get fulfillmentNotes => $_getList(2);
 
   @$pb.TagNumber(9)
-  $13.Timestamp get notesLastRead => $_getN(3);
+  $14.Timestamp get notesLastRead => $_getN(3);
   @$pb.TagNumber(9)
-  set notesLastRead($13.Timestamp v) { setField(9, v); }
+  set notesLastRead($14.Timestamp v) { setField(9, v); }
   @$pb.TagNumber(9)
   $core.bool hasNotesLastRead() => $_has(3);
   @$pb.TagNumber(9)
   void clearNotesLastRead() => clearField(9);
   @$pb.TagNumber(9)
-  $13.Timestamp ensureNotesLastRead() => $_ensure(3);
+  $14.Timestamp ensureNotesLastRead() => $_ensure(3);
 }
 
 /// `MarketPurchase.details`' `PURCHASE_TYPE_SUBDOMAIN` variant: which subdomain this purchase paid for.

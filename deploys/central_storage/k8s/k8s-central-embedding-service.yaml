@@ -1,0 +1,150 @@
+# The cluster-shared embedding model service (backend `embedding_service`): ONE pod per cluster that holds ONE text
+# embedding model in memory and embeds text for every namespace's Rellm servers and `generate_embeddings` jobs,
+# so the model's RAM (~0.75GB for the default harrier-oss-v1-270m-384, see `resources` below) is paid once instead of once per namespace
+# server/job. Opt-in: see ../../k8s/SEMANTIC_SEARCH.md for how a namespace starts using it.
+#
+# - It hosts a SINGLE model (RELLM_EMBEDDING_SERVICE_MODEL, default harrier-oss-v1-270m-384); every namespace that
+#   uses it uses that model, whatever model its admin picked.
+# - It stores nothing and never logs text. Callers authenticate with the shared secret in the
+#   rellm-central-embedding-credentials Secret (key `secret`), sent as `x-rellm-internal-secret`.
+# - Cluster-internal only: the Service is a ClusterIP, never expose it outside the cluster network. Note that
+#   namespaces' private text is sent to it -- only point namespaces you operate at it.
+# - replicas stays 1 in steady state: a second pod would load a second copy of the model, defeating the point. Rollouts
+#   (CI applies this file on every deploy) are RollingUpdate with maxSurge 1 / maxUnavailable 0, so for a moment there
+#   are two pods and the old one keeps serving until the new one is Ready -- no gap in semantic search. The surge pod
+#   shares the ReadWriteOnce model-cache volume with the old one, which only works on the same node, hence the
+#   required podAffinity to itself below (a Recreate strategy was the alternative: simpler, but a gap on every deploy).
+#
+# Create the secret once:
+#   kubectl -n rellm-storage create secret generic rellm-central-embedding-credentials \
+#     --from-literal=secret="$(openssl rand -hex 24)"
+# Namespaces reach it at http://rellm-central-embedding.rellm-storage:8090 (adjust for your storage namespace).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app: rellm-central-embedding
+  name: rellm-central-embedding-models
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Holds the downloaded model so a restart doesn't download it again (~0.3GB).
+      storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rellm-central-embedding
+  labels:
+    app: rellm-central-embedding
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8090
+      targetPort: 8090
+      name: grpc
+  selector:
+    app: rellm-central-embedding
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rellm-central-embedding
+  labels:
+    app: rellm-central-embedding
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: rellm-central-embedding
+  template:
+    metadata:
+      labels:
+        app: rellm-central-embedding
+    spec:
+      # Keep the rollout's surge pod on the old pod's node, because the model-cache PVC is ReadWriteOnce (see the
+      # header). The very first pod, with no peer yet, is exempt from this rule and schedules anywhere.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: rellm-central-embedding
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: rellm-central-embedding-models
+      containers:
+        - name: embedding
+          image: docker.io/jonlatane/rellm_embeddings:0.5.554
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/embedding_service"]
+          env:
+            - name: RELLM_EMBEDDING_SERVICE_MODEL
+              value: harrier-oss-v1-270m-384
+            - name: RELLM_EMBEDDING_SERVICE_ADDR
+              value: 0.0.0.0:8090
+            # Documents: 4 threads embed them ~1.7x faster than 2 (measured), which is what a backfill waits on.
+            - name: RELLM_EMBEDDING_THREADS
+              value: "4"
+            # A second copy of the model, on its own thread, answers search queries, so a search never waits for the
+            # document being embedded (up to ~2.3s). 4 threads: a query is ~25 tokens (most of them the model's fixed
+            # search instruction) and the cluster's vCPUs run it ~3x slower than a laptop (370-640ms on 2 threads in
+            # production, from the service's own "Search query embedded in ..." log), and every source of a search waits
+            # on that one run. Measured in Docker, 1/2/4 threads take a query 0.24/0.15/0.10s. Queries are short, so
+            # the extra threads sit idle between them; they only compete with a backfill while one is running.
+            # "0" turns it off (one model does both; ~270MiB less memory).
+            - name: RELLM_EMBEDDING_QUERY_THREADS
+              value: "4"
+            - name: RELLM_EMBEDDING_CACHE_DIR
+              value: /models
+            - name: RELLM_EMBEDDING_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rellm-central-embedding-credentials
+                  key: secret
+          ports:
+            - containerPort: 8090
+              name: grpc
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          # harrier-oss-v1-270m-384, measured on this image's binary (Linux, 2 threads each) as it serves requests: with
+          # the second, query-only copy of the model ~535MiB anonymous memory (~270MiB per copy; flat through 12 x
+          # 256-token documents with queries running alongside) plus ~210MiB of memory-mapped weights (reclaimable page
+          # cache, shared by both copies), ~750MiB peak in total. It ran under a 768Mi limit with no margin, so: request
+          # 768Mi, limit 1Gi. Without the query copy (RELLM_EMBEDDING_QUERY_THREADS=0) it is ~270MiB + weights, ~510MiB.
+          # (EmbeddingGemma, a previous default, needed ~1.2GiB once it had embedded anything: the ~330MB in its registry
+          # entry was its idle figure.) The first start also downloads ~360MB, so give the readiness probe time.
+          resources:
+            requests:
+              memory: 768Mi
+              # Up to 4 threads on documents plus 4 on queries; no CPU limit, so it takes spare CPU from the node (4 vCPUs,
+              # mostly idle) but the request reserves what a busy backfill uses.
+              cpu: 1000m
+            limits:
+              memory: 1Gi
+          # The port opens only after the model has downloaded (first start) and loaded, so liveness checks must wait
+          # for that: up to 10 minutes here (120 x 5s), after which the container is restarted.
+          startupProbe:
+            tcpSocket:
+              port: 8090
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            tcpSocket:
+              port: 8090
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8090
+            periodSeconds: 20

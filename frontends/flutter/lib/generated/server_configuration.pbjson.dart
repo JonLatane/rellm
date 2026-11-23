@@ -21,27 +21,37 @@ const ClusterResource$json = {
     {'1': 'CLUSTER_RESOURCE_FFMPEG', '2': 1},
     {'1': 'CLUSTER_RESOURCE_IMAGEMAGICK', '2': 2},
   ],
+  '4': [
+    {'1': 3, '2': 3},
+  ],
 };
 
 /// Descriptor for `ClusterResource`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List clusterResourceDescriptor = $convert.base64Decode(
     'Cg9DbHVzdGVyUmVzb3VyY2USHAoYQ0xVU1RFUl9SRVNPVVJDRV9CUk9XU0VSEAASGwoXQ0xVU1'
-    'RFUl9SRVNPVVJDRV9GRk1QRUcQARIgChxDTFVTVEVSX1JFU09VUkNFX0lNQUdFTUFHSUNLEAI=');
+    'RFUl9SRVNPVVJDRV9GRk1QRUcQARIgChxDTFVTVEVSX1JFU09VUkNFX0lNQUdFTUFHSUNLEAIi'
+    'BAgDEAM=');
 
 @$core.Deprecated('Use authenticationFeatureDescriptor instead')
 const AuthenticationFeature$json = {
   '1': 'AuthenticationFeature',
   '2': [
     {'1': 'AUTHENTICATION_FEATURE_UNKNOWN', '2': 0},
-    {'1': 'CREATE_ACCOUNT', '2': 1},
-    {'1': 'LOGIN', '2': 2},
+    {'1': 'CREATE_ACCOUNT_WITH_PASSWORD', '2': 1},
+    {'1': 'CREATE_ACCOUNT_WITH_SMS', '2': 2},
+    {'1': 'CREATE_ACCOUNT_WITH_EMAIL', '2': 3},
+    {'1': 'LOGIN_WITH_PASSWORD', '2': 11},
+    {'1': 'LOGIN_WITH_SMS', '2': 12},
+    {'1': 'LOGIN_WITH_EMAIL', '2': 13},
   ],
 };
 
 /// Descriptor for `AuthenticationFeature`. Decode as a `google.protobuf.EnumDescriptorProto`.
 final $typed_data.Uint8List authenticationFeatureDescriptor = $convert.base64Decode(
     'ChVBdXRoZW50aWNhdGlvbkZlYXR1cmUSIgoeQVVUSEVOVElDQVRJT05fRkVBVFVSRV9VTktOT1'
-    'dOEAASEgoOQ1JFQVRFX0FDQ09VTlQQARIJCgVMT0dJThAC');
+    'dOEAASIAocQ1JFQVRFX0FDQ09VTlRfV0lUSF9QQVNTV09SRBABEhsKF0NSRUFURV9BQ0NPVU5U'
+    'X1dJVEhfU01TEAISHQoZQ1JFQVRFX0FDQ09VTlRfV0lUSF9FTUFJTBADEhcKE0xPR0lOX1dJVE'
+    'hfUEFTU1dPUkQQCxISCg5MT0dJTl9XSVRIX1NNUxAMEhQKEExPR0lOX1dJVEhfRU1BSUwQDQ==');
 
 @$core.Deprecated('Use defaultPostsSortDescriptor instead')
 const DefaultPostsSort$json = {
@@ -180,6 +190,24 @@ final $typed_data.Uint8List contactVerificationAPIDescriptor = $convert.base64De
     'lMSU8QABIhCh1DT05UQUNUX1ZFUklGSUNBVElPTl9BUElfQklSRBABEiMKH0NPTlRBQ1RfVkVS'
     'SUZJQ0FUSU9OX0FQSV9URUxOWVgQAg==');
 
+@$core.Deprecated('Use emailVerificationAPIDescriptor instead')
+const EmailVerificationAPI$json = {
+  '1': 'EmailVerificationAPI',
+  '2': [
+    {'1': 'EMAIL_VERIFICATION_API_POSTMARK', '2': 0},
+    {'1': 'EMAIL_VERIFICATION_API_SENDGRID', '2': 1},
+    {'1': 'EMAIL_VERIFICATION_API_MAILGUN', '2': 2},
+    {'1': 'EMAIL_VERIFICATION_API_STALWART', '2': 3},
+  ],
+};
+
+/// Descriptor for `EmailVerificationAPI`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List emailVerificationAPIDescriptor = $convert.base64Decode(
+    'ChRFbWFpbFZlcmlmaWNhdGlvbkFQSRIjCh9FTUFJTF9WRVJJRklDQVRJT05fQVBJX1BPU1RNQV'
+    'JLEAASIwofRU1BSUxfVkVSSUZJQ0FUSU9OX0FQSV9TRU5ER1JJRBABEiIKHkVNQUlMX1ZFUklG'
+    'SUNBVElPTl9BUElfTUFJTEdVThACEiMKH0VNQUlMX1ZFUklGSUNBVElPTl9BUElfU1RBTFdBUl'
+    'QQAw==');
+
 @$core.Deprecated('Use serverConfigurationDescriptor instead')
 const ServerConfiguration$json = {
   '1': 'ServerConfiguration',
@@ -196,6 +224,7 @@ const ServerConfiguration$json = {
     {'1': 'event_settings', '3': 23, '4': 1, '5': 11, '6': '.rellm.EventSettings', '10': 'eventSettings'},
     {'1': 'media_settings', '3': 24, '4': 1, '5': 11, '6': '.rellm.MediaSettings', '10': 'mediaSettings'},
     {'1': 'market_settings', '3': 25, '4': 1, '5': 11, '6': '.rellm.MarketSettings', '10': 'marketSettings'},
+    {'1': 'search_settings', '3': 28, '4': 1, '5': 11, '6': '.rellm.SearchSettings', '10': 'searchSettings'},
     {'1': 'external_cdn_config', '3': 90, '4': 1, '5': 11, '6': '.rellm.ExternalCDNConfig', '9': 3, '10': 'externalCdnConfig', '17': true},
     {'1': 'cluster_resources', '3': 91, '4': 1, '5': 11, '6': '.rellm.ClusterResources', '9': 4, '10': 'clusterResources', '17': true},
     {'1': 'private_user_strategy', '3': 100, '4': 1, '5': 14, '6': '.rellm.PrivateUserStrategy', '10': 'privateUserStrategy'},
@@ -210,7 +239,12 @@ const ServerConfiguration$json = {
     {'1': 'telnyx_config', '3': 125, '4': 1, '5': 11, '6': '.rellm.TelnyxConfig', '9': 9, '10': 'telnyxConfig', '17': true},
     {'1': 'stalwart_config', '3': 126, '4': 1, '5': 11, '6': '.rellm.StalwartConfig', '9': 10, '10': 'stalwartConfig', '17': true},
     {'1': 'custom_css_configuration', '3': 127, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 11, '10': 'customCssConfiguration', '17': true},
-    {'1': 'subdomain_settings', '3': 130, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '9': 12, '10': 'subdomainSettings', '17': true},
+    {'1': 'preferred_email_apis', '3': 128, '4': 3, '5': 14, '6': '.rellm.EmailVerificationAPI', '10': 'preferredEmailApis'},
+    {'1': 'available_email_apis', '3': 129, '4': 3, '5': 14, '6': '.rellm.EmailVerificationAPI', '10': 'availableEmailApis'},
+    {'1': 'postmark_config', '3': 131, '4': 1, '5': 11, '6': '.rellm.PostmarkConfig', '9': 12, '10': 'postmarkConfig', '17': true},
+    {'1': 'sendgrid_config', '3': 132, '4': 1, '5': 11, '6': '.rellm.SendgridConfig', '9': 13, '10': 'sendgridConfig', '17': true},
+    {'1': 'mailgun_config', '3': 133, '4': 1, '5': 11, '6': '.rellm.MailgunConfig', '9': 14, '10': 'mailgunConfig', '17': true},
+    {'1': 'subdomain_settings', '3': 130, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '9': 15, '10': 'subdomainSettings', '17': true},
   ],
   '8': [
     {'1': '_server_info'},
@@ -225,6 +259,9 @@ const ServerConfiguration$json = {
     {'1': '_telnyx_config'},
     {'1': '_stalwart_config'},
     {'1': '_custom_css_configuration'},
+    {'1': '_postmark_config'},
+    {'1': '_sendgrid_config'},
+    {'1': '_mailgun_config'},
     {'1': '_subdomain_settings'},
   ],
 };
@@ -245,33 +282,42 @@ final $typed_data.Uint8List serverConfigurationDescriptor = $convert.base64Decod
     'RTZXR0aW5nc1IMcG9zdFNldHRpbmdzEjsKDmV2ZW50X3NldHRpbmdzGBcgASgLMhQucmVsbG0u'
     'RXZlbnRTZXR0aW5nc1INZXZlbnRTZXR0aW5ncxI7Cg5tZWRpYV9zZXR0aW5ncxgYIAEoCzIULn'
     'JlbGxtLk1lZGlhU2V0dGluZ3NSDW1lZGlhU2V0dGluZ3MSPgoPbWFya2V0X3NldHRpbmdzGBkg'
-    'ASgLMhUucmVsbG0uTWFya2V0U2V0dGluZ3NSDm1hcmtldFNldHRpbmdzEk0KE2V4dGVybmFsX2'
-    'Nkbl9jb25maWcYWiABKAsyGC5yZWxsbS5FeHRlcm5hbENETkNvbmZpZ0gDUhFleHRlcm5hbENk'
-    'bkNvbmZpZ4gBARJJChFjbHVzdGVyX3Jlc291cmNlcxhbIAEoCzIXLnJlbGxtLkNsdXN0ZXJSZX'
-    'NvdXJjZXNIBFIQY2x1c3RlclJlc291cmNlc4gBARJOChVwcml2YXRlX3VzZXJfc3RyYXRlZ3kY'
-    'ZCABKA4yGi5yZWxsbS5Qcml2YXRlVXNlclN0cmF0ZWd5UhNwcml2YXRlVXNlclN0cmF0ZWd5El'
-    'UKF2F1dGhlbnRpY2F0aW9uX2ZlYXR1cmVzGGUgAygOMhwucmVsbG0uQXV0aGVudGljYXRpb25G'
-    'ZWF0dXJlUhZhdXRoZW50aWNhdGlvbkZlYXR1cmVzEkEKD3dlYl9wdXNoX2NvbmZpZxhuIAEoCz'
-    'IULnJlbGxtLldlYlB1c2hDb25maWdIBVINd2ViUHVzaENvbmZpZ4gBARJWChtzdXBwb3J0ZWRf'
-    'Y29udGFjdF9wcm90b2NvbHMYdyADKA4yFi5yZWxsbS5Db250YWN0UHJvdG9jb2xSGXN1cHBvcn'
-    'RlZENvbnRhY3RQcm90b2NvbHMSXQobcHJlZmVycmVkX3ZlcmlmaWNhdGlvbl9hcGlzGHggAygO'
-    'Mh0ucmVsbG0uQ29udGFjdFZlcmlmaWNhdGlvbkFQSVIZcHJlZmVycmVkVmVyaWZpY2F0aW9uQX'
-    'BpcxJdChthdmFpbGFibGVfdmVyaWZpY2F0aW9uX2FwaXMYeSADKA4yHS5yZWxsbS5Db250YWN0'
-    'VmVyaWZpY2F0aW9uQVBJUhlhdmFpbGFibGVWZXJpZmljYXRpb25BcGlzEj0KDXR3aWxpb19jb2'
-    '5maWcYeiABKAsyEy5yZWxsbS5Ud2lsaW9Db25maWdIBlIMdHdpbGlvQ29uZmlniAEBEjcKC2Jp'
-    'cmRfY29uZmlnGHsgASgLMhEucmVsbG0uQmlyZENvbmZpZ0gHUgpiaXJkQ29uZmlniAEBEj0KDX'
-    'N0cmlwZV9jb25maWcYfCABKAsyEy5yZWxsbS5TdHJpcGVDb25maWdICFIMc3RyaXBlQ29uZmln'
-    'iAEBEj0KDXRlbG55eF9jb25maWcYfSABKAsyEy5yZWxsbS5UZWxueXhDb25maWdICVIMdGVsbn'
-    'l4Q29uZmlniAEBEkMKD3N0YWx3YXJ0X2NvbmZpZxh+IAEoCzIVLnJlbGxtLlN0YWx3YXJ0Q29u'
-    'ZmlnSApSDnN0YWx3YXJ0Q29uZmlniAEBElwKGGN1c3RvbV9jc3NfY29uZmlndXJhdGlvbhh/IA'
-    'EoCzIdLnJlbGxtLkN1c3RvbUNTU0NvbmZpZ3VyYXRpb25IC1IWY3VzdG9tQ3NzQ29uZmlndXJh'
-    'dGlvbogBARJNChJzdWJkb21haW5fc2V0dGluZ3MYggEgASgLMhgucmVsbG0uU3ViZG9tYWluU2'
-    'V0dGluZ3NIDFIRc3ViZG9tYWluU2V0dGluZ3OIAQFCDgoMX3NlcnZlcl9pbmZvQhIKEF9mZWRl'
-    'cmF0aW9uX2luZm9CDgoMX2N1c3RvbV90YWJzQhYKFF9leHRlcm5hbF9jZG5fY29uZmlnQhQKEl'
-    '9jbHVzdGVyX3Jlc291cmNlc0ISChBfd2ViX3B1c2hfY29uZmlnQhAKDl90d2lsaW9fY29uZmln'
-    'Qg4KDF9iaXJkX2NvbmZpZ0IQCg5fc3RyaXBlX2NvbmZpZ0IQCg5fdGVsbnl4X2NvbmZpZ0ISCh'
-    'Bfc3RhbHdhcnRfY29uZmlnQhsKGV9jdXN0b21fY3NzX2NvbmZpZ3VyYXRpb25CFQoTX3N1YmRv'
-    'bWFpbl9zZXR0aW5ncw==');
+    'ASgLMhUucmVsbG0uTWFya2V0U2V0dGluZ3NSDm1hcmtldFNldHRpbmdzEj4KD3NlYXJjaF9zZX'
+    'R0aW5ncxgcIAEoCzIVLnJlbGxtLlNlYXJjaFNldHRpbmdzUg5zZWFyY2hTZXR0aW5ncxJNChNl'
+    'eHRlcm5hbF9jZG5fY29uZmlnGFogASgLMhgucmVsbG0uRXh0ZXJuYWxDRE5Db25maWdIA1IRZX'
+    'h0ZXJuYWxDZG5Db25maWeIAQESSQoRY2x1c3Rlcl9yZXNvdXJjZXMYWyABKAsyFy5yZWxsbS5D'
+    'bHVzdGVyUmVzb3VyY2VzSARSEGNsdXN0ZXJSZXNvdXJjZXOIAQESTgoVcHJpdmF0ZV91c2VyX3'
+    'N0cmF0ZWd5GGQgASgOMhoucmVsbG0uUHJpdmF0ZVVzZXJTdHJhdGVneVITcHJpdmF0ZVVzZXJT'
+    'dHJhdGVneRJVChdhdXRoZW50aWNhdGlvbl9mZWF0dXJlcxhlIAMoDjIcLnJlbGxtLkF1dGhlbn'
+    'RpY2F0aW9uRmVhdHVyZVIWYXV0aGVudGljYXRpb25GZWF0dXJlcxJBCg93ZWJfcHVzaF9jb25m'
+    'aWcYbiABKAsyFC5yZWxsbS5XZWJQdXNoQ29uZmlnSAVSDXdlYlB1c2hDb25maWeIAQESVgobc3'
+    'VwcG9ydGVkX2NvbnRhY3RfcHJvdG9jb2xzGHcgAygOMhYucmVsbG0uQ29udGFjdFByb3RvY29s'
+    'UhlzdXBwb3J0ZWRDb250YWN0UHJvdG9jb2xzEl0KG3ByZWZlcnJlZF92ZXJpZmljYXRpb25fYX'
+    'Bpcxh4IAMoDjIdLnJlbGxtLkNvbnRhY3RWZXJpZmljYXRpb25BUElSGXByZWZlcnJlZFZlcmlm'
+    'aWNhdGlvbkFwaXMSXQobYXZhaWxhYmxlX3ZlcmlmaWNhdGlvbl9hcGlzGHkgAygOMh0ucmVsbG'
+    '0uQ29udGFjdFZlcmlmaWNhdGlvbkFQSVIZYXZhaWxhYmxlVmVyaWZpY2F0aW9uQXBpcxI9Cg10'
+    'd2lsaW9fY29uZmlnGHogASgLMhMucmVsbG0uVHdpbGlvQ29uZmlnSAZSDHR3aWxpb0NvbmZpZ4'
+    'gBARI3CgtiaXJkX2NvbmZpZxh7IAEoCzIRLnJlbGxtLkJpcmRDb25maWdIB1IKYmlyZENvbmZp'
+    'Z4gBARI9Cg1zdHJpcGVfY29uZmlnGHwgASgLMhMucmVsbG0uU3RyaXBlQ29uZmlnSAhSDHN0cm'
+    'lwZUNvbmZpZ4gBARI9Cg10ZWxueXhfY29uZmlnGH0gASgLMhMucmVsbG0uVGVsbnl4Q29uZmln'
+    'SAlSDHRlbG55eENvbmZpZ4gBARJDCg9zdGFsd2FydF9jb25maWcYfiABKAsyFS5yZWxsbS5TdG'
+    'Fsd2FydENvbmZpZ0gKUg5zdGFsd2FydENvbmZpZ4gBARJcChhjdXN0b21fY3NzX2NvbmZpZ3Vy'
+    'YXRpb24YfyABKAsyHS5yZWxsbS5DdXN0b21DU1NDb25maWd1cmF0aW9uSAtSFmN1c3RvbUNzc0'
+    'NvbmZpZ3VyYXRpb26IAQESTgoUcHJlZmVycmVkX2VtYWlsX2FwaXMYgAEgAygOMhsucmVsbG0u'
+    'RW1haWxWZXJpZmljYXRpb25BUElSEnByZWZlcnJlZEVtYWlsQXBpcxJOChRhdmFpbGFibGVfZW'
+    '1haWxfYXBpcxiBASADKA4yGy5yZWxsbS5FbWFpbFZlcmlmaWNhdGlvbkFQSVISYXZhaWxhYmxl'
+    'RW1haWxBcGlzEkQKD3Bvc3RtYXJrX2NvbmZpZxiDASABKAsyFS5yZWxsbS5Qb3N0bWFya0Nvbm'
+    'ZpZ0gMUg5wb3N0bWFya0NvbmZpZ4gBARJECg9zZW5kZ3JpZF9jb25maWcYhAEgASgLMhUucmVs'
+    'bG0uU2VuZGdyaWRDb25maWdIDVIOc2VuZGdyaWRDb25maWeIAQESQQoObWFpbGd1bl9jb25maW'
+    'cYhQEgASgLMhQucmVsbG0uTWFpbGd1bkNvbmZpZ0gOUg1tYWlsZ3VuQ29uZmlniAEBEk0KEnN1'
+    'YmRvbWFpbl9zZXR0aW5ncxiCASABKAsyGC5yZWxsbS5TdWJkb21haW5TZXR0aW5nc0gPUhFzdW'
+    'Jkb21haW5TZXR0aW5nc4gBAUIOCgxfc2VydmVyX2luZm9CEgoQX2ZlZGVyYXRpb25faW5mb0IO'
+    'CgxfY3VzdG9tX3RhYnNCFgoUX2V4dGVybmFsX2Nkbl9jb25maWdCFAoSX2NsdXN0ZXJfcmVzb3'
+    'VyY2VzQhIKEF93ZWJfcHVzaF9jb25maWdCEAoOX3R3aWxpb19jb25maWdCDgoMX2JpcmRfY29u'
+    'ZmlnQhAKDl9zdHJpcGVfY29uZmlnQhAKDl90ZWxueXhfY29uZmlnQhIKEF9zdGFsd2FydF9jb2'
+    '5maWdCGwoZX2N1c3RvbV9jc3NfY29uZmlndXJhdGlvbkISChBfcG9zdG1hcmtfY29uZmlnQhIK'
+    'EF9zZW5kZ3JpZF9jb25maWdCEQoPX21haWxndW5fY29uZmlnQhUKE19zdWJkb21haW5fc2V0dG'
+    'luZ3M=');
 
 @$core.Deprecated('Use subdomainSettingsDescriptor instead')
 const SubdomainSettings$json = {
@@ -497,6 +543,49 @@ const MarketSettings$json = {
 final $typed_data.Uint8List marketSettingsDescriptor = $convert.base64Decode(
     'Cg5NYXJrZXRTZXR0aW5ncxIYCgdlbmFibGVkGAEgASgIUgdlbmFibGVkEisKEXN0cmlwZV9jb2'
     '5maWd1cmVkGAIgASgIUhBzdHJpcGVDb25maWd1cmVk');
+
+@$core.Deprecated('Use searchSettingsDescriptor instead')
+const SearchSettings$json = {
+  '1': 'SearchSettings',
+  '2': [
+    {'1': 'semantic_search_enabled', '3': 1, '4': 1, '5': 8, '10': 'semanticSearchEnabled'},
+    {'1': 'embedding_model', '3': 2, '4': 1, '5': 9, '10': 'embeddingModel'},
+    {'1': 'available_models', '3': 3, '4': 3, '5': 11, '6': '.rellm.EmbeddingModel', '10': 'availableModels'},
+    {'1': 'model_chosen_by_cluster', '3': 4, '4': 1, '5': 8, '10': 'modelChosenByCluster'},
+    {'1': 'embedding_service_available', '3': 5, '4': 1, '5': 8, '10': 'embeddingServiceAvailable'},
+  ],
+};
+
+/// Descriptor for `SearchSettings`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List searchSettingsDescriptor = $convert.base64Decode(
+    'Cg5TZWFyY2hTZXR0aW5ncxI2ChdzZW1hbnRpY19zZWFyY2hfZW5hYmxlZBgBIAEoCFIVc2VtYW'
+    '50aWNTZWFyY2hFbmFibGVkEicKD2VtYmVkZGluZ19tb2RlbBgCIAEoCVIOZW1iZWRkaW5nTW9k'
+    'ZWwSQAoQYXZhaWxhYmxlX21vZGVscxgDIAMoCzIVLnJlbGxtLkVtYmVkZGluZ01vZGVsUg9hdm'
+    'FpbGFibGVNb2RlbHMSNQoXbW9kZWxfY2hvc2VuX2J5X2NsdXN0ZXIYBCABKAhSFG1vZGVsQ2hv'
+    'c2VuQnlDbHVzdGVyEj4KG2VtYmVkZGluZ19zZXJ2aWNlX2F2YWlsYWJsZRgFIAEoCFIZZW1iZW'
+    'RkaW5nU2VydmljZUF2YWlsYWJsZQ==');
+
+@$core.Deprecated('Use embeddingModelDescriptor instead')
+const EmbeddingModel$json = {
+  '1': 'EmbeddingModel',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
+    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'description', '3': 3, '4': 1, '5': 9, '10': 'description'},
+    {'1': 'dimensions', '3': 4, '4': 1, '5': 13, '10': 'dimensions'},
+    {'1': 'download_megabytes', '3': 5, '4': 1, '5': 13, '10': 'downloadMegabytes'},
+    {'1': 'multilingual', '3': 6, '4': 1, '5': 8, '10': 'multilingual'},
+    {'1': 'memory_megabytes', '3': 7, '4': 1, '5': 13, '10': 'memoryMegabytes'},
+  ],
+};
+
+/// Descriptor for `EmbeddingModel`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List embeddingModelDescriptor = $convert.base64Decode(
+    'Cg5FbWJlZGRpbmdNb2RlbBIOCgJpZBgBIAEoCVICaWQSEgoEbmFtZRgCIAEoCVIEbmFtZRIgCg'
+    'tkZXNjcmlwdGlvbhgDIAEoCVILZGVzY3JpcHRpb24SHgoKZGltZW5zaW9ucxgEIAEoDVIKZGlt'
+    'ZW5zaW9ucxItChJkb3dubG9hZF9tZWdhYnl0ZXMYBSABKA1SEWRvd25sb2FkTWVnYWJ5dGVzEi'
+    'IKDG11bHRpbGluZ3VhbBgGIAEoCFIMbXVsdGlsaW5ndWFsEikKEG1lbW9yeV9tZWdhYnl0ZXMY'
+    'ByABKA1SD21lbW9yeU1lZ2FieXRlcw==');
 
 @$core.Deprecated('Use featureSettingsDescriptor instead')
 const FeatureSettings$json = {
@@ -876,16 +965,96 @@ final $typed_data.Uint8List stripeConfigDescriptor = $convert.base64Decode(
     'bGlzaGFibGVfa2V5GAMgASgJUhRzdHJpcGVQdWJsaXNoYWJsZUtleRJBCh1zdHJpcGVfd2ViaG'
     '9va19zaWduaW5nX3NlY3JldBgEIAEoCVIac3RyaXBlV2ViaG9va1NpZ25pbmdTZWNyZXQ=');
 
+@$core.Deprecated('Use postmarkConfigDescriptor instead')
+const PostmarkConfig$json = {
+  '1': 'PostmarkConfig',
+  '2': [
+    {'1': 'postmark_enabled', '3': 1, '4': 1, '5': 8, '10': 'postmarkEnabled'},
+    {'1': 'postmark_server_token', '3': 2, '4': 1, '5': 9, '10': 'postmarkServerToken'},
+    {'1': 'postmark_account_token', '3': 3, '4': 1, '5': 9, '10': 'postmarkAccountToken'},
+    {'1': 'postmark_from_address', '3': 4, '4': 1, '5': 9, '10': 'postmarkFromAddress'},
+    {'1': 'postmark_from_name', '3': 5, '4': 1, '5': 9, '10': 'postmarkFromName'},
+    {'1': 'postmark_message_stream', '3': 6, '4': 1, '5': 9, '10': 'postmarkMessageStream'},
+  ],
+};
+
+/// Descriptor for `PostmarkConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List postmarkConfigDescriptor = $convert.base64Decode(
+    'Cg5Qb3N0bWFya0NvbmZpZxIpChBwb3N0bWFya19lbmFibGVkGAEgASgIUg9wb3N0bWFya0VuYW'
+    'JsZWQSMgoVcG9zdG1hcmtfc2VydmVyX3Rva2VuGAIgASgJUhNwb3N0bWFya1NlcnZlclRva2Vu'
+    'EjQKFnBvc3RtYXJrX2FjY291bnRfdG9rZW4YAyABKAlSFHBvc3RtYXJrQWNjb3VudFRva2VuEj'
+    'IKFXBvc3RtYXJrX2Zyb21fYWRkcmVzcxgEIAEoCVITcG9zdG1hcmtGcm9tQWRkcmVzcxIsChJw'
+    'b3N0bWFya19mcm9tX25hbWUYBSABKAlSEHBvc3RtYXJrRnJvbU5hbWUSNgoXcG9zdG1hcmtfbW'
+    'Vzc2FnZV9zdHJlYW0YBiABKAlSFXBvc3RtYXJrTWVzc2FnZVN0cmVhbQ==');
+
+@$core.Deprecated('Use sendgridConfigDescriptor instead')
+const SendgridConfig$json = {
+  '1': 'SendgridConfig',
+  '2': [
+    {'1': 'sendgrid_enabled', '3': 1, '4': 1, '5': 8, '10': 'sendgridEnabled'},
+    {'1': 'sendgrid_api_key', '3': 2, '4': 1, '5': 9, '10': 'sendgridApiKey'},
+    {'1': 'sendgrid_from_address', '3': 3, '4': 1, '5': 9, '10': 'sendgridFromAddress'},
+    {'1': 'sendgrid_from_name', '3': 4, '4': 1, '5': 9, '10': 'sendgridFromName'},
+    {'1': 'sendgrid_region', '3': 5, '4': 1, '5': 9, '10': 'sendgridRegion'},
+  ],
+};
+
+/// Descriptor for `SendgridConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sendgridConfigDescriptor = $convert.base64Decode(
+    'Cg5TZW5kZ3JpZENvbmZpZxIpChBzZW5kZ3JpZF9lbmFibGVkGAEgASgIUg9zZW5kZ3JpZEVuYW'
+    'JsZWQSKAoQc2VuZGdyaWRfYXBpX2tleRgCIAEoCVIOc2VuZGdyaWRBcGlLZXkSMgoVc2VuZGdy'
+    'aWRfZnJvbV9hZGRyZXNzGAMgASgJUhNzZW5kZ3JpZEZyb21BZGRyZXNzEiwKEnNlbmRncmlkX2'
+    'Zyb21fbmFtZRgEIAEoCVIQc2VuZGdyaWRGcm9tTmFtZRInCg9zZW5kZ3JpZF9yZWdpb24YBSAB'
+    'KAlSDnNlbmRncmlkUmVnaW9u');
+
+@$core.Deprecated('Use mailgunConfigDescriptor instead')
+const MailgunConfig$json = {
+  '1': 'MailgunConfig',
+  '2': [
+    {'1': 'mailgun_enabled', '3': 1, '4': 1, '5': 8, '10': 'mailgunEnabled'},
+    {'1': 'mailgun_api_key', '3': 2, '4': 1, '5': 9, '10': 'mailgunApiKey'},
+    {'1': 'mailgun_domain', '3': 3, '4': 1, '5': 9, '10': 'mailgunDomain'},
+    {'1': 'mailgun_region', '3': 4, '4': 1, '5': 9, '10': 'mailgunRegion'},
+    {'1': 'mailgun_from_address', '3': 5, '4': 1, '5': 9, '10': 'mailgunFromAddress'},
+    {'1': 'mailgun_from_name', '3': 6, '4': 1, '5': 9, '10': 'mailgunFromName'},
+  ],
+};
+
+/// Descriptor for `MailgunConfig`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List mailgunConfigDescriptor = $convert.base64Decode(
+    'Cg1NYWlsZ3VuQ29uZmlnEicKD21haWxndW5fZW5hYmxlZBgBIAEoCFIObWFpbGd1bkVuYWJsZW'
+    'QSJgoPbWFpbGd1bl9hcGlfa2V5GAIgASgJUg1tYWlsZ3VuQXBpS2V5EiUKDm1haWxndW5fZG9t'
+    'YWluGAMgASgJUg1tYWlsZ3VuRG9tYWluEiUKDm1haWxndW5fcmVnaW9uGAQgASgJUg1tYWlsZ3'
+    'VuUmVnaW9uEjAKFG1haWxndW5fZnJvbV9hZGRyZXNzGAUgASgJUhJtYWlsZ3VuRnJvbUFkZHJl'
+    'c3MSKgoRbWFpbGd1bl9mcm9tX25hbWUYBiABKAlSD21haWxndW5Gcm9tTmFtZQ==');
+
 @$core.Deprecated('Use stalwartConfigDescriptor instead')
 const StalwartConfig$json = {
   '1': 'StalwartConfig',
   '2': [
     {'1': 'stalwart_receiving_enabled', '3': 1, '4': 1, '5': 8, '10': 'stalwartReceivingEnabled'},
+    {'1': 'stalwart_sending_enabled', '3': 2, '4': 1, '5': 8, '10': 'stalwartSendingEnabled'},
+    {'1': 'stalwart_smtp_host', '3': 3, '4': 1, '5': 9, '10': 'stalwartSmtpHost'},
+    {'1': 'stalwart_smtp_port', '3': 4, '4': 1, '5': 5, '10': 'stalwartSmtpPort'},
+    {'1': 'stalwart_smtp_username', '3': 5, '4': 1, '5': 9, '10': 'stalwartSmtpUsername'},
+    {'1': 'stalwart_smtp_password', '3': 6, '4': 1, '5': 9, '10': 'stalwartSmtpPassword'},
+    {'1': 'stalwart_from_address', '3': 7, '4': 1, '5': 9, '10': 'stalwartFromAddress'},
+    {'1': 'stalwart_from_name', '3': 8, '4': 1, '5': 9, '10': 'stalwartFromName'},
+    {'1': 'stalwart_management_url', '3': 9, '4': 1, '5': 9, '10': 'stalwartManagementUrl'},
+    {'1': 'stalwart_management_token', '3': 10, '4': 1, '5': 9, '10': 'stalwartManagementToken'},
   ],
 };
 
 /// Descriptor for `StalwartConfig`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List stalwartConfigDescriptor = $convert.base64Decode(
     'Cg5TdGFsd2FydENvbmZpZxI8ChpzdGFsd2FydF9yZWNlaXZpbmdfZW5hYmxlZBgBIAEoCFIYc3'
-    'RhbHdhcnRSZWNlaXZpbmdFbmFibGVk');
+    'RhbHdhcnRSZWNlaXZpbmdFbmFibGVkEjgKGHN0YWx3YXJ0X3NlbmRpbmdfZW5hYmxlZBgCIAEo'
+    'CFIWc3RhbHdhcnRTZW5kaW5nRW5hYmxlZBIsChJzdGFsd2FydF9zbXRwX2hvc3QYAyABKAlSEH'
+    'N0YWx3YXJ0U210cEhvc3QSLAoSc3RhbHdhcnRfc210cF9wb3J0GAQgASgFUhBzdGFsd2FydFNt'
+    'dHBQb3J0EjQKFnN0YWx3YXJ0X3NtdHBfdXNlcm5hbWUYBSABKAlSFHN0YWx3YXJ0U210cFVzZX'
+    'JuYW1lEjQKFnN0YWx3YXJ0X3NtdHBfcGFzc3dvcmQYBiABKAlSFHN0YWx3YXJ0U210cFBhc3N3'
+    'b3JkEjIKFXN0YWx3YXJ0X2Zyb21fYWRkcmVzcxgHIAEoCVITc3RhbHdhcnRGcm9tQWRkcmVzcx'
+    'IsChJzdGFsd2FydF9mcm9tX25hbWUYCCABKAlSEHN0YWx3YXJ0RnJvbU5hbWUSNgoXc3RhbHdh'
+    'cnRfbWFuYWdlbWVudF91cmwYCSABKAlSFXN0YWx3YXJ0TWFuYWdlbWVudFVybBI6ChlzdGFsd2'
+    'FydF9tYW5hZ2VtZW50X3Rva2VuGAogASgJUhdzdGFsd2FydE1hbmFnZW1lbnRUb2tlbg==');
 

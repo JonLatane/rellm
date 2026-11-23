@@ -146,6 +146,7 @@ update shared req msg model =
                     , mediaStorageLimitBytes = Maybe.map Conversions.int64ToInt user.mediaStorageLimitBytes
                     , phone = user.phone
                     , email = user.email
+                    , hasPassword = user.hasPassword
                     }
             in
             ( { model | status = Accepted }

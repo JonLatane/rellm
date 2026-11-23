@@ -14,7 +14,7 @@ pub fn delete_link_preview_images(
     log::info!("DeleteLinkPreviewImages called");
     validate_permission(&Some(user), Permission::Admin)?;
     logic::delete_link_preview_images(conn).map_err(|e| {
-        log::error!("Failed to delete link preview images: {:?}", e);
+        log::error!("Failed to delete link preview images: {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "error_updating")
     })
 }

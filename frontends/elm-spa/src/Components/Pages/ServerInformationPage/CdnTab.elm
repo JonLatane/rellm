@@ -10,13 +10,21 @@ The "External CDN HTTP Support" toggle is what sets/nulls out `externalCdnConfig
 `ServerConfiguration` entirely (see `applyCdnConfig`) -- "Frontend Host"/"Backend Host" are only
 meaningful (and only enabled in the UI) while it's on.
 
+Below the form, a "DNS setup" card (`dnsSetupView`, pure logic in `CdnTab.DnsSetup`, widgets shared with
+the Sign In & Contact tab via `Dns.View`) turns the entered (or, outside edit mode, saved) hosts into the
+exact records to create -- computed live as the admin types -- with copyable name/type/value blocks, a
+`GET /backend_host` check, and gentle warnings for look-alike mistakes. With no hosts it shows the
+pattern with `example.com` placeholders.
+
 -}
 
+import Components.Pages.ServerInformationPage.CdnTab.DnsSetup as DnsSetup exposing (Plan, Step)
 import Components.Pages.ServerInformationPage.Common as Common
+import Components.Pages.ServerInformationPage.Dns.View as DnsView
 import Effect exposing (Effect)
 import Grpc
-import Html exposing (Html, button, div, input, span, text)
-import Html.Attributes exposing (class, disabled, placeholder, value)
+import Html exposing (Html, a, button, div, h3, input, li, p, span, strong, text, ul)
+import Html.Attributes exposing (class, disabled, href, placeholder, rel, target, value)
 import Html.Events exposing (onClick, onInput)
 import Proto.Rellm exposing (ExternalCDNConfig, ServerConfiguration, defaultExternalCDNConfig)
 import Shared
@@ -24,6 +32,7 @@ import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts exposing (RellmAccount)
 import Shared.AccountsPanel.RellmServers as RellmServers exposing (RellmServer)
 import Task
+import UI.Glyph as Glyph
 
 
 
@@ -32,6 +41,8 @@ import Task
 
 type alias Model =
     { configEdit : Maybe CdnConfigEdit
+    , copied : Maybe String
+    , explainerOpen : Bool
     }
 
 
@@ -43,6 +54,9 @@ type Msg
     | CdnCancelClicked
     | CdnSaveClicked
     | GotCdnSaveResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, ServerConfiguration ))
+    | CopyClicked String
+    | CopiedReset String
+    | ExplainerToggled
 
 
 {-| Live only while the CDN config is being edited by an admin -- `enabled` mirrors whether
@@ -62,7 +76,7 @@ type alias CdnConfigEdit =
 
 init : Model
 init =
-    { configEdit = Nothing }
+    { configEdit = Nothing, copied = Nothing, explainerOpen = False }
 
 
 
@@ -132,6 +146,19 @@ update shared targetHost maybeServer msg model =
             , Effect.none
             )
 
+        CopyClicked text ->
+            ( { model | copied = Just text }, DnsView.copyEffect CopiedReset text )
+
+        CopiedReset text ->
+            if model.copied == Just text then
+                ( { model | copied = Nothing }, Effect.none )
+
+            else
+                ( model, Effect.none )
+
+        ExplainerToggled ->
+            ( { model | explainerOpen = not model.explainerOpen }, Effect.none )
+
 
 {-| `CdnSaveClicked`'s transform, passed to `AccountsPanel.updateServerConfig` the same way every
 other editor's transform is -- when `enabled` is off, nulls `externalCdnConfig` out entirely (that's
@@ -165,14 +192,105 @@ view server maybeAdminAccount model =
         cdnConfig =
             (RellmServers.configurationOf server).externalCdnConfig
     in
-    div [ class "server-details-tab-content server-details-cdn" ]
+    div [ class "server-details-tab-content server-details-cdn sc-root" ]
         (case model.configEdit of
             Just edit ->
-                cdnEditView cdnConfig edit
+                cdnEditView cdnConfig edit ++ [ dnsSetupView model (enteredHosts cdnConfig (Just edit)) ]
 
             Nothing ->
-                cdnDisplayView maybeAdminAccount cdnConfig
+                cdnDisplayView maybeAdminAccount cdnConfig ++ [ dnsSetupView model (enteredHosts cdnConfig Nothing) ]
         )
+
+
+{-| The hosts (and secure-media flag) the DNS setup card is written for: what's being typed while
+editing (blank while the toggle is off), otherwise what's saved.
+-}
+enteredHosts : Maybe ExternalCDNConfig -> Maybe CdnConfigEdit -> { frontendHost : String, backendHost : String, secureMedia : Bool }
+enteredHosts cdnConfig maybeEdit =
+    let
+        secureMedia : Bool
+        secureMedia =
+            cdnConfig |> Maybe.map .secureMedia |> Maybe.withDefault False
+    in
+    case maybeEdit of
+        Just edit ->
+            if edit.enabled then
+                { frontendHost = edit.frontendHost, backendHost = edit.backendHost, secureMedia = secureMedia }
+
+            else
+                { frontendHost = "", backendHost = "", secureMedia = secureMedia }
+
+        Nothing ->
+            { frontendHost = cdnConfig |> Maybe.map .frontendHost |> Maybe.withDefault ""
+            , backendHost = cdnConfig |> Maybe.map .backendHost |> Maybe.withDefault ""
+            , secureMedia = secureMedia
+            }
+
+
+{-| The "DNS setup" card: a collapsible "How does this work?", gentle warnings, and the numbered steps
+from `DnsSetup.plan`, each with a one-line why and copyable records/lines.
+-}
+dnsSetupView : Model -> { frontendHost : String, backendHost : String, secureMedia : Bool } -> Html Msg
+dnsSetupView model entered =
+    let
+        plan : Plan
+        plan =
+            DnsSetup.plan entered
+    in
+    div [ class "dns-setup" ]
+        [ h3 [ class "dns-setup-title" ] [ text "DNS setup" ]
+        , p [ class "dns-setup-lead" ] [ text "Two DNS records make this work. Create them where each domain's DNS lives." ]
+        , DnsView.explainer { title = "How does this work?", open = model.explainerOpen, onToggle = ExplainerToggled }
+            [ p [] [ strong [] [ text "Frontend host " ], text "is the address people visit. Your CDN owns it and forwards visitors to Rellm." ]
+            , p [] [ strong [] [ text "Backend host " ], text "is where Rellm really runs. Apps connect to it directly, not through the CDN." ]
+            , p [] [ strong [] [ text "Discovery: " ], text "apps ask the frontend host at /backend_host which backend to use." ]
+            ]
+        , div [] (List.map (\warning -> div [ class "dns-warning" ] [ text warning ]) plan.warnings)
+        , if plan.frontendIsExample || plan.backendIsExample then
+            span [ class "dns-example" ] [ text "Example values -- enter your hosts above to fill these in." ]
+
+          else
+            text ""
+        , div [] (List.indexedMap (stepView model) plan.steps)
+        ]
+
+
+stepView : Model -> Int -> Step -> Html Msg
+stepView model index step =
+    div [ class "dns-step" ]
+        [ p [ class "dns-step-title" ]
+            (span [ class "dns-step-num" ] [ text (String.fromInt (index + 1)) ]
+                :: text step.title
+                :: (case step.badge of
+                        Just badge ->
+                            [ span [ class "dns-badge" ] [ text badge ] ]
+
+                        Nothing ->
+                            []
+                   )
+            )
+        , p [ class "dns-step-why" ] [ text step.why ]
+        , div [] (List.map (DnsView.recordBlock CopyClicked model.copied Nothing) step.records)
+        , div [] (List.map (DnsView.codeLine CopyClicked model.copied) step.codeLines)
+        , case step.links of
+            [] ->
+                text ""
+
+            links ->
+                ul [ class "dns-links" ]
+                    (List.map
+                        (\( label, url ) ->
+                            li [] [ a [ href url, target "_blank", rel "noopener noreferrer" ] [ text (label ++ " " ++ Glyph.externalLink) ] ]
+                        )
+                        links
+                    )
+        , case step.note of
+            Just note ->
+                p [ class "dns-step-note" ] [ text note ]
+
+            Nothing ->
+                text ""
+        ]
 
 
 cdnDisplayView : Maybe RellmAccount -> Maybe ExternalCDNConfig -> List (Html Msg)

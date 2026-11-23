@@ -34,6 +34,7 @@ fn contact_method_with_consent(
         verification_in_progress: None,
         consent_state: consent_state as i32,
         consent_history,
+        use_for_sign_in: None,
     })
     .unwrap()
 }
@@ -310,6 +311,47 @@ fn phone_stored_before_consent_fields_existed_deserializes_without_panicking() {
         );
         assert!(phone.consent_history.is_empty());
 
+        Ok(())
+    });
+}
+
+#[test]
+fn pending_verification_codes_are_never_marshaled_to_any_viewer() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, tonic::Status, _>(|conn| {
+        let owner = create_user(conn, "cmv_code_owner");
+        let stranger = create_user(conn, "cmv_code_stranger");
+        let with_code = |value: &str| {
+            serde_json::to_value(ContactMethod {
+                value: Some(value.to_string()),
+                visibility: Visibility::GlobalPublic as i32,
+                supported_by_server: true,
+                verified_at: None,
+                verification_in_progress: Some(ContactMethodVerification {
+                    verification_code: "123456".to_string(),
+                    verification_started_at: None,
+                    attempts: 2,
+                }),
+                consent_state: ContactConsentState::ContactConsentGranted as i32,
+                consent_history: vec![],
+                use_for_sign_in: None,
+            })
+            .unwrap()
+        };
+        let owner = diesel::update(users::table.filter(users::id.eq(owner.id)))
+            .set((users::phone.eq(with_code("tel:+15551234567")), users::email.eq(with_code("mailto:a@example.com"))))
+            .returning(models::USER_COLUMNS)
+            .get_result::<models::User>(conn)
+            .expect("set contacts");
+
+        for viewer in [None, Some(&stranger), Some(&owner)] {
+            let proto = owner.to_proto(&None, &None, None, &viewer, None);
+            for contact in [proto.phone.as_ref().unwrap(), proto.email.as_ref().unwrap()] {
+                let v = contact.verification_in_progress.as_ref().expect("progress is still reported");
+                assert_eq!(v.verification_code, "", "the code must never be marshaled");
+                assert_eq!(v.attempts, 2);
+            }
+        }
         Ok(())
     });
 }

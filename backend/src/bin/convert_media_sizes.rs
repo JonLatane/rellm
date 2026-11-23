@@ -114,7 +114,7 @@ async fn main() {
         .await
         {
             Ok(_) => log::info!("Converted Media {}.", item.id),
-            Err(e) => log::error!("Failed to convert Media {}: {:?}", item.id, e),
+            Err(e) => log::error!("Failed to convert Media {}: {:?}", item.id, rellm::logic::log_redaction::safe_error(&e)),
         }
     }
 

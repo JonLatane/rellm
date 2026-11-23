@@ -87,8 +87,8 @@ import 'package:protobuf/src/protobuf/mixins/well_known.dart' as $mixin;
 ///  {hour}, {min}, and {sec} are zero-padded to two digits each. The fractional
 ///  seconds, which can go up to 9 digits (i.e. up to 1 nanosecond resolution),
 ///  are optional. The "Z" suffix indicates the timezone ("UTC"); the timezone
-///  is required. A proto3 JSON serializer should always use UTC (as indicated by
-///  "Z") when printing the Timestamp type and a proto3 JSON parser should be
+///  is required. A ProtoJSON serializer should always use UTC (as indicated by
+///  "Z") when printing the Timestamp type and a ProtoJSON parser should be
 ///  able to accept both UTC and other timezones (as indicated by an offset).
 ///
 ///  For example, "2017-01-15T01:30:15.01Z" encodes 15.01 seconds past
@@ -149,9 +149,9 @@ class Timestamp extends $pb.GeneratedMessage with $mixin.TimestampMixin {
   static Timestamp getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Timestamp>(create);
   static Timestamp? _defaultInstance;
 
-  /// Represents seconds of UTC time since Unix epoch
-  /// 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
-  /// 9999-12-31T23:59:59Z inclusive.
+  /// Represents seconds of UTC time since Unix epoch 1970-01-01T00:00:00Z. Must
+  /// be between -62135596800 and 253402300799 inclusive (which corresponds to
+  /// 0001-01-01T00:00:00Z to 9999-12-31T23:59:59Z).
   @$pb.TagNumber(1)
   $fixnum.Int64 get seconds => $_getI64(0);
   @$pb.TagNumber(1)
@@ -161,9 +161,10 @@ class Timestamp extends $pb.GeneratedMessage with $mixin.TimestampMixin {
   @$pb.TagNumber(1)
   void clearSeconds() => clearField(1);
 
-  /// Non-negative fractions of a second at nanosecond resolution. Negative
-  /// second values with fractions must still have non-negative nanos values
-  /// that count forward in time. Must be from 0 to 999,999,999
+  /// Non-negative fractions of a second at nanosecond resolution. This field is
+  /// the nanosecond portion of the duration, not an alternative to seconds.
+  /// Negative second values with fractions must still have non-negative nanos
+  /// values that count forward in time. Must be between 0 and 999,999,999
   /// inclusive.
   @$pb.TagNumber(2)
   $core.int get nanos => $_getIZ(1);

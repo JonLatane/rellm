@@ -87,7 +87,7 @@ fn create_membership_for_self(
             Ok(membership)
         });
     membership.map_err(|e| {
-        log::error!("Error creating membership! {:?}", e);
+        log::error!("Error creating membership! {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "data_error")
     })
 }
@@ -139,7 +139,7 @@ fn invite_other_user(
             Ok(membership)
         });
     membership.map_err(|e| {
-        log::error!("Error creating membership! {:?}", e);
+        log::error!("Error creating membership! {:?}", crate::logic::log_redaction::safe_error(&e));
         Status::new(Code::Internal, "data_error")
     })
 }

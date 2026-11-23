@@ -43,6 +43,23 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .stalwart_config
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // All email providers + their order share one column (see
+            // `server_configuration_models::EmailProvidersJson`). Secret-merge-on-blank is
+            // `configure_server`'s job, as for the SMS providers.
+            email_providers_config: Some(
+                serde_json::to_value(models::EmailProvidersJson {
+                    postmark_config: self.postmark_config.clone(),
+                    sendgrid_config: self.sendgrid_config.clone(),
+                    mailgun_config: self.mailgun_config.clone(),
+                    preferred_email_apis: self
+                        .preferred_email_apis
+                        .iter()
+                        .filter_map(|i| EmailVerificationApi::try_from(*i).ok())
+                        .map(|a| a.as_str_name().to_string())
+                        .collect(),
+                })
+                .unwrap(),
+            ),
             // `ConfigureServer` ignores whatever custom CSS configuration the request carries --
             // `configure_server` carries the active row's `custom_css_configuration` and `custom_css`
             // forward instead (only `ConfigureCustomCSS` changes them).
@@ -60,6 +77,17 @@ impl ToDbServerConfiguration for ServerConfiguration {
                 .market_settings
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            // `available_models` is derived (see `to_proto`), never stored.
+            search_settings: self.search_settings.as_ref().map(|c| {
+                serde_json::to_value(SearchSettings {
+                    embedding_model: String::new(),
+                    available_models: vec![],
+                    model_chosen_by_cluster: false,
+                    embedding_service_available: false,
+                    ..c.clone()
+                })
+                .unwrap()
+            }),
             preferred_verification_apis: Some(crate::logic::verification_apis_to_json(
                 &self
                     .preferred_verification_apis
@@ -69,8 +97,8 @@ impl ToDbServerConfiguration for ServerConfiguration {
             )),
             // Already validated (see `validate_configuration`'s own `ContactProtocol` check,
             // called before `to_db` on the `ConfigureServer` path) -- by the time this runs,
-            // `MAILTO` can't be present and `TEL` can't be present without an enabled SMS
-            // provider, so this is a plain round-trip, not another enforcement point.
+            // `MAILTO` can't be present without an enabled email provider and `TEL` can't be
+            // present without an enabled SMS provider, so this is a plain round-trip, not another enforcement point.
             supported_contact_protocols: Some(crate::logic::contact_protocols_to_json(
                 &self
                     .supported_contact_protocols
@@ -218,7 +246,8 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 telnyx_webhook_signing_key: String::new(),
                 ..c
             });
-        // No secret to blank -- `StalwartConfig` is just the one on/off flag.
+        // `StalwartConfig.stalwart_smtp_password`/`stalwart_management_token` are write-only, same
+        // treatment (and `configure_server` merge-on-blank counterpart) as the SMS providers above.
         // Media + forced theme only -- the stylesheet text is a separate column this model never loads, and is
         // only ever served by `GetCustomCSS` (see `logic::custom_css`). Always `custom_css: None` here, even if
         // some older row's JSON still happened to carry the text (before the `custom_css` column existed).
@@ -233,7 +262,60 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
         let stalwart_config: Option<StalwartConfig> = self
             .stalwart_config
             .to_owned()
-            .and_then(|c| serde_json::from_value(c).ok());
+            .and_then(|c| serde_json::from_value::<StalwartConfig>(c).ok());
+        let raw_stalwart_sending_configured = stalwart_config
+            .as_ref()
+            .is_some_and(crate::logic::stalwart_sending_configured);
+        let stalwart_config: Option<StalwartConfig> = stalwart_config.map(|c| StalwartConfig {
+            stalwart_smtp_password: String::new(),
+            stalwart_management_token: String::new(),
+            ..c
+        });
+        // Email providers (one JSONB column, see `models::EmailProvidersJson`). "Configured" is
+        // judged on the *unblanked* values (a blanked token would otherwise always read as
+        // unconfigured), then the secrets are blanked for the client.
+        let email_providers = self.email_providers();
+        let postmark_available = email_providers
+            .postmark_config
+            .as_ref()
+            .is_some_and(crate::logic::postmark_configured);
+        let sendgrid_available = email_providers
+            .sendgrid_config
+            .as_ref()
+            .is_some_and(crate::logic::sendgrid_configured);
+        let mailgun_available = email_providers
+            .mailgun_config
+            .as_ref()
+            .is_some_and(crate::logic::mailgun_configured);
+        let preferred_email_apis_parsed =
+            crate::logic::parse_preferred_email_apis(&email_providers.preferred_email_apis);
+        let available_email_apis: Vec<i32> =
+            crate::logic::order_email_apis(&preferred_email_apis_parsed, |api| match api {
+                EmailVerificationApi::Postmark => postmark_available,
+                EmailVerificationApi::Sendgrid => sendgrid_available,
+                EmailVerificationApi::Mailgun => mailgun_available,
+                EmailVerificationApi::Stalwart => raw_stalwart_sending_configured,
+            })
+            .into_iter()
+            .map(|a| a as i32)
+            .collect();
+        let preferred_email_apis: Vec<i32> = preferred_email_apis_parsed
+            .into_iter()
+            .map(|a| a as i32)
+            .collect();
+        let postmark_config = email_providers.postmark_config.map(|c| PostmarkConfig {
+            postmark_server_token: String::new(),
+            postmark_account_token: String::new(),
+            ..c
+        });
+        let sendgrid_config = email_providers.sendgrid_config.map(|c| SendgridConfig {
+            sendgrid_api_key: String::new(),
+            ..c
+        });
+        let mailgun_config = email_providers.mailgun_config.map(|c| MailgunConfig {
+            mailgun_api_key: String::new(),
+            ..c
+        });
         // Same write-only treatment for `StripeConfig.stripe_secret_key`/
         // `stripe_webhook_signing_secret`. `stripe_configured` (computed below, for
         // `market_settings`) is derived from this *before* the blanking, since a blanked
@@ -269,6 +351,19 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
                 .to_owned()
                 .and_then(|c| serde_json::from_value::<MarketSettings>(c).ok())
                 .unwrap_or(MarketSettings { enabled: false, stripe_configured: false })
+        };
+        // `SearchSettings` -- falls back to the default (semantic search ON) whenever the stored blob
+        // is missing (every server before this column existed), same read-time-fallback convention
+        // as `market_settings`/`media_settings` above. Public, like `market_settings`.
+        let search_settings: SearchSettings = models::search_settings_from_json(self.search_settings.as_ref());
+        // The model is a fact about the cluster's embedding service, never stored or chosen here.
+        let cluster_model = crate::logic::embeddings::cluster_model();
+        let search_settings = SearchSettings {
+            embedding_model: cluster_model.map(|m| m.id.to_string()).unwrap_or_default(),
+            available_models: crate::logic::embeddings::available_models(cluster_model),
+            model_chosen_by_cluster: true,
+            embedding_service_available: crate::logic::embeddings::embedding_service_configured(),
+            ..search_settings
         };
         // Not persisted anywhere yet -- see `NewServerConfiguration`'s doc and
         // `preferred_verification_apis`'s own proto comment. `ConfigureServer` does persist this
@@ -353,6 +448,7 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             custom_tabs: custom_tabs,
             media_settings: Some(media_settings),
             market_settings: Some(market_settings),
+            search_settings: Some(search_settings),
             private_user_strategy: self.private_user_strategy.to_i32_private_user_strategy(),
             authentication_features: self
                 .authentication_features
@@ -369,6 +465,11 @@ impl ToProtoServerConfiguration for models::ServerConfiguration {
             preferred_verification_apis: preferred_verification_apis,
             available_verification_apis: available_verification_apis,
             supported_contact_protocols: supported_contact_protocols,
+            preferred_email_apis: preferred_email_apis,
+            available_email_apis: available_email_apis,
+            postmark_config: postmark_config,
+            sendgrid_config: sendgrid_config,
+            mailgun_config: mailgun_config,
             // Never stored -- only `SubdomainContext::virtual_server_configuration` sets it.
             subdomain_settings: None,
         }

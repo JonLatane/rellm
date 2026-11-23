@@ -89,7 +89,7 @@ pub fn access_token(
                                 log::error!(
                                     "Failed to delete refresh token for user_id={}: {:?}",
                                     user_id,
-                                    e
+                                    crate::logic::log_redaction::safe_error(&e)
                                 );
                                 Status::new(Code::Internal, "internal_error")
                             })?;
@@ -112,7 +112,7 @@ pub fn access_token(
             }
         },
         Err(_) => {
-            log::warn!("Auth token {} not found.", refresh_token);
+            log::warn!("Auth token not found.");
             Err(Status::new(Code::Unauthenticated, "not_authorized"))
         }
     }

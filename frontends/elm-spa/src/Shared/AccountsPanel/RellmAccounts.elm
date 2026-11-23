@@ -118,6 +118,11 @@ type alias RellmAccount =
     -- `Msg`s/`Model` fields).
     , phone : Maybe ContactMethod
     , email : Maybe ContactMethod
+
+    -- `User.hasPassword`, refreshed with the rest. Not persisted (decodes to `True` until the next
+    -- refresh, which is the permissive guess: the server enforces the real rule either way).
+    -- While `False`, a sign-in contact method can't be turned off, changed or deleted.
+    , hasPassword : Bool
     }
 
 
@@ -527,6 +532,7 @@ applyPermissionsRefreshResult accId result accounts =
                     , mediaStorageLimitBytes = Maybe.map int64ToInt user.mediaStorageLimitBytes
                     , phone = user.phone
                     , email = user.email
+                    , hasPassword = user.hasPassword
                 }
                 accounts
 
@@ -746,7 +752,7 @@ rellmAccountDecoder : Decoder RellmAccount
 rellmAccountDecoder =
     Decode.map6
         (\partial realName needsPassword sortOrder mediaStorageBytesUsed mediaStorageLimitBytes ->
-            partial realName needsPassword sortOrder [] [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes Nothing Nothing
+            partial realName needsPassword sortOrder [] [] [] [] mediaStorageBytesUsed mediaStorageLimitBytes Nothing Nothing True
         )
         (Decode.map8 RellmAccount
             (Decode.field "server" Decode.string)

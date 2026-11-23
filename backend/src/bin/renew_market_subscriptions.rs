@@ -28,7 +28,7 @@ pub fn main() {
             Err(e) => log::error!(
                 "Failed to renew {:?} subscriptions: {:?}. Proceeding to next PurchaseType.",
                 purchase_type,
-                e
+                rellm::logic::log_redaction::safe_error(&e)
             ),
         }
         log::info!("Terminating lapsed-canceled {:?} subscriptions...", purchase_type);
@@ -37,7 +37,7 @@ pub fn main() {
             Err(e) => log::error!(
                 "Failed to terminate {:?} subscriptions: {:?}. Proceeding to next PurchaseType.",
                 purchase_type,
-                e
+                rellm::logic::log_redaction::safe_error(&e)
             ),
         }
     }
