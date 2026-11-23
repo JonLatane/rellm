@@ -436,6 +436,15 @@
   margin-left: 8px;
 }
 
+/* ...and the margin animates, in step with the badge's own fade (`.starred-count-badge`, 0.2s), so a left
+   badge appearing -- e.g. the Messages button's Fulfillment spinner -- doesn't make the button jump 8px.
+   Declared on every toggle that has badges (not only while the margin applies) so it animates both in and out,
+   and repeats `.nav-menu-toggle`'s own transitions (accounts_panel.css) because a `transition` here replaces
+   that list rather than adding to it. */
+.nav-menu-toggle:has(> .starred-count-badge) {
+  transition: border-radius 0.15s ease, background-color 0.2s ease, max-width 0.2s ease, width 0.2s ease, margin-left 0.2s ease;
+}
+
 /* Why a favourite/like push failed (`StarredPanel.serverStarErrorView`). Always mounted; `.hidden` fades
    and collapses it, so showing/dismissing/auto-clearing all animate. */
 .starred-panel-error {
