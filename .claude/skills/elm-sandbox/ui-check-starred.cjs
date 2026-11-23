@@ -30,8 +30,8 @@ const postView = (uri, text, liked) => ({
  * AppView reports (`getActorLikes`, `viewer.like`) after `indexLagMs` -- in BOTH directions, like the real
  * one: right after an unlike the old list still has the post.
  */
-function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER] }) {
-  const state = { likes: initialLikes.slice(), ops: [], log: [] };
+function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false }) {
+  const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [] };
   const visible = () => {
     const now = Date.now();
     let likes = state.likes.slice();
@@ -43,6 +43,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
   };
   return {
     state,
+    likesNow: visible,
     async handle(route) {
       const req = route.request(), u = new URL(req.url()), p = u.pathname;
       const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) });
@@ -54,7 +55,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
       }
       if (p.endsWith("getPosts")) {
         const uri = u.searchParams.get("uris");
-        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", visible().includes(uri))] });
+        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", !hideViewerLike && visible().includes(uri))] });
       }
       if (p.endsWith("getPostThread")) {
         const uri = u.searchParams.get("uri");
@@ -63,9 +64,15 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
       if (p.endsWith("createRecord")) {
         if (failWrite) return json({ error: "InternalServerError", message: "boom" }, 500);
         state.ops.push({ add: true, uri: TARGET, at: Date.now() });
-        return json({ uri: "at://did:plc:me/app.bsky.feed.like/new", cid: "bafylike" });
+        return json({ uri: "at://did:plc:me/app.bsky.feed.like/like1", cid: "bafylike" });
       }
-      if (p.endsWith("deleteRecord")) { state.ops.push({ add: false, uri: TARGET, at: Date.now() }); return json({}); }
+      if (p.endsWith("deleteRecord")) {
+        // Like the real server: deleting a record key that isn't one of the account's like records changes nothing.
+        const rkey = JSON.parse(req.postData() || "{}").rkey;
+        state.deleted.push(rkey);
+        if (rkey === "like1" || rkey === "xyz") state.ops.push({ add: false, uri: TARGET, at: Date.now() });
+        return json({});
+      }
       return json({}, 404);
     },
   };
@@ -178,6 +185,47 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
     page = await open([OTHER], [FILLER]);
     await timeline(page, "click -> star", () => clickStar(page), { server: +1, browser: +1 });
     await timeline(page, "click again -> unstar", () => clickStar(page), { server: -1, browser: -1 });
+    await page.close();
+  }
+
+  // ---- F/G: Bluesky hasn't told us about the like yet -----------------------------------------------
+  if (!only || only === "counts") {
+    console.log("\nF  star, then unstar before the AppView has indexed the like (viewer.like still empty)");
+    let bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes: [OTHER] });
+    let page = await newPage(browser, bsky, [FILLER]);
+    await page.goto(postUrl, { waitUntil: "load" });
+    await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
+    await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
+    await sleep(2000);
+    const start = await counts(page);
+    await clickStar(page);          // like
+    await sleep(900);               // well inside the 3s lag
+    await clickStar(page);          // unlike, while viewer.like is still empty
+    await sleep(9000);              // the AppView catches up, a few refetches happen
+    const end = await counts(page);
+    console.log(`   start: ${fmt(start)}\n   end:   ${fmt(end)}\n   deleteRecord keys sent: ${JSON.stringify(bsky.state.deleted)}`);
+    check(bsky.state.deleted.includes("like1"), "F  the unlike deleted the like it had just created (via the remembered record URI)");
+    check(!bsky.likesNow().includes(TARGET), "F  once the AppView has caught up, Bluesky really no longer has the like (nothing left hidden by Rellm)");
+    await page.close();
+
+    check(end.serverTab === start.serverTab && end.bottomBadge === end.serverTab, "F  the Server tab/badge end where they started, not hiding or inventing a like");
+
+    console.log("\nG  unlike when no like record can be found (nothing remembered, viewer.like empty)");
+    bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes: [OTHER, TARGET], hideViewerLike: true });
+    page = await newPage(browser, bsky, [FILLER]);
+    await page.goto(postUrl, { waitUntil: "load" });
+    await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
+    await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
+    await sleep(2000);
+    const gStart = await counts(page);
+    await clickStar(page);
+    await sleep(3000);
+    const gEnd = await counts(page);
+    const err = await errorBanner(page);
+    console.log(`   start: ${fmt(gStart)}\n   end:   ${fmt(gEnd)}\n   banner: ${JSON.stringify(err && err.text)}`);
+    check(err && err.visible && /Couldn't unlike on Bluesky/.test(err.text), "G  says it couldn't unlike, instead of pretending it worked");
+    check(gEnd.serverTab === gStart.serverTab, "G  the still-liked post stays in the Server tab (not hidden)");
+    check(bsky.state.deleted.length === 0, "G  no deleteRecord was sent (there was nothing to delete)");
     await page.close();
   }
 

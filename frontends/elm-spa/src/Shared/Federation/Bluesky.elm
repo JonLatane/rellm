@@ -38,6 +38,7 @@ module Shared.Federation.Bluesky exposing
     , routeId
     , searchPosts
     , SearchSort(..)
+    , LikeChange(..)
     , setLike
     , toPost
     , toPostIncludingSensitiveMedia
@@ -1244,24 +1245,38 @@ fetchPostRef auth uri =
         }
 
 
+{-| What `setLike` actually did: `Created` a like (with the new like record's own `at://` URI -- keep it, see
+`setLike`), `Deleted` one, or `NothingToDo` (a like of a post that is already liked, or an unlike when no like
+record could be found).
+-}
+type LikeChange
+    = Created String
+    | Deleted
+    | NothingToDo
+
+
 {-| Likes (`like = True`) or un-likes the post at `uri` as `repo` (the connected account's own handle
 -- `com.atproto.repo.*` accepts a handle or DID there). Likes create an `app.bsky.feed.like` record
-via `com.atproto.repo.createRecord`; un-likes look up the existing like record's URI from the post's
-own `viewer.like` and `deleteRecord` its `rkey`. Both are no-ops if the post is already in the
-requested state. Needs an App Password with default (non-read-only) access, which is what Rellm's
-connect form always asks for.
+via `com.atproto.repo.createRecord`; un-likes `deleteRecord` the like's `rkey`. A like that is already in
+the requested state is `NothingToDo`. Needs an App Password with default (non-read-only) access, which is
+what Rellm's connect form always asks for.
+
+Where the like record's URI comes from matters: the post's own `viewer.like` has it, but the AppView lags
+behind a write, so right after a like it is still empty. `knownLike` is the URI a previous `Created` handed
+back, which makes starring then quickly unstarring still delete the like instead of silently doing nothing
+(`NothingToDo`) and leaving it on Bluesky.
 -}
-setLike : Bool -> String -> BlueskyAuth -> String -> Task Http.Error ()
-setLike like repo auth uri =
+setLike : Bool -> String -> BlueskyAuth -> Maybe String -> String -> Task Http.Error LikeChange
+setLike like repo auth knownLike uri =
     fetchPostRef auth uri
         |> Task.andThen
             (\ref ->
-                case ( like, ref.viewerLike ) of
+                case ( like, ref.viewerLike |> orElseLike knownLike ) of
                     ( True, Nothing ) ->
                         Time.now
                             |> Task.andThen
                                 (\now ->
-                                    repoWrite auth
+                                    repoWriteDecoding auth
                                         "createRecord"
                                         (Encode.object
                                             [ ( "repo", Encode.string repo )
@@ -1275,10 +1290,11 @@ setLike like repo auth uri =
                                               )
                                             ]
                                         )
+                                        (Decode.field "uri" Decode.string |> Decode.map Created)
                                 )
 
                     ( False, Just likeUri ) ->
-                        repoWrite auth
+                        repoWriteDecoding auth
                             "deleteRecord"
                             (Encode.object
                                 [ ( "repo", Encode.string repo )
@@ -1286,20 +1302,36 @@ setLike like repo auth uri =
                                 , ( "rkey", Encode.string (likeUri |> String.split "/" |> List.reverse |> List.head |> Maybe.withDefault "") )
                                 ]
                             )
+                            (Decode.succeed Deleted)
 
                     _ ->
-                        Task.succeed ()
+                        Task.succeed NothingToDo
             )
+
+
+orElseLike : Maybe String -> Maybe String -> Maybe String
+orElseLike fallback first =
+    case first of
+        Just _ ->
+            first
+
+        Nothing ->
+            fallback
 
 
 repoWrite : BlueskyAuth -> String -> Encode.Value -> Task Http.Error ()
 repoWrite auth method body =
+    repoWriteDecoding auth method body (Decode.succeed ())
+
+
+repoWriteDecoding : BlueskyAuth -> String -> Encode.Value -> Decoder a -> Task Http.Error a
+repoWriteDecoding auth method body responseDecoder =
     Http.task
         { method = "POST"
         , headers = readHeaders auth
         , url = readHost auth ++ "/xrpc/com.atproto.repo." ++ method
         , body = Http.jsonBody body
-        , resolver = jsonResolver (Decode.succeed ()) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver responseDecoder (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
 

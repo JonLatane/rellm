@@ -144,6 +144,12 @@ type alias Model =
     -- banner fades out. See `ServerStarFailed`.
     , serverStarError : { token : Int, text : String, visible : Bool }
 
+    -- The `at://` URI of the like record each Bluesky post got when *this session* liked it (post id ->
+    -- like URI). Bluesky's AppView lags behind a write, so right after a like the post's own `viewer.like`
+    -- is still empty; without this, starring then quickly unstarring finds no like to delete and silently
+    -- leaves it on Bluesky. See `Bluesky.setLike`.
+    , likeRecords : Dict String String
+
     -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
     -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
     -- (enter/unstar-fade), which stays authoritative while an unstar fade is running -- see
@@ -294,6 +300,9 @@ type Msg
       -- A favourite/like push succeeding -- only carries a token-persist to forward (a failed one is
       -- `ServerStarFailed`; the local browser star stands regardless).
     | GotServerStarPushed (Maybe AccountsPanel.Msg)
+      -- A Bluesky like/unlike that really changed something: the post id and what changed -- remembers the new
+      -- like's URI (or forgets it once deleted), then carries on exactly like `GotServerStarPushed`.
+    | GotLikeChange String Bluesky.LikeChange (Maybe AccountsPanel.Msg)
       -- A push that failed: the server host the star was filed under, whether it was a star (not an
       -- unstar), the post, a human-readable reason, and a reauth flag to forward. Rolls the optimistic
       -- Server-tab entry back, shows the reason and refetches the real list.
@@ -466,6 +475,7 @@ init flags =
     , pendingServerStars = Dict.empty
     , serverRefreshing = Dict.empty
     , serverStarError = { token = 0, text = "", visible = False }
+    , likeRecords = Dict.empty
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
     , transition = Nothing
@@ -661,7 +671,7 @@ sendUpdate accountsPanelModel msg model =
                 pushCmd =
                     case account of
                         Just acct ->
-                            pushServerStar host acct starring post
+                            pushServerStar host acct starring (Dict.get post.id model.likeRecords) post
 
                         Nothing ->
                             Cmd.none
@@ -836,6 +846,22 @@ sendUpdate accountsPanelModel msg model =
             , Cmd.none
             , Nothing
             )
+
+        GotLikeChange postId change maybeAccountsPanelMsg ->
+            sendUpdate accountsPanelModel
+                (GotServerStarPushed maybeAccountsPanelMsg)
+                { model
+                    | likeRecords =
+                        case change of
+                            Bluesky.Created likeUri ->
+                                Dict.insert postId likeUri model.likeRecords
+
+                            Bluesky.Deleted ->
+                                Dict.remove postId model.likeRecords
+
+                            Bluesky.NothingToDo ->
+                                model.likeRecords
+                }
 
         GotServerStarPushed maybeAccountsPanelMsg ->
             -- Trailing-edge debounce: a quick run of stars/unstars only refetches once, after the
@@ -1954,8 +1980,8 @@ instance is first looked up there for its ActivityPub `uri` (`Mastodon.fetchStat
 `link` if that fails), which the account's instance then resolves to its own copy
 (`Mastodon.resolveStatusId`).
 -}
-pushServerStar : String -> ServerAccount -> Bool -> Post -> Cmd Msg
-pushServerStar host account starring post =
+pushServerStar : String -> ServerAccount -> Bool -> Maybe String -> Post -> Cmd Msg
+pushServerStar host account starring knownLike post =
     case account of
         MastodonServerAccount a ->
             let
@@ -2016,13 +2042,28 @@ pushServerStar host account starring post =
                     )
 
         BlueskyServerAccount a ->
-            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token post.id)
-                |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
+            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token knownLike post.id)
+                |> Task.map (\( refreshed, change ) -> ( rotatedBluesky a refreshed, change ))
                 |> Task.attempt
                     (\result ->
                         case result of
-                            Ok maybeAccountsPanelMsg ->
-                                GotServerStarPushed maybeAccountsPanelMsg
+                            Ok ( maybeAccountsPanelMsg, Bluesky.NothingToDo ) ->
+                                if starring then
+                                    -- Already liked: nothing to undo or hold.
+                                    GotServerStarPushed maybeAccountsPanelMsg
+
+                                else
+                                    -- No like record to delete could be found (not even one remembered from this
+                                    -- session): the like is still on Bluesky, so say so rather than pretend, and
+                                    -- don't hold the post out of the list.
+                                    ServerStarFailed "bluesky:"
+                                        False
+                                        post
+                                        "Couldn't unlike on Bluesky: it hasn't finished registering that like yet -- try again in a moment."
+                                        maybeAccountsPanelMsg
+
+                            Ok ( maybeAccountsPanelMsg, change ) ->
+                                GotLikeChange post.id change maybeAccountsPanelMsg
 
                             Err err ->
                                 ServerStarFailed "bluesky:"
