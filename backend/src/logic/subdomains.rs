@@ -124,6 +124,35 @@ pub fn subdomain_label_for_host(host: &str, frontend_host: &str) -> Option<Strin
     is_valid_label(label).then(|| label.to_string())
 }
 
+/// `host` as compared against configured hosts: no port, no trailing dot, lower case.
+fn normalize_host(host: &str) -> String {
+    strip_port(host).trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// Whether `label` is spoken for by the CDN setup itself. With a Cloudflare-style frontend/backend split
+/// (`frontend_host = rellm.org`, `backend_host = backend.rellm.org`), the backend is *itself* one label beneath the
+/// frontend, so `backend` must never be a user's subdomain -- it would shadow the real backend host. True when
+/// `<label>.<frontend_host>` is the configured `backend_host`.
+pub fn label_reserved_by_cdn(label: &str, frontend_host: &str, backend_host: &str) -> bool {
+    let (frontend_host, backend_host) = (normalize_host(frontend_host), normalize_host(backend_host));
+    !frontend_host.is_empty() && !backend_host.is_empty() && format!("{label}.{frontend_host}") == backend_host
+}
+
+/// The subdomain label a request for `host` means, given the parent's configured `frontend_host`/`backend_host`:
+/// `<label>.<frontend_host>` (pages) or `<label>.<backend_host>` (gRPC). `None` for everything else -- crucially the
+/// configured frontend and backend hosts *themselves* (the backend of a CDN setup can sit one label under the
+/// frontend, `backend.rellm.org`, and is the parent server, not a subdomain), and any label the CDN setup reserves
+/// (`label_reserved_by_cdn`).
+pub fn subdomain_label_for_request_host(host: &str, frontend_host: &str, backend_host: &str) -> Option<String> {
+    let bare = normalize_host(host);
+    if bare == normalize_host(frontend_host) || (!backend_host.is_empty() && bare == normalize_host(backend_host)) {
+        return None;
+    }
+    let label = subdomain_label_for_host(host, frontend_host)
+        .or_else(|| subdomain_label_for_host(host, backend_host))?;
+    (!label_reserved_by_cdn(&label, frontend_host, backend_host)).then_some(label)
+}
+
 fn strip_port(host: &str) -> &str {
     // IPv6 literals ("[::1]:80") never match a frontend_host anyway.
     match host.rsplit_once(':') {
@@ -162,6 +191,12 @@ pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnect
     let label = label_for_username(&buyer.username);
     if !is_valid_label(&label) {
         return Err(Status::new(Code::FailedPrecondition, "username_not_a_valid_subdomain"));
+    }
+    // A user named like the CDN's backend host (`backend` on rellm.org, whose backend is backend.rellm.org) may not
+    // take it: that name is the real backend, not theirs.
+    let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+    if label_reserved_by_cdn(&label, &cdn.frontend_host, &cdn.backend_host) {
+        return Err(Status::new(Code::FailedPrecondition, "subdomain_reserved"));
     }
     if let Some(existing) = find_active_subdomain_subscription(&label, conn)? {
         return Err(if existing.buyer_id == buyer.id {
@@ -273,9 +308,7 @@ pub fn resolve_subdomain(
     // A subdomain is reached at `<label>.<frontend_host>` (pages) and, for gRPC when the backend is a separate host,
     // at `<label>.<backend_host>` (what `/backend_host` returns on a subdomain) -- so every request carries which
     // server it is for, and the parent and a subdomain are never confused even though they share a backend.
-    let Some(label) = subdomain_label_for_host(host, &frontend_host)
-        .or_else(|| subdomain_label_for_host(host, &backend_host))
-    else {
+    let Some(label) = subdomain_label_for_request_host(host, &frontend_host, &backend_host) else {
         // The parent itself, or a host that isn't one label beneath it: no database work at all.
         return Ok(None);
     };
@@ -511,6 +544,32 @@ mod tests {
             cache.put(format!("k{i}"), 0, start);
         }
         assert!(cache.entries.len() <= TtlCache::<i32>::MAX_ENTRIES);
+    }
+
+    #[test]
+    fn the_cdn_backend_host_is_never_a_subdomain() {
+        // rellm.org's setup: a Cloudflare frontend at rellm.org, the real backend at backend.rellm.org.
+        let (frontend, backend) = ("rellm.org", "backend.rellm.org");
+        let label = |host: &str| subdomain_label_for_request_host(host, frontend, backend);
+        // The backend host is one label under the frontend -- and still the parent server.
+        assert_eq!(label("backend.rellm.org"), None);
+        assert_eq!(label("BACKEND.rellm.org:443"), None);
+        assert_eq!(label("rellm.org"), None);
+        assert_eq!(label("backend.backend.rellm.org"), None, "the reserved label can't be reached via the backend host either");
+        // Real subdomains still resolve, on either host.
+        assert_eq!(label("jon.rellm.org"), Some("jon".to_string()));
+        assert_eq!(label("jon.backend.rellm.org"), Some("jon".to_string()));
+        assert!(label_reserved_by_cdn("backend", frontend, backend));
+        assert!(!label_reserved_by_cdn("jon", frontend, backend));
+        // No CDN split configured: nothing is reserved.
+        assert!(!label_reserved_by_cdn("backend", frontend, ""));
+        assert_eq!(subdomain_label_for_request_host("jon.rellm.org", frontend, ""), Some("jon".to_string()));
+        // A backend that isn't under the frontend reserves nothing.
+        assert!(!label_reserved_by_cdn("backend", frontend, "rellm.org.itsj.online"));
+        assert_eq!(
+            subdomain_label_for_request_host("jon.rellm.org.itsj.online", frontend, "rellm.org.itsj.online"),
+            Some("jon".to_string())
+        );
     }
 
     #[test]

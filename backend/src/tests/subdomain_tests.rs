@@ -795,3 +795,109 @@ fn the_manifest_uses_a_configured_primary_color_and_pads_small_ones() {
     let manifest: serde_json::Value = serde_json::from_str(&build_manifest(&ServerConfiguration::default())).unwrap();
     assert_eq!(manifest["name"], "Rellm");
 }
+
+/// rellm.org's own setup: a Cloudflare frontend at `rellm.org`, the real backend at `backend.rellm.org`.
+fn configure_cdn(conn: &mut crate::db_connection::PgPooledConnection, frontend_host: &str, backend_host: &str) {
+    let mut new_config = models::default_server_configuration();
+    new_config.external_cdn_config = Some(
+        serde_json::to_value(ExternalCdnConfig {
+            frontend_host: frontend_host.to_string(),
+            backend_host: backend_host.to_string(),
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+    diesel::insert_into(server_configurations::table)
+        .values(&new_config)
+        .execute(conn)
+        .expect("failed to create test server configuration");
+}
+
+#[test]
+fn a_user_named_like_the_cdn_backend_cannot_buy_it_and_the_backend_host_stays_the_parent() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_cdn(conn, "rellm.org", "backend.rellm.org");
+        let admin_user = create_user(conn, "sd18_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+
+        // A user named `backend` on rellm.org can't take the label: that host is the real backend.
+        let backend_user = create_user(conn, "backend");
+        assert_eq!(
+            crate::logic::subdomains::validate_label_available(&backend_user, conn).unwrap_err().message(),
+            "subdomain_reserved"
+        );
+        // Another user is unaffected.
+        let jon = create_user(conn, "sd18jon");
+        assert_eq!(crate::logic::subdomains::validate_label_available(&jon, conn)?, "sd18jon");
+
+        // Even a subscription for `backend` that already exists (bought before this rule) never makes the backend host a
+        // subdomain: it keeps serving the main server's configuration.
+        subscribe(conn, &admin, &backend_user, SubdomainSettings::default());
+        assert!(scope(conn, "backend.rellm.org").is_none(), "the backend host is the parent server");
+        assert!(scope(conn, "backend.backend.rellm.org").is_none());
+        assert!(scope(conn, "rellm.org").is_none());
+
+        // A real subdomain resolves on the frontend host and on its own backend name.
+        subscribe(conn, &admin, &jon, SubdomainSettings::default());
+        assert!(scope(conn, "sd18jon.rellm.org").is_some());
+        assert!(scope(conn, "sd18jon.backend.rellm.org").is_some());
+
+        // And the configuration the backend host serves is the main one, with no subdomain settings.
+        let config = crate::rpcs::get_server_configuration_for((), &None, &scope(conn, "backend.rellm.org"), conn)?;
+        assert!(config.subdomain_settings.is_none());
+        assert_eq!(config.external_cdn_config.unwrap().backend_host, "backend.rellm.org");
+        Ok(())
+    });
+}
+
+#[test]
+fn backend_host_discovery_under_a_cloudflare_frontend() {
+    use crate::web::external_cdn::backend_domain_for_host;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_cdn(conn, "rellm.org", "backend.rellm.org");
+        let admin_user = create_user(conn, "sd19_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let jon = create_user(conn, "sd19jon");
+        subscribe(conn, &admin, &jon, SubdomainSettings::default());
+        // A user named `backend` who somehow holds a subscription must not capture the backend host: without the CDN
+        // guard this label would resolve (it is a valid, held label under the frontend) and the answer would be wrong.
+        let backend_user = create_user(conn, "backend");
+        subscribe(conn, &admin, &backend_user, SubdomainSettings::default());
+        let cdn = crate::rpcs::get_server_configuration_proto(conn)?.external_cdn_config.unwrap();
+
+        // What `GET /backend_host` answers for each host, with the subdomain lookup done exactly as the route does it.
+        let mut answer = |host: &str| {
+            let label = scope(conn, host).map(|s| s.settings.subdomain);
+            backend_domain_for_host(Some(&cdn), host, || label)
+        };
+        // The reported failure: the backend host is itself a label under the frontend, and must stay itself.
+        assert_eq!(answer("backend.rellm.org"), "backend.rellm.org");
+        assert_eq!(answer("rellm.org"), "backend.rellm.org");
+        // An unsubscribed label is not a subdomain.
+        assert_eq!(answer("nobody.rellm.org"), "backend.rellm.org");
+        // A subscriber gets its own backend name, from either of its hosts.
+        assert_eq!(answer("sd19jon.rellm.org"), "sd19jon.backend.rellm.org");
+        assert_eq!(answer("sd19jon.backend.rellm.org"), "sd19jon.backend.rellm.org");
+        Ok(())
+    });
+}
+
+#[test]
+fn backend_host_discovery_without_a_separate_backend() {
+    use crate::web::external_cdn::backend_domain_for_host;
+    let never = || -> Option<String> { panic!("the subdomain lookup must not run") };
+    // No CDN configuration, or no backend host: the request's own host is the backend, with no lookup at all.
+    assert_eq!(backend_domain_for_host(None, "rellm.org", never), "rellm.org");
+    let no_backend = ExternalCdnConfig { frontend_host: "rellm.org".to_string(), ..Default::default() };
+    assert_eq!(backend_domain_for_host(Some(&no_backend), "jon.rellm.org", never), "jon.rellm.org");
+    // `cdn_grpc` on: gRPC goes through the CDN to the request's own host.
+    let cdn_grpc = ExternalCdnConfig {
+        frontend_host: "rellm.org".to_string(),
+        backend_host: "backend.rellm.org".to_string(),
+        cdn_grpc: true,
+        ..Default::default()
+    };
+    assert_eq!(backend_domain_for_host(Some(&cdn_grpc), "jon.rellm.org", never), "jon.rellm.org");
+}
