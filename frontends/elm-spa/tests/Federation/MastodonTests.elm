@@ -140,6 +140,49 @@ suite =
                         |> Result.map (\s -> ( s.favouritesCount, s.repliesCount ))
                         |> Expect.equal (Ok ( 568, 13 ))
             ]
+        , describe "nextLink (the Link header that pages the favourites)"
+            [ test "finds the rel=next URL" <|
+                \_ ->
+                    Mastodon.nextLink "<https://mastodon.social/api/v1/favourites?limit=40&max_id=123>; rel=\"next\", <https://mastodon.social/api/v1/favourites?limit=40&min_id=456>; rel=\"prev\""
+                        |> Expect.equal (Just "https://mastodon.social/api/v1/favourites?limit=40&max_id=123")
+            , test "finds it when it is not the first entry" <|
+                \_ ->
+                    Mastodon.nextLink "<https://x.example/p?min_id=1>; rel=\"prev\", <https://x.example/p?max_id=2>; rel=\"next\""
+                        |> Expect.equal (Just "https://x.example/p?max_id=2")
+            , test "is Nothing on the last page (only a prev link)" <|
+                \_ ->
+                    Mastodon.nextLink "<https://x.example/p?min_id=1>; rel=\"prev\""
+                        |> Expect.equal Nothing
+            , test "is Nothing for an empty header" <|
+                \_ -> Mastodon.nextLink "" |> Expect.equal Nothing
+            ]
+        , describe "isOnInstance (where the access token may be sent)"
+            [ test "an https URL on the instance" <|
+                \_ -> Mastodon.isOnInstance "mastodon.social" "https://mastodon.social/api/v1/favourites?max_id=1" |> Expect.equal True
+            , test "hostname case does not matter (Mastodon.Social is mastodon.social)" <|
+                \_ ->
+                    ( Mastodon.isOnInstance "Mastodon.Social" "https://mastodon.social/api/v1/favourites?max_id=1"
+                    , Mastodon.isOnInstance "mastodon.social" "https://MASTODON.SOCIAL/api/v1/favourites?max_id=1"
+                    )
+                        |> Expect.equal ( True, True )
+            , test "a port is part of the host" <|
+                \_ ->
+                    ( Mastodon.isOnInstance "localhost:8443" "https://localhost:8443/api/v1/favourites"
+                    , Mastodon.isOnInstance "localhost:8443" "https://localhost:9999/api/v1/favourites"
+                    )
+                        |> Expect.equal ( True, False )
+            , test "another host is not it, including look-alikes" <|
+                \_ ->
+                    [ "https://evil.example/api/v1/favourites"
+                    , "https://mastodon.social.evil.example/api/v1/favourites"
+                    , "https://mastodon.social@evil.example/api/v1/favourites"
+                    , "https://evil.example/https://mastodon.social/"
+                    ]
+                        |> List.map (Mastodon.isOnInstance "mastodon.social")
+                        |> Expect.equal [ False, False, False, False ]
+            , test "plain http is not it (the token would travel in the clear)" <|
+                \_ -> Mastodon.isOnInstance "mastodon.social" "http://mastodon.social/api/v1/favourites" |> Expect.equal False
+            ]
         , describe "toPost links"
             [ test "uses the url when there is one" <|
                 \_ ->

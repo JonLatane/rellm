@@ -1,4 +1,4 @@
-module Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, anonymousSearchHost, blueskyAuthFor, emptyThread, jsonResolver, nonEmpty, publicBlueskyAppViewHost, sensitiveMediaHiddenId)
+module Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, anonymousSearchHost, blueskyAuthFor, emptyThread, jsonResolver, jsonResolverWithHeaders, maxServerStarPages, maxServerStars, nonEmpty, publicBlueskyAppViewHost, sensitiveMediaHiddenId)
 
 {-| Small helpers shared across Rellm's federation-protocol integrations -- currently
 `Shared.Federation.Mastodon`/`Bluesky`'s own post-fetching, and `Shared.AccountsPanel`'s Mastodon/
@@ -6,6 +6,7 @@ Bluesky account-connection tasks. Not meant to grow into a general-purpose utils
 for the bits those would otherwise each duplicate.
 -}
 
+import Dict exposing (Dict)
 import Http
 import Json.Decode as Decode
 import Proto.Rellm exposing (Post)
@@ -103,6 +104,56 @@ nonEmpty s =
 
     else
         Just s
+
+
+{-| The most server-side stars (Bluesky likes, Mastodon favourites) the Starred panel's Server tab loads per
+account. Neither service says how many there are in total -- Bluesky's profile has follower/follow/post counts but no
+likes count, `describeRepo` only lists collection names, and both lists page by cursor (`Link` header on
+Mastodon) -- so the only way to count is to follow the pages; this is where it stops (the tab then shows
+"300+"). Every row is a mounted card, so it can't be unbounded.
+-}
+maxServerStars : Int
+maxServerStars =
+    300
+
+
+{-| A hard stop on pages followed for one list, whatever they hold: a page can come back short or even empty
+(posts that were deleted or blocked are dropped) while still handing out a cursor, so counting posts alone
+couldn't bound the loop.
+-}
+maxServerStarPages : Int
+maxServerStarPages =
+    10
+
+
+{-| `jsonResolver` that also hands back the response's headers (names lowercased, as `Http.Metadata` gives
+them) -- for a paged list whose next page is named in a `Link` header.
+-}
+jsonResolverWithHeaders : Decode.Decoder a -> (Http.Metadata -> String -> Http.Error) -> Http.Resolver Http.Error ( a, Dict String String )
+jsonResolverWithHeaders decoder onBadStatus =
+    Http.stringResolver
+        (\response ->
+            case response of
+                Http.GoodStatus_ metadata body ->
+                    case Decode.decodeString decoder body of
+                        Ok value ->
+                            Ok ( value, metadata.headers )
+
+                        Err err ->
+                            Err (Http.BadBody (Decode.errorToString err))
+
+                Http.BadStatus_ metadata body ->
+                    Err (onBadStatus metadata body)
+
+                Http.NetworkError_ ->
+                    Err Http.NetworkError
+
+                Http.Timeout_ ->
+                    Err Http.Timeout
+
+                Http.BadUrl_ url ->
+                    Err (Http.BadUrl url)
+        )
 
 
 {-| Builds an `Http.task`'s `resolver` for a JSON API: decodes `decoder` out of a `GoodStatus_`

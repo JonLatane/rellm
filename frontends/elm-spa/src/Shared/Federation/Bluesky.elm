@@ -78,7 +78,7 @@ import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
-import Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import Shared.Federation.Common exposing (BlueskyAuth, Thread, anonymousBlueskyAuth, jsonResolver, maxServerStarPages, maxServerStars, nonEmpty, sensitiveMediaHiddenId)
 import SocialMediaEmbed
 import Task exposing (Task)
 import Time
@@ -1189,19 +1189,66 @@ fetchThread auth uri =
 
 {-| `app.bsky.feed.getActorLikes` for `actor` (the connected account's own handle -- AT Proto only
 serves this for the authenticated account itself) -- its own server-side likes, newest first, as
-`Post`s (see `Shared.StarredPanel`'s "Server" tab).
+`Post`s (see `Shared.StarredPanel`'s "Server" tab). Follows the response's `cursor` page by page (100 at a
+time, the most the endpoint gives) until `maxServerStars` are loaded or there are no more; the pair is the
+likes and whether there are more than were loaded. There is no way to ask for the total in one go (the
+profile has no likes count; see `Shared.Federation.Common.maxServerStars`), and a page can hold fewer posts
+than asked for -- deleted and blocked ones are dropped -- so a short page is not the last one: only a missing
+cursor is.
 -}
-fetchLikes : BlueskyAuth -> String -> Task Http.Error (List Post)
+fetchLikes : BlueskyAuth -> String -> Task Http.Error ( List Post, Bool )
 fetchLikes auth actor =
+    likesFrom auth actor Nothing [] 1
+
+
+likesFrom : BlueskyAuth -> String -> Maybe String -> List Post -> Int -> Task Http.Error ( List Post, Bool )
+likesFrom auth actor cursor collected page =
     Http.task
         { method = "GET"
         , headers = readHeaders auth
-        , url = readHost auth ++ "/xrpc/app.bsky.feed.getActorLikes?limit=50&actor=" ++ Url.percentEncode actor
+        , url = readHost auth ++ "/xrpc/app.bsky.feed.getActorLikes?limit=100&actor=" ++ Url.percentEncode actor ++ cursorParam cursor
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.field "feed" (Decode.list decoder)) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolver (feedPageDecoder decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map toPost)
+        |> Task.andThen
+            (\( feed, next ) ->
+                let
+                    all : List Post
+                    all =
+                        collected ++ List.map toPost feed
+                in
+                case next of
+                    Nothing ->
+                        Task.succeed ( List.take maxServerStars all, List.length all > maxServerStars )
+
+                    Just _ ->
+                        if List.length all >= maxServerStars || page >= maxServerStarPages then
+                            Task.succeed ( List.take maxServerStars all, True )
+
+                        else
+                            -- A later page failing keeps what is already loaded (and says there is more) instead
+                            -- of failing the whole list; only the first page's failure is a failure. Except an
+                            -- expired token: `performWithBlueskyAccount` has to see that to refresh the session
+                            -- and run the whole fetch again, so it is passed on.
+                            likesFrom auth actor next all (page + 1)
+                                |> Task.onError
+                                    (\err ->
+                                        if isTokenRejection err then
+                                            Task.fail err
+
+                                        else
+                                            Task.succeed ( List.take maxServerStars all, True )
+                                    )
+            )
+
+
+{-| The statuses `Shared.AccountsPanel.BlueskyAccounts.performWithBlueskyAccount` answers with a session refresh
+and a retry of the whole request (AT Proto's "ExpiredToken"/"InvalidToken": 400 or 401).
+-}
+isTokenRejection : Http.Error -> Bool
+isTokenRejection err =
+    err == Http.BadStatus 400 || err == Http.BadStatus 401
 
 
 {-| A post's `cid` (needed to reference it in a like record) and, if the authenticated viewer has
