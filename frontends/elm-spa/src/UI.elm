@@ -5002,7 +5002,7 @@ starredPostsToggle shared =
         ]
 
 
-{-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `cornerBadges`).
+{-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `cornerBadgesLoading`).
 -}
 nonZero : Int -> Maybe Int
 nonZero n =
@@ -5022,15 +5022,9 @@ holds its place, so a given kind of count always lands in the same corner.
   - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
     Fulfillment orders awaiting a host admin (server admins).
 
--}
-cornerBadges : String -> List (Maybe Int) -> List (Html msg)
-cornerBadges mainFrontendHost counts =
-    cornerBadgesLoading mainFrontendHost -1 False counts
-
-
-{-| `cornerBadges` where the badge at index `loadingIndex` (0 = top-right, 1 = bottom-right, ...) also
-holds a spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width and opacity in and out)
-while `loading`. A `Just 0` count there shows just the spinner, no number.
+The badge at index `loadingIndex` (0 = top-right, 1 = bottom-right, ...; `-1` for none) also holds a
+spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width and opacity in and out) while
+`loading`. A `Just 0` count there shows just the spinner, no number.
 -}
 cornerBadgesLoading : String -> Int -> Bool -> List (Maybe Int) -> List (Html msg)
 cornerBadgesLoading mainFrontendHost loadingIndex loading counts =
@@ -5172,7 +5166,7 @@ mirrors `starredPostsToggle`'s own "only show once there's something behind
 it" gating and `.starred-menu`/separately-mounted-panel structure (see
 `messagingPanel`, mounted as a `.navbar` direct child in `headerNav`, same
 reasoning as `starredPanel`). The unread badges (`MessagingPanel.unreadCounts`, one per corner --
-see `cornerBadges` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
+see `cornerBadgesLoading` -- styled like `starredPostsToggle`'s own `.starred-count-badge`) are
 hidden at `0` rather than shown as a literal "0" -- unlike Starred's count,
 which is always known from boot (`starredPostIds` persists locally), this one
 only reflects whatever's actually been fetched so far (see that function's

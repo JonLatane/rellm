@@ -736,27 +736,27 @@ sendUpdate accountsPanelModel msg model =
                         ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
 
         GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
-            let
-                -- Only the posts starred as the account this list was fetched for.
-                pending : List Post
-                pending =
-                    case Dict.get host model.pendingServerStars of
-                        Just p ->
-                            if p.account == account then
-                                p.posts
+            ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
+                let
+                    -- Only the posts starred as the account this list was fetched for.
+                    pending : List Post
+                    pending =
+                        case Dict.get host model.pendingServerStars of
+                            Just p ->
+                                if p.account == account then
+                                    p.posts
 
-                            else
+                                else
+                                    []
+
+                            Nothing ->
                                 []
 
-                        Nothing ->
-                            []
-
-                -- Likes the service's list doesn't show yet stay (at the top) until it does.
-                notYetListed : List Post
-                notYetListed =
-                    List.filter (\p -> not (List.any (\q -> sameStarredPost host p host q) posts)) pending
-            in
-            ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
+                    -- Likes the service's list doesn't show yet stay (at the top) until it does.
+                    notYetListed : List Post
+                    notYetListed =
+                        List.filter (\p -> not (List.any (\q -> sameStarredPost host p host q) posts)) pending
+                in
                 { model
                     | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ posts) } model.serverStars
                     , pendingServerStars = Dict.insert host { account = account, posts = notYetListed } model.pendingServerStars

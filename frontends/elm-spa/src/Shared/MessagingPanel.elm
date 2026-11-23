@@ -58,7 +58,7 @@ hasEligibleAccount =
 
 {-| See `MessagesPage.unreadCounts`'s own doc -- this just unwraps `model.page` to get at it. The nav
 button shows the three counts in its corners: Messages top-right, Subscriptions bottom-right,
-Fulfillment bottom-left (`UI.cornerBadges`).
+Fulfillment bottom-left (`UI.cornerBadgesLoading`).
 -}
 unreadCounts : Model -> { messages : Int, subscriptions : Int, fulfillment : Int }
 unreadCounts model =
