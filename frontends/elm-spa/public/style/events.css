@@ -945,10 +945,11 @@
   scroll-margin-left: -50%;
   /* Each card scrolls vertically by itself when the modal is too short to show
      it whole (phone landscape); a no-op when it fits. `contain` keeps a
-     scroll that hits a card's end from chaining into the page behind. */
+     scroll that hits a card's end from chaining into the page behind -- y
+     only, so a sideways swipe over a card still reaches the strip. */
   min-height: 0;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
 }
 
 /* Mirrors `.event-occasion-strip` (above). */
