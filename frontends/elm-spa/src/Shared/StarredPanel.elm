@@ -611,8 +611,15 @@ sendUpdate accountsPanelModel msg model =
                     , posts = newPosts
                     , serverStars = updateServerStars serverHost True post model.serverStars
                     , pendingServerStars =
-                        Dict.update (canonicalHost serverHost)
-                            (\existing -> Just (post :: List.filter (\p -> p.id /= post.id) (Maybe.withDefault [] existing)))
+                        -- Bluesky only: its AppView lags behind a like, while a Mastodon favourite is
+                        -- visible at once -- and a Mastodon post can sit under a different id/URL in the
+                        -- favourites list, which would leave a never-matched duplicate pending.
+                        if String.startsWith "bluesky:" serverHost then
+                            Dict.update (canonicalHost serverHost)
+                                (\existing -> Just (post :: List.filter (\p -> p.id /= post.id) (Maybe.withDefault [] existing)))
+                                model.pendingServerStars
+
+                        else
                             model.pendingServerStars
                   }
                 , Cmd.batch [ persistCmd newStarOrder, pushCmd ]
