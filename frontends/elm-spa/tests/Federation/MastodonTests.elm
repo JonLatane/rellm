@@ -140,6 +140,22 @@ suite =
                         |> Result.map (\s -> ( s.favouritesCount, s.repliesCount ))
                         |> Expect.equal (Ok ( 568, 13 ))
             ]
+        , describe "nextLink (the Link header that pages the favourites)"
+            [ test "finds the rel=next URL" <|
+                \_ ->
+                    Mastodon.nextLink "<https://mastodon.social/api/v1/favourites?limit=40&max_id=123>; rel=\"next\", <https://mastodon.social/api/v1/favourites?limit=40&min_id=456>; rel=\"prev\""
+                        |> Expect.equal (Just "https://mastodon.social/api/v1/favourites?limit=40&max_id=123")
+            , test "finds it when it is not the first entry" <|
+                \_ ->
+                    Mastodon.nextLink "<https://x.example/p?min_id=1>; rel=\"prev\", <https://x.example/p?max_id=2>; rel=\"next\""
+                        |> Expect.equal (Just "https://x.example/p?max_id=2")
+            , test "is Nothing on the last page (only a prev link)" <|
+                \_ ->
+                    Mastodon.nextLink "<https://x.example/p?min_id=1>; rel=\"prev\""
+                        |> Expect.equal Nothing
+            , test "is Nothing for an empty header" <|
+                \_ -> Mastodon.nextLink "" |> Expect.equal Nothing
+            ]
         , describe "toPost links"
             [ test "uses the url when there is one" <|
                 \_ ->

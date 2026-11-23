@@ -1,4 +1,4 @@
-module UI.CornerBadges exposing (nonZero, view)
+module UI.CornerBadges exposing (Badge, nonZero, view)
 
 {-| The count badges in a nav toggle's corners (Starred, Messages), with an optional spinner on each.
 -}
@@ -6,6 +6,15 @@ module UI.CornerBadges exposing (nonZero, view)
 import Html exposing (Html, span, text)
 import Html.Attributes exposing (class)
 import UI.Classes exposing (classes, hostnameToCSSClass)
+
+
+{-| One corner's badge: see `view`.
+-}
+type alias Badge =
+    { count : Maybe Int
+    , more : Bool
+    , spinner : Maybe Bool
+    }
 
 
 {-| `Just n` only when `n` is above zero -- for corner badges that stay hidden at zero (see `view`).
@@ -29,43 +38,49 @@ holds its place, so a given kind of count always lands in the same corner.
   - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
     Fulfillment orders awaiting a host admin (server admins).
 
-`spinners` has one entry per corner, in the same order: `Nothing` for a badge with no spinner, `Just
-loading` for one that holds a spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width and
-opacity in and out) while `loading`. A spinner badge that is loading shows even at a hidden/zero count
+Each `Badge` has its `count` (`Nothing` hides it), `more` (the real total is higher than `count`, shown as
+"40+" -- for a list that is only loaded up to a cap) and `spinner`: `Nothing` for a badge with no spinner,
+`Just loading` for one that holds a spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width
+and opacity in and out) while `loading`. A spinner badge that is loading shows even at a hidden/zero count
 (just the spinner, no number); once loading ends at zero it fades out.
 -}
-view : String -> List (Maybe Bool) -> List (Maybe Int) -> List (Html msg)
-view mainFrontendHost spinners counts =
+view : String -> List Badge -> List (Html msg)
+view mainFrontendHost badges =
     let
         corners : List String
         corners =
             [ "corner-badge-top-right", "corner-badge-bottom-right", "corner-badge-bottom-left", "corner-badge-top-left" ]
 
-        badge : Int -> String -> Maybe Int -> Html msg
-        badge index corner shownCount =
+        badge : String -> Badge -> Html msg
+        badge corner b =
             -- Always rendered (a `Nothing` count just gets `.count-badge-hidden`) so showing/hiding
             -- transitions in CSS instead of the element appearing/vanishing. A hidden badge keeps
             -- "0" as its text so it doesn't change shape while fading out.
             let
-                spinner : Maybe Bool
-                spinner =
-                    spinners |> List.drop index |> List.head |> Maybe.andThen identity
-
                 loading : Bool
                 loading =
-                    spinner == Just True
+                    b.spinner == Just True
 
                 hasSpinner : Bool
                 hasSpinner =
-                    spinner /= Nothing
+                    b.spinner /= Nothing
+
+                -- "40+" for a list that was only loaded up to a cap; nothing to add to a zero.
+                plus : String
+                plus =
+                    if b.more then
+                        "+"
+
+                    else
+                        ""
 
                 maybeCount : Maybe Int
                 maybeCount =
-                    if loading && shownCount == Nothing then
+                    if loading && b.count == Nothing then
                         Just 0
 
                     else
-                        shownCount
+                        b.count
 
                 count : Int
                 count =
@@ -112,11 +127,11 @@ view mainFrontendHost spinners counts =
                                 []
 
                             else
-                                [ span [ class "starred-count-number" ] [ text (String.fromInt count) ] ]
+                                [ span [ class "starred-count-number" ] [ text (String.fromInt count ++ plus) ] ]
 
                         else
-                            [ text (String.fromInt count) ]
+                            [ text (String.fromInt count ++ plus) ]
                        )
                 )
     in
-    List.map3 badge (List.range 0 (List.length corners - 1)) corners counts
+    List.map2 badge corners badges

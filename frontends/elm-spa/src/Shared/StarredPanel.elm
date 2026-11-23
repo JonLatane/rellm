@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, subscriptions, toggleStarMsg, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, serverTabHasMore, subscriptions, toggleStarMsg, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -265,6 +265,10 @@ rather than shown under the new one.
 type alias ServerStars =
     { account : String
     , status : ServerStarsStatus
+
+    -- The service has more than the (capped, see `Shared.Federation.Common.maxServerStars`) page(s) loaded here.
+    -- Neither Bluesky nor Mastodon can say how many there are in all, so this is all that's known.
+    , more : Bool
     }
 
 
@@ -296,7 +300,7 @@ type Msg
       -- A connected account's server-side star list arriving -- `host`, then `serverAccountKey`
       -- of the account it was fetched for. The `Maybe AccountsPanel.Msg` is a rotated-token
       -- persist, forwarded the same way `GotStarredPost`'s is.
-    | GotServerStars String String (Result Http.Error ( Maybe AccountsPanel.Msg, List Post ))
+    | GotServerStars String String (Result Http.Error ( Maybe AccountsPanel.Msg, List Post, Bool ))
       -- A favourite/like push succeeding -- only carries a token-persist to forward (a failed one is
       -- `ServerStarFailed`; the local browser star stands regardless).
     | GotServerStarPushed (Maybe AccountsPanel.Msg)
@@ -787,7 +791,7 @@ sendUpdate accountsPanelModel msg model =
                         in
                         ( finishedModel, Cmd.batch [ finishCmd, pushCmd ], Nothing )
 
-        GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
+        GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts, more )) ->
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
                 let
                     -- Only the changes made as the account this list was fetched for.
@@ -823,7 +827,7 @@ sendUpdate accountsPanelModel msg model =
                         List.filter (\q -> not (listed q stillListed)) posts
                 in
                 { model
-                    | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ shown) } model.serverStars
+                    | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ shown), more = more } model.serverStars
                     , pendingServerStars = Dict.insert host { account = account, posts = notYetListed, removed = stillListed } model.pendingServerStars
                     , serverRefreshing = finishRefresh host model.serverRefreshing
                 }
@@ -837,7 +841,7 @@ sendUpdate accountsPanelModel msg model =
         GotServerStars host account (Err _) ->
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
                 { model
-                    | serverStars = Dict.insert host { account = account, status = ServerStarsFailed } model.serverStars
+                    | serverStars = Dict.insert host { account = account, status = ServerStarsFailed, more = False } model.serverStars
                     , serverRefreshing = finishRefresh host model.serverRefreshing
                 }
 
@@ -1937,7 +1941,7 @@ refreshServerStars accountsPanelModel model =
     ( { model
         | serverStars =
             List.foldl
-                (\( host, account ) -> Dict.insert host { account = serverAccountKey account, status = ServerStarsFetching })
+                (\( host, account ) -> Dict.insert host { account = serverAccountKey account, status = ServerStarsFetching, more = False })
                 kept
                 missing
       }
@@ -1950,12 +1954,12 @@ fetchServerStars host account =
     case account of
         MastodonServerAccount a ->
             MastodonAccounts.performWithMastodonAccount a (\token -> Mastodon.fetchFavourites a.instanceHost token)
-                |> Task.map (\( refreshed, posts ) -> ( rotatedMastodon a refreshed, posts ))
+                |> Task.map (\( refreshed, ( posts, more ) ) -> ( rotatedMastodon a refreshed, posts, more ))
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
         BlueskyServerAccount a ->
             BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.fetchLikes token a.handle)
-                |> Task.map (\( refreshed, posts ) -> ( rotatedBluesky a refreshed, posts ))
+                |> Task.map (\( refreshed, ( posts, more ) ) -> ( rotatedBluesky a refreshed, posts, more ))
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
 
@@ -2277,6 +2281,27 @@ postItemKey item =
 serverTabCount : Model -> Int
 serverTabCount model =
     serverGroups model |> List.map (Tuple.second >> List.length) |> List.sum
+
+
+{-| Whether any account has more server-side stars than are loaded (see `ServerStars.more`) -- the tab and
+the nav badge then say "40+", not "40", since the real total is unknown.
+-}
+serverTabHasMore : Model -> Bool
+serverTabHasMore model =
+    model.serverStars |> Dict.values |> List.any .more
+
+
+{-| "40", or "40+" when there are more than that.
+-}
+countText : Int -> Bool -> String
+countText count more =
+    String.fromInt count
+        ++ (if more then
+                "+"
+
+            else
+                ""
+           )
 
 
 {-| Every connected account's loaded, non-empty server-side stars, in host order.
@@ -2661,8 +2686,8 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
             (text "Starred"
                 :: (if hasBrowser && hasServer then
                         [ div [ class "starred-panel-tabs" ]
-                            [ starredTabButton tab BrowserTab browserName (browserStarCount model)
-                            , starredTabButton tab ServerTab "Server" (serverTabCount model)
+                            [ starredTabButton tab BrowserTab browserName (String.fromInt (browserStarCount model))
+                            , starredTabButton tab ServerTab "Server" (countText (serverTabCount model) (serverTabHasMore model))
                             ]
                         ]
 
@@ -2758,7 +2783,7 @@ serverStarErrorView error =
 {-| A tab's label and how many posts it lists. The nav button's two badges show these same two numbers
 (`browserStarCount`, `serverTabCount`), so they always agree with the tabs.
 -}
-starredTabButton : StarredTab -> StarredTab -> String -> Int -> Html Msg
+starredTabButton : StarredTab -> StarredTab -> String -> String -> Html Msg
 starredTabButton activeTab tab label count =
     button
         [ classes
@@ -2772,7 +2797,7 @@ starredTabButton activeTab tab label count =
             )
         , onClick (SetStarredTab tab)
         ]
-        [ text label, span [ class "tab-count-badge" ] [ text (String.fromInt count) ] ]
+        [ text label, span [ class "tab-count-badge" ] [ text count ] ]
 
 
 {-| The tab whose row styling `item` renders with: an item still collapsing out during a `TabTransition`
