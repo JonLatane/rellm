@@ -1,4 +1,4 @@
-module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, subscriptions, unreadCounts, update, view)
+module Shared.MessagingPanel exposing (Model, Msg(..), hasEligibleAccount, init, isOpen, isRefreshing, subscriptions, unreadCounts, update, view)
 
 {-| The Messages nav panel -- toggled open/closed from a nav icon (mirrors
 `Shared.StarredPanel`'s own toggle shape), embedding
@@ -42,6 +42,13 @@ init =
 isOpen : Model -> Bool
 isOpen model =
     model.open
+
+
+{-| Whether a message listing is being fetched -- the nav button's spinner (`UI.cornerBadgesLoading`).
+-}
+isRefreshing : Model -> Bool
+isRefreshing model =
+    MessagesPage.isRefreshing model.page
 
 
 hasEligibleAccount : AccountsPanel.Model -> Bool

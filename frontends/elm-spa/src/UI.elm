@@ -5204,8 +5204,14 @@ messagingToggle shared currentRoute =
             , title "Messages"
             ]
             (text "✉️"
-                :: cornerBadges shared.accounts.mainFrontendHost
-                    [ nonZero unreadCounts.messages
+                :: cornerBadgesLoading shared.accounts.mainFrontendHost
+                    0
+                    (MessagingPanel.isRefreshing shared.panels.messagingPanel)
+                    [ if MessagingPanel.isRefreshing shared.panels.messagingPanel then
+                        Just unreadCounts.messages
+
+                      else
+                        nonZero unreadCounts.messages
                     , nonZero unreadCounts.subscriptions
                     , nonZero unreadCounts.fulfillment
                     ]

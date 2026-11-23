@@ -6,6 +6,7 @@ module Components.Pages.MessagesPage exposing
     , init
     , selectSubscriptionThread
     , unreadCounts
+    , isRefreshing
     , pushSubscription
     , subscriptions
     , timerAndAnimationSubscriptions
@@ -170,6 +171,10 @@ type alias Model =
     -- during the debounce window). Per-host, not one global counter, so a burst of pushes for
     -- host A doesn't delay an already-in-flight refresh for host B.
     , pushRefreshGenerations : Dict String Int
+
+    -- Hosts whose message listing fetch is in flight (first load or an in-place refetch, which
+    -- leaves `status` alone) -- see `isRefreshing`.
+    , refreshing : Set String
 
     -- The three tabs (`tabsView`): Messages (everything this page always was), Subscriptions (the
     -- user's own `MarketSubscription`s, of any type, with their fulfillment chats) and Fulfillment
@@ -538,6 +543,7 @@ empty =
     , mobileSidebarOpen = False
     , detailThreadAnimations = Dict.empty
     , pushRefreshGenerations = Dict.empty
+    , refreshing = Set.empty
     , tab = MessagesTab
     , fulfillment = Fulfillment.empty
     , selectedThread = Nothing
@@ -669,6 +675,7 @@ update accountsPanelModel msg model =
             ( { model
                 | messagesByServer =
                     Dict.update host (Maybe.map (\feed -> { feed | status = Loaded response.messages })) model.messagesByServer
+                , refreshing = Set.remove host model.refreshing
               }
                 |> syncSidebarAnimations
             , Cmd.none
@@ -676,7 +683,10 @@ update accountsPanelModel msg model =
             )
 
         GotServerMessages host (Err _) ->
-            ( { model | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer }
+            ( { model
+                | messagesByServer = Dict.update host (Maybe.map (\feed -> { feed | status = Failed })) model.messagesByServer
+                , refreshing = Set.remove host model.refreshing
+              }
                 |> syncSidebarAnimations
             , Cmd.none
             , Nothing
@@ -1939,6 +1949,13 @@ unreadCounts model =
     }
 
 
+{-| Whether any server's message listing is being fetched -- the panel button's spinner.
+-}
+isRefreshing : Model -> Bool
+isRefreshing model =
+    not (Set.isEmpty model.refreshing)
+
+
 {-| Unread `Message`s -- the Messages tab's count (see `unreadCounts`, which splits the panel button's
 three counts: this one, unread notes on the user's own subscriptions, and -- for server
 admins -- subscriptions (of any type) still awaiting a host admin).
@@ -2004,7 +2021,14 @@ refetchServers accountsPanelModel model entriesToFetch =
                 { status = Maybe.withDefault Loading statusIfSame, accountId = Just entry.account.userId, listingType = entry.listingType }
                 dict
     in
-    ( { model | messagesByServer = List.foldl markEntry prunedMessagesByServer entries }
+    ( { model
+        | messagesByServer = List.foldl markEntry prunedMessagesByServer entries
+        , refreshing =
+            entriesToFetch
+                |> List.map (.server >> .frontendHost)
+                |> Set.fromList
+                |> Set.union model.refreshing
+      }
     , Cmd.batch (List.map fetchCmd entriesToFetch)
     )
         |> Tuple.mapFirst syncSidebarAnimations
