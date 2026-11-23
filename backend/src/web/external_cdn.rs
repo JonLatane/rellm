@@ -27,8 +27,14 @@ pub fn configured_backend_domain(state: &State<RocketState>, host: &Host<'_>) ->
             // A Rellm Subdomain (`jon.bullcity.social`) gets its own backend name, `jon.<backend_host>`: gRPC to it
             // then arrives with a `Host` that says which subdomain it is for (see `logic::subdomains`).
             (backend_host, false) if backend_host != "" => {
-                match crate::logic::subdomains::subdomain_label_for_host(host.domain().as_str(), &cdn_config.frontend_host) {
-                    Some(label) => format!("{label}.{backend_host}"),
+                // Only a host with an *active subscription* behind it is a subdomain -- not merely any label under the
+                // frontend host. In particular the backend host itself (`backend.rellm.org` under a `rellm.org`
+                // frontend) must be told its backend is itself, never `backend.backend.rellm.org`.
+                let mut conn = state.pool.get().unwrap();
+                match crate::web::subdomain_web::request_subdomain(&mut conn, host)
+                    .expect("failed to look up the request's subdomain")
+                {
+                    Some(subdomain) => format!("{}.{backend_host}", subdomain.settings.subdomain),
                     None => backend_host,
                 }
             }
