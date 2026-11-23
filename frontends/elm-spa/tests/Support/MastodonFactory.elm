@@ -23,6 +23,7 @@ directly, unlike those -- Mastodon's real `description`/`meta` shapes are alread
 type alias Overrides =
     { id : String
     , url : Maybe String
+    , uri : Maybe String
     , content : String
     , createdAtIso : String
     , createdAtMillis : Int
@@ -45,6 +46,7 @@ defaultOverrides : Overrides
 defaultOverrides =
     { id = "110224857075517327"
     , url = Just "https://mastodon.social/@alice/110224857075517327"
+    , uri = Nothing
     , content = "<p>Hello world</p>"
     , createdAtIso = "2023-04-05T12:00:00.000Z"
     , createdAtMillis = 1680696000000
@@ -63,6 +65,7 @@ status : Overrides -> Status
 status overrides =
     { id = overrides.id
     , url = overrides.url
+    , uri = overrides.uri
     , content = overrides.content
     , createdAt = Time.millisToPosix overrides.createdAtMillis
     , inReplyToId = overrides.inReplyToId
@@ -93,6 +96,7 @@ statusJson overrides =
         (Encode.object
             [ ( "id", Encode.string overrides.id )
             , ( "url", overrides.url |> Maybe.map Encode.string |> Maybe.withDefault Encode.null )
+            , ( "uri", overrides.uri |> Maybe.map Encode.string |> Maybe.withDefault Encode.null )
             , ( "content", Encode.string overrides.content )
             , ( "created_at", Encode.string overrides.createdAtIso )
             , ( "in_reply_to_id", overrides.inReplyToId |> Maybe.map Encode.string |> Maybe.withDefault Encode.null )

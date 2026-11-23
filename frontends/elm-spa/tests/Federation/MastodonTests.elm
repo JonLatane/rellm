@@ -76,6 +76,17 @@ suite =
                         |> Decode.decodeString Mastodon.decoder
                         |> Result.map .url
                         |> Expect.equal (Ok Nothing)
+            , test "decodes the ActivityPub uri" <|
+                \_ ->
+                    Factory.statusJson { defaultOverrides | uri = Just "https://mastodon.social/users/alice/statuses/110224857075517327" }
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Result.map .uri
+                        |> Expect.equal (Ok (Just "https://mastodon.social/users/alice/statuses/110224857075517327"))
+            , test "a boost decodes as the original status it wraps (the wrapper itself has a null url)" <|
+                \_ ->
+                    ("{\"id\":\"999\",\"url\":null,\"content\":\"\",\"reblog\":" ++ Factory.statusJson defaultOverrides ++ "}")
+                        |> Decode.decodeString Mastodon.decoder
+                        |> Expect.equal (Ok (Factory.status defaultOverrides))
             , test "decodes media_attachments, including a null description (Mastodon's own \"no alt text\" convention)" <|
                 \_ ->
                     let
@@ -121,6 +132,20 @@ suite =
                         |> Decode.decodeString Mastodon.decoder
                         |> Result.map (\s -> ( s.favouritesCount, s.repliesCount ))
                         |> Expect.equal (Ok ( 568, 13 ))
+            ]
+        , describe "toPost links"
+            [ test "uses the url when there is one" <|
+                \_ ->
+                    Factory.status { defaultOverrides | uri = Just "https://x.example/ap/1" }
+                        |> Mastodon.toPost "mastodon.social"
+                        |> .link
+                        |> Expect.equal defaultOverrides.url
+            , test "falls back to the ActivityPub uri when the url is null" <|
+                \_ ->
+                    Factory.status { defaultOverrides | url = Nothing, uri = Just "https://x.example/ap/1" }
+                        |> Mastodon.toPost "mastodon.social"
+                        |> .link
+                        |> Expect.equal (Just "https://x.example/ap/1")
             ]
         , describe "toPost"
             [ test "id is the bare status id, unnamespaced -- the synthetic host alongside it (never id alone) is what disambiguates it from a real Rellm post id" <|

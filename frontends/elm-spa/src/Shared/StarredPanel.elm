@@ -138,6 +138,11 @@ type alias Model =
     -- -- see `serverStarsLoading`.
     , serverRefreshing : Set String
 
+    -- Why the last favourite/like push failed -- shown in the panel until `ClearServerStarError` with the
+    -- same `token` (or its dismiss button). The text is kept once hidden so it doesn't blank while the
+    -- banner fades out. See `ServerStarFailed`.
+    , serverStarError : { token : Int, text : String, visible : Bool }
+
     -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
     -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
     -- (enter/unstar-fade), which stays authoritative while an unstar fade is running -- see
@@ -218,9 +223,14 @@ type Msg
       -- of the account it was fetched for. The `Maybe AccountsPanel.Msg` is a rotated-token
       -- persist, forwarded the same way `GotStarredPost`'s is.
     | GotServerStars String String (Result Http.Error ( Maybe AccountsPanel.Msg, List Post ))
-      -- A favourite/like push finishing -- only ever carries a token-persist/reauth-flag to forward;
-      -- a failed push is otherwise dropped (the local star stands regardless).
+      -- A favourite/like push succeeding -- only carries a token-persist to forward (a failed one is
+      -- `ServerStarFailed`; the local browser star stands regardless).
     | GotServerStarPushed (Maybe AccountsPanel.Msg)
+      -- A push that failed: the server host the star was filed under, whether it was a star (not an
+      -- unstar), the post, a human-readable reason, and a reauth flag to forward. Rolls the optimistic
+      -- Server-tab entry back, shows the reason and refetches the real list.
+    | ServerStarFailed String Bool Post String (Maybe AccountsPanel.Msg)
+    | ClearServerStarError Int
       -- The trailing edge of `GotServerStarPushed`'s debounce -- carries the counter value it was
       -- scheduled under.
     | RefetchServerStars Int
@@ -387,6 +397,7 @@ init flags =
     , serverRefetchCounter = 0
     , pendingServerStars = Dict.empty
     , serverRefreshing = Set.empty
+    , serverStarError = { token = 0, text = "", visible = False }
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
     , transition = Nothing
@@ -740,6 +751,44 @@ sendUpdate accountsPanelModel msg model =
             ( { model | serverRefetchCounter = counter }
             , Process.sleep 800 |> Task.perform (\_ -> RefetchServerStars counter)
             , maybeAccountsPanelMsg
+            )
+
+        ServerStarFailed serverHost starring post reason maybeAccountsPanelMsg ->
+            let
+                counter : Int
+                counter =
+                    model.serverRefetchCounter + 1
+
+                -- A failed star never reached the service: take its optimistic entry back out. (A failed
+                -- unstar is put right by the refetch below.)
+                rolledBack : Model
+                rolledBack =
+                    if starring then
+                        { model
+                            | serverStars = updateServerStars serverHost False post model.serverStars
+                            , pendingServerStars =
+                                Dict.map (\listHost ps -> List.filter (\p -> not (sameStarredPost (canonicalHost serverHost) post listHost p)) ps) model.pendingServerStars
+                        }
+
+                    else
+                        model
+            in
+            ( { rolledBack | serverRefetchCounter = counter, serverStarError = { token = counter, text = reason, visible = True } }
+            , Cmd.batch
+                [ Process.sleep 800 |> Task.perform (\_ -> RefetchServerStars counter)
+                , Process.sleep 8000 |> Task.perform (\_ -> ClearServerStarError counter)
+                ]
+            , maybeAccountsPanelMsg
+            )
+
+        ClearServerStarError token ->
+            ( if model.serverStarError.token == token then
+                { model | serverStarError = (\e -> { e | visible = False }) model.serverStarError }
+
+              else
+                model
+            , Cmd.none
+            , Nothing
             )
 
         RefetchServerStars counter ->
@@ -1797,29 +1846,51 @@ fetchServerStars host account =
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
 
-{-| Favourites (`starring`) or unfavourites `post` on the service. A failure is dropped, except that
-a 401/403 from Mastodon (a token connected before `write:favourites` was requested -- see
-`public/index.html`) flags the account `needsReauth` so it shows its "Reconnect" affordance.
+{-| Favourites (`starring`) or unfavourites `post` on the service. A failure comes back as
+`ServerStarFailed` (with a reason to show), and a 401/403 from Mastodon (a token connected before
+`write:favourites` was requested -- see `public/index.html`) also flags the account `needsReauth` so it
+shows its "Reconnect" affordance.
+
+A Mastodon status id only means something to the instance that served it, so one viewed through another
+instance is first looked up there for its ActivityPub `uri` (`Mastodon.fetchStatusUri`; the post's own
+`link` if that fails), which the account's instance then resolves to its own copy
+(`Mastodon.resolveStatusId`).
 -}
 pushServerStar : String -> ServerAccount -> Bool -> Post -> Cmd Msg
 pushServerStar host account starring post =
     case account of
         MastodonServerAccount a ->
             let
-                -- The post's id on the account's own instance: as-is if that's where it came from,
-                -- else looked up by its public URL (see `Mastodon.resolveStatusId`).
+                ownHost : String
+                ownHost =
+                    "mastodon:" ++ a.instanceHost
+
+                -- What identifies the post across instances: its `uri` from its origin instance, else its link.
+                reference : Task.Task Http.Error String
+                reference =
+                    let
+                        fromLink : Http.Error -> Task.Task Http.Error String
+                        fromLink err =
+                            case post.link of
+                                Just url ->
+                                    Task.succeed url
+
+                                Nothing ->
+                                    Task.fail err
+                    in
+                    if String.startsWith "mastodon:" host then
+                        Mastodon.fetchStatusUri (String.dropLeft 9 host) post.id |> Task.onError fromLink
+
+                    else
+                        fromLink (Http.BadStatus 404)
+
                 localId : String -> Task.Task Http.Error String
                 localId token =
-                    if host == "mastodon:" ++ a.instanceHost then
+                    if host == ownHost then
                         Task.succeed post.id
 
                     else
-                        case post.link of
-                            Just url ->
-                                Mastodon.resolveStatusId a.instanceHost token url
-
-                            Nothing ->
-                                Task.fail (Http.BadStatus 404)
+                        reference |> Task.andThen (Mastodon.resolveStatusId a.instanceHost token)
             in
             MastodonAccounts.performWithMastodonAccount a
                 (\token ->
@@ -1827,21 +1898,79 @@ pushServerStar host account starring post =
                         |> Task.andThen (\id -> Mastodon.setFavourite starring a.instanceHost token id)
                 )
                 |> Task.map (\( refreshed, () ) -> rotatedMastodon a refreshed)
-                |> Task.onError
-                    (\err ->
-                        if MastodonAccounts.isReauthError err then
-                            Task.succeed (Just (AccountsPanel.MarkMastodonAccountNeedsReauth a.instanceHost a.accessToken))
+                |> Task.attempt
+                    (\result ->
+                        case result of
+                            Ok maybeAccountsPanelMsg ->
+                                GotServerStarPushed maybeAccountsPanelMsg
 
-                        else
-                            Task.succeed Nothing
+                            Err err ->
+                                ServerStarFailed ownHost
+                                    starring
+                                    post
+                                    (pushFailureText ((if starring then "favourite" else "unfavourite") ++ " on " ++ a.instanceHost) err)
+                                    (if MastodonAccounts.isReauthError err then
+                                        Just (AccountsPanel.MarkMastodonAccountNeedsReauth a.instanceHost a.accessToken)
+
+                                     else
+                                        Nothing
+                                    )
                     )
-                |> Task.perform GotServerStarPushed
 
         BlueskyServerAccount a ->
             BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token post.id)
                 |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
-                |> Task.onError (\_ -> Task.succeed Nothing)
-                |> Task.perform GotServerStarPushed
+                |> Task.attempt
+                    (\result ->
+                        case result of
+                            Ok maybeAccountsPanelMsg ->
+                                GotServerStarPushed maybeAccountsPanelMsg
+
+                            Err err ->
+                                ServerStarFailed "bluesky:"
+                                    starring
+                                    post
+                                    (pushFailureText ((if starring then "like" else "unlike") ++ " on Bluesky") err)
+                                    Nothing
+                    )
+
+
+{-| "Couldn't `action`: reason" for a failed favourite/like push.
+-}
+pushFailureText : String -> Http.Error -> String
+pushFailureText action err =
+    "Couldn't " ++ action ++ ": " ++ pushFailureReason err
+
+
+pushFailureReason : Http.Error -> String
+pushFailureReason err =
+    case err of
+        Http.BadStatus 401 ->
+            "the account needs to be reconnected."
+
+        Http.BadStatus 403 ->
+            "the account needs to be reconnected."
+
+        Http.BadStatus 404 ->
+            "the post wasn't found."
+
+        Http.BadStatus 429 ->
+            "rate limited -- try again in a bit."
+
+        Http.BadStatus code ->
+            "the server returned an error (" ++ String.fromInt code ++ ")."
+
+        Http.BadBody _ ->
+            "the account's server couldn't find or fetch this post."
+
+        Http.Timeout ->
+            "the server took too long to respond."
+
+        Http.NetworkError ->
+            "network error."
+
+        Http.BadUrl _ ->
+            "bad address."
 
 
 {-| Whether any connected account's server-side star list has `post` -- by its id on `host`, or by its
@@ -2404,6 +2533,7 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
                     ]
                    )
             )
+            :: serverStarErrorView model.serverStarError
             :: (if not hasBrowser && not hasServer then
                     [ div [ class "starred-panel-empty" ] [ text "No starred posts yet." ] ]
 
@@ -2421,6 +2551,39 @@ view time basePath browserName accountsPanelModel currentPostKey currentOccasion
                )
             ++ UI.Drag.overlay DragMsg UI.Flip.Vertical model.drag
         )
+
+
+{-| Why the last favourite/like push failed. Always mounted, toggling `hidden` (CSS fades and collapses it);
+the text stays after it's hidden so it doesn't blank mid-fade.
+-}
+serverStarErrorView : { token : Int, text : String, visible : Bool } -> Html Msg
+serverStarErrorView error =
+    div
+        ([ classes ("starred-panel-error" :: (if error.visible then [] else [ "hidden" ]))
+         , attribute "role" "alert"
+         ]
+            ++ (if error.visible then
+                    []
+
+                else
+                    [ attribute "aria-hidden" "true" ]
+               )
+        )
+        [ text error.text
+        , button
+            [ class "starred-panel-error-dismiss"
+            , onClick (ClearServerStarError error.token)
+            , title "Dismiss"
+            , attribute "tabindex"
+                (if error.visible then
+                    "0"
+
+                 else
+                    "-1"
+                )
+            ]
+            [ text "✕" ]
+        ]
 
 
 {-| A tab's label and how many posts it lists -- the Server tab's count is every post under its account
