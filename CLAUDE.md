@@ -13,7 +13,7 @@ Rellm (formerly Jonline; the checkout directory and some old docs/memory still s
 - `frontends/flutter/` — Flutter app (frozen). Its SDK is pinned in `.fvmrc` and managed with **FVM** — always `fvm flutter …`/`fvm dart …`, never a bare `flutter`/`dart`; first-time setup is `make -C frontends/flutter fvm_install` (see its README).
 - `deploys/` — Kubernetes/Docker/release scripts (own Makefile); `docs/` — protocol docs generated from protos; `.github/workflows/` — CI/CD.
 
-Repo-local skills in `.claude/skills/` (run-backend, run-elm, run-tamagui, rebuild-protos, elm-call-rpc, elm-add-panel, elm-add-drag-reorder, add-background-job) cover the detailed procedures below — use them.
+Repo-local skills in `.claude/skills/` (run-backend, run-elm, **elm-sandbox** (compile/elm-review/test/browser-check Elm inside the Claude cloud sandbox -- run its `check.sh` before pushing Elm changes), run-tamagui, rebuild-protos, elm-call-rpc, elm-add-panel, elm-add-drag-reorder, add-background-job) cover the detailed procedures below — use them.
 
 ## Commands
 
