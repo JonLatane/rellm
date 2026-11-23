@@ -876,8 +876,17 @@ favouritesFrom instanceHost accessToken url collected page =
                         else
                             -- A later page failing keeps what is already loaded (and says there is more) instead
                             -- of failing the whole list; only the first page's failure is a failure.
+                            -- ...except a rejected token (401): `performWithMastodonAccount` has to see that to
+                            -- refresh the session and run the whole fetch again, so it is passed on.
                             favouritesFrom instanceHost accessToken nextUrl all (page + 1)
-                                |> Task.onError (\_ -> Task.succeed ( List.take maxServerStars all, True ))
+                                |> Task.onError
+                                    (\err ->
+                                        if err == Http.BadStatus 401 then
+                                            Task.fail err
+
+                                        else
+                                            Task.succeed ( List.take maxServerStars all, True )
+                                    )
             )
 
 

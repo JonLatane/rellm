@@ -1228,10 +1228,27 @@ likesFrom auth actor cursor collected page =
 
                         else
                             -- A later page failing keeps what is already loaded (and says there is more) instead
-                            -- of failing the whole list; only the first page's failure is a failure.
+                            -- of failing the whole list; only the first page's failure is a failure. Except an
+                            -- expired token: `performWithBlueskyAccount` has to see that to refresh the session
+                            -- and run the whole fetch again, so it is passed on.
                             likesFrom auth actor next all (page + 1)
-                                |> Task.onError (\_ -> Task.succeed ( List.take maxServerStars all, True ))
+                                |> Task.onError
+                                    (\err ->
+                                        if isTokenRejection err then
+                                            Task.fail err
+
+                                        else
+                                            Task.succeed ( List.take maxServerStars all, True )
+                                    )
             )
+
+
+{-| The statuses `Shared.AccountsPanel.BlueskyAccounts.performWithBlueskyAccount` answers with a session refresh
+and a retry of the whole request (AT Proto's "ExpiredToken"/"InvalidToken": 400 or 401).
+-}
+isTokenRejection : Http.Error -> Bool
+isTokenRejection err =
+    err == Http.BadStatus 400 || err == Http.BadStatus 401
 
 
 {-| A post's `cid` (needed to reference it in a like record) and, if the authenticated viewer has

@@ -16,6 +16,9 @@ const DID = "did:plc:s2esyvxdshsz5t64io6y4kzf";
 const TARGET = `at://${DID}/app.bsky.feed.post/3myichbpp522p`;
 const OTHER = "at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/3aaaaaaaaaaaa";
 
+/** A JWT whose `exp` is far in the future (the app reads it to decide whether to refresh before a request). */
+const jwt = exp => ["e30", Buffer.from(JSON.stringify({ exp })).toString("base64url"), "sig"].join(".");
+
 const postView = (uri, text, liked) => ({
   uri,
   cid: "bafy" + uri.length,
@@ -30,8 +33,8 @@ const postView = (uri, text, liked) => ({
  * AppView reports (`getActorLikes`, `viewer.like`) after `indexLagMs` -- in BOTH directions, like the real
  * one: right after an unlike the old list still has the post.
  */
-function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false, failLikesFromOffset = null }) {
-  const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [], likesPages: [] };
+function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false, failLikesFromOffset = null, expireTokenOnce = false }) {
+  const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [], likesPages: [], refreshes: 0, tokensSeen: [], expired: false };
   const visible = () => {
     const now = Date.now();
     let likes = state.likes.slice();
@@ -49,6 +52,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
       const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) });
       if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*" } });
       state.log.push(`${req.method()} ${u.host}${p}`);
+      if (p.endsWith("refreshSession")) { state.refreshes++; return json({ accessJwt: jwt(9999999999) + "r" + state.refreshes, refreshJwt: "ref" + state.refreshes, handle: "me.test", did: "did:plc:me" }); }
       if (p.endsWith("getActorLikes")) {
         await new Promise(r => setTimeout(r, likesDelayMs));
         // Paged like the real endpoint: `limit` (<= 100) records per page, `cursor` is where the next page starts.
@@ -58,6 +62,8 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
         const limit = Math.min(Number(u.searchParams.get("limit") || 50), 100);
         const offset = Number(u.searchParams.get("cursor") || 0);
         state.likesPages.push({ limit, offset });
+        // A token that expires between pages: the first request for page 2 is rejected like an expired JWT.
+        if (expireTokenOnce && offset >= 100 && !state.expired) { state.expired = true; return json({ error: "ExpiredToken", message: "Token has expired" }, 400); }
         if (failLikesFromOffset !== null && offset >= failLikesFromOffset) return json({ error: "InternalServerError", message: "page failed" }, 500);
         const page = all.slice(offset, offset + limit).filter((_, i) => !dropEveryFifth || (offset + i) % 5 !== 4);
         const next = offset + limit < all.length ? String(offset + limit) : undefined;
@@ -90,13 +96,14 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
 
 async function newPage(browser, bsky, browserStars = []) {
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, deviceScaleFactor: Number(process.env.DSF || 1) });
-  await ctx.addInitScript(stars => {
+  const token = jwt(9999999999);
+  await ctx.addInitScript(([stars, token]) => {
     localStorage.setItem("rellmStarredPosts", JSON.stringify(stars));
     localStorage.setItem("rellmBlueskyAccounts", JSON.stringify([{
-      handle: "me.test", accessToken: "tok", refreshToken: "ref", enabled: true, avatarUrl: null,
+      handle: "me.test", accessToken: token, refreshToken: "ref", enabled: true, avatarUrl: null,
       displayName: "Me", sortOrder: 0, needsReauth: false, pdsHost: "bsky.social",
     }]));
-  }, browserStars);
+  }, [browserStars, token]);
   await ctx.route(url => !/localhost|127\.0\.0\.1/.test(new URL(url).host), r => bsky.handle(r));
   const page = await ctx.newPage();
   page.on("pageerror", e => console.log("PAGE ERROR:", String(e).slice(0, 200)));
@@ -235,6 +242,15 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
     shown = await shownCounts(page);
     console.log(`   Server tab "${shown.serverTab}", badge "${shown.badge}", pages requested: ${JSON.stringify(page.bsky.state.likesPages)}`);
     check(shown.serverTab === "100+" && shown.badge === "100+", "K  the 100 likes already loaded are kept and shown as \"100+\" (not an error / an empty tab)");
+    await page.close();
+
+    console.log("\nL  the access token expires between pages: refresh it and load everything");
+    page = await open([OTHER, ...manyLikes(250)], [FILLER], { expireTokenOnce: true });
+    await sleep(3500);
+    shown = await shownCounts(page);
+    console.log(`   Server tab "${shown.serverTab}", badge "${shown.badge}", session refreshes: ${page.bsky.state.refreshes}, pages requested: ${JSON.stringify(page.bsky.state.likesPages)}`);
+    check(page.bsky.state.refreshes === 1, "L  the rejected token made the app refresh the session (once)");
+    check(shown.serverTab === "251" && shown.badge === "251", "L  after the refresh all 251 likes are loaded, not a partial \"100+\"");
     await page.close();
 
     console.log("\nJ  a page with posts dropped (deleted/blocked) still has a cursor: keep going");
