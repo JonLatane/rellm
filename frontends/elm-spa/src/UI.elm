@@ -5087,14 +5087,18 @@ cornerBadgesLoading mainFrontendHost loadingIndex loading counts =
                   else
                     []
                  )
-                    ++ [ text
-                            (if hasSpinner && count == 0 then
-                                ""
+                    ++ (if hasSpinner then
+                            -- A real element (not a bare text node) so CSS can tell the spinner has a
+                            -- sibling; no element at all for a zero count that's just the spinner.
+                            if count == 0 then
+                                []
 
-                             else
-                                String.fromInt count
-                            )
-                       ]
+                            else
+                                [ span [ class "starred-count-number" ] [ text (String.fromInt count) ] ]
+
+                        else
+                            [ text (String.fromInt count) ]
+                       )
                 )
     in
     List.map3 badge (List.range 0 (List.length corners - 1)) corners counts

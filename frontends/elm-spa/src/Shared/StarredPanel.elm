@@ -132,11 +132,12 @@ type alias Model =
     -- up with yet (Bluesky's AppView indexes a new like with a delay, so `getActorLikes` right after
     -- the push can omit it). `GotServerStars` keeps them in the list until a fetch includes them;
     -- unstarring drops them.
-    , pendingServerStars : Dict String (List Post)
+    , pendingServerStars : Dict String PendingStars
 
-    -- Hosts whose already-loaded server-side list is being refetched in place (`RefetchServerStars`)
-    -- -- see `serverStarsLoading`.
-    , serverRefreshing : Set String
+    -- How many refetches of each host's already-loaded server-side list are in flight
+    -- (`RefetchServerStars`) -- a count, not a flag, so an older response finishing can't end the
+    -- loading state while a newer fetch is still running. See `serverStarsLoading`.
+    , serverRefreshing : Dict String Int
 
     -- Why the last favourite/like push failed -- shown in the panel until `ClearServerStarError` with the
     -- same `token` (or its dismiss button). The text is kept once hidden so it doesn't blank while the
@@ -182,6 +183,15 @@ type alias TabTransition =
 type StarredTab
     = BrowserTab
     | ServerTab
+
+
+{-| Posts just starred from Rellm that a refetched list may not show yet, and the `serverAccountKey` of the
+account that sent them -- another account's fetch never picks them up. See `Model.pendingServerStars`.
+-}
+type alias PendingStars =
+    { account : String
+    , posts : List Post
+    }
 
 
 {-| `account` identifies whichever connected account `status` was fetched for (see
@@ -396,7 +406,7 @@ init flags =
     , collapsedServerGroups = Set.empty
     , serverRefetchCounter = 0
     , pendingServerStars = Dict.empty
-    , serverRefreshing = Set.empty
+    , serverRefreshing = Dict.empty
     , serverStarError = { token = 0, text = "", visible = False }
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
@@ -624,14 +634,36 @@ sendUpdate accountsPanelModel msg model =
                     , pendingServerStars =
                         -- Bluesky only: its AppView lags behind a like, while a Mastodon favourite is
                         -- visible at once -- and a Mastodon post can sit under a different id/URL in the
-                        -- favourites list, which would leave a never-matched duplicate pending.
-                        if String.startsWith "bluesky:" serverHost then
-                            Dict.update (canonicalHost serverHost)
-                                (\existing -> Just (post :: List.filter (\p -> p.id /= post.id) (Maybe.withDefault [] existing)))
-                                model.pendingServerStars
+                        -- favourites list, which would leave a never-matched duplicate pending. Only when
+                        -- an account actually sends the like, and bound to that account.
+                        case ( String.startsWith "bluesky:" serverHost, account ) of
+                            ( True, Just acct ) ->
+                                Dict.update (canonicalHost serverHost)
+                                    (\existing ->
+                                        let
+                                            accountKey : String
+                                            accountKey =
+                                                serverAccountKey acct
 
-                        else
-                            model.pendingServerStars
+                                            others : List Post
+                                            others =
+                                                case existing of
+                                                    Just pending ->
+                                                        if pending.account == accountKey then
+                                                            List.filter (\p -> p.id /= post.id) pending.posts
+
+                                                        else
+                                                            []
+
+                                                    Nothing ->
+                                                        []
+                                        in
+                                        Just { account = accountKey, posts = post :: others }
+                                    )
+                                    model.pendingServerStars
+
+                            _ ->
+                                model.pendingServerStars
                   }
                 , Cmd.batch [ persistCmd newStarOrder, pushCmd ]
                 , Nothing
@@ -654,7 +686,7 @@ sendUpdate accountsPanelModel msg model =
                     let
                         withoutPending : Dict String (List Post)
                         withoutPending =
-                            Dict.map (\listHost ps -> List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p)) ps) model.pendingServerStars
+                            Dict.map (\listHost pending -> { pending | posts = List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p)) pending.posts }) model.pendingServerStars
 
                         -- On unstarring, a server-side entry for this same post under a *different* key
                         -- (the same status on the account's own instance) goes right away; the same-key one
@@ -705,9 +737,19 @@ sendUpdate accountsPanelModel msg model =
 
         GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
             let
+                -- Only the posts starred as the account this list was fetched for.
                 pending : List Post
                 pending =
-                    Dict.get host model.pendingServerStars |> Maybe.withDefault []
+                    case Dict.get host model.pendingServerStars of
+                        Just p ->
+                            if p.account == account then
+                                p.posts
+
+                            else
+                                []
+
+                        Nothing ->
+                            []
 
                 -- Likes the service's list doesn't show yet stay (at the top) until it does.
                 notYetListed : List Post
@@ -717,12 +759,12 @@ sendUpdate accountsPanelModel msg model =
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
                 { model
                     | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ posts) } model.serverStars
-                    , pendingServerStars = Dict.insert host notYetListed model.pendingServerStars
-                    , serverRefreshing = Set.remove host model.serverRefreshing
+                    , pendingServerStars = Dict.insert host { account = account, posts = notYetListed } model.pendingServerStars
+                    , serverRefreshing = finishRefresh host model.serverRefreshing
                 }
 
               else
-                { model | serverRefreshing = Set.remove host model.serverRefreshing }
+                { model | serverRefreshing = finishRefresh host model.serverRefreshing }
             , Cmd.none
             , maybeAccountsPanelMsg
             )
@@ -731,11 +773,11 @@ sendUpdate accountsPanelModel msg model =
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
                 { model
                     | serverStars = Dict.insert host { account = account, status = ServerStarsFailed } model.serverStars
-                    , serverRefreshing = Set.remove host model.serverRefreshing
+                    , serverRefreshing = finishRefresh host model.serverRefreshing
                 }
 
               else
-                { model | serverRefreshing = Set.remove host model.serverRefreshing }
+                { model | serverRefreshing = finishRefresh host model.serverRefreshing }
             , Cmd.none
             , Nothing
             )
@@ -767,7 +809,7 @@ sendUpdate accountsPanelModel msg model =
                         { model
                             | serverStars = updateServerStars serverHost False post model.serverStars
                             , pendingServerStars =
-                                Dict.map (\listHost ps -> List.filter (\p -> not (sameStarredPost (canonicalHost serverHost) post listHost p)) ps) model.pendingServerStars
+                                Dict.map (\listHost pending -> { pending | posts = List.filter (\p -> not (sameStarredPost (canonicalHost serverHost) post listHost p)) pending.posts }) model.pendingServerStars
                         }
 
                     else
@@ -803,7 +845,7 @@ sendUpdate accountsPanelModel msg model =
                     sources =
                         serverStarSources accountsPanelModel
                 in
-                ( { model | serverRefreshing = Set.union model.serverRefreshing (Set.fromList (List.map Tuple.first sources)) }
+                ( { model | serverRefreshing = List.foldl (\( host, _ ) -> Dict.update host (\n -> Just (Maybe.withDefault 0 n + 1))) model.serverRefreshing sources }
                 , Cmd.batch (List.map (\( host, account ) -> fetchServerStars host account) sources)
                 , Nothing
                 )
@@ -2052,12 +2094,31 @@ browserStarCount model =
     Set.size model.starredPostIds
 
 
+{-| One refetch of `host` finished: counts it down, dropping the entry at zero.
+-}
+finishRefresh : String -> Dict String Int -> Dict String Int
+finishRefresh host =
+    Dict.update host
+        (\count ->
+            case count of
+                Just n ->
+                    if n > 1 then
+                        Just (n - 1)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+        )
+
+
 {-| Whether any server-side star list is being fetched (first load) or refetched -- the nav button's
 bottom-right badge shows a spinner meanwhile.
 -}
 serverStarsLoading : Model -> Bool
 serverStarsLoading model =
-    not (Set.isEmpty model.serverRefreshing)
+    not (Dict.isEmpty model.serverRefreshing)
         || (model.serverStars |> Dict.values |> List.any (\stars -> stars.status == ServerStarsFetching))
 
 
