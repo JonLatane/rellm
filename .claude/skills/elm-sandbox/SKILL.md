@@ -1,32 +1,32 @@
 ---
 name: elm-sandbox
-description: Compile, lint, test, and drive the Elm SPA (frontends/elm-spa) inside the Claude cloud/remote sandbox, where Elm's package site is blocked and only Elm 0.19.1 is installed (elm.json wants 0.19.3). Use whenever you are in a Claude Code cloud session and need real compiler errors, elm-review, elm-test, or a headless-browser check of an Elm change -- before pushing, instead of relying on CI to find type errors.
+description: Compile, lint, test, and drive the Elm SPA (frontends/elm-spa) inside the Claude cloud/remote sandbox, where Elm's package site is blocked and the global `elm` on PATH is an older 0.19.1. Use whenever you are in a Claude Code cloud session and need real compiler errors, elm-review, elm-test, or a headless-browser check of an Elm change -- before pushing, instead of relying on CI to find type errors.
 ---
 
 In the Claude cloud sandbox the normal Elm commands (`make build`, `make test`, `npx elm-test-rs`, `elm make`) fail, for two unrelated reasons:
 
-1. **Elm's package site is blocked.** `package.elm-lang.org` and `github.com/*/zipball/*` (what `elm` downloads from) are refused by the sandbox proxy (`400 Bad Request` / `403`), and `elm-test-rs` can't fetch the package index. But plain `git clone` of public GitHub repos works, and Elm's package cache (`~/.elm/0.19.1/packages/<author>/<name>/<version>/`) is just each package's source at its version tag.
-2. **Only Elm 0.19.1 is installed**, while `elm.json` and `review/elm.json` require `0.19.3`, so every Elm tool aborts with `ELM VERSION MISMATCH`. The code compiles fine on 0.19.1.
+1. **Elm's package site is blocked.** `package.elm-lang.org` and `github.com/*/zipball/*` (what `elm` downloads packages from) are refused by the sandbox proxy (`400 Bad Request` / `403`), and `elm-test-rs` can't fetch the package index. But plain `git clone` of public GitHub repos works, and Elm's package cache is just each package's source at its version tag, in `~/.elm/<elm version>/packages/<author>/<name>/<version>/`.
+2. **The `elm` on PATH is the wrong one.** `/opt/node22/bin/elm` is an older 0.19.1; the project pins **0.19.3** (`package.json`), installed into `frontends/elm-spa/node_modules` by `npm ci` (npm itself is reachable). A bare `elm`/`elm-spa` then aborts with `ELM VERSION MISMATCH`. Always use the pinned one -- `check.sh` does. **Do not** rewrite `"elm-version"` in `elm.json` to make the old compiler run, and don't `npm i elm@<other>` into `node_modules`: that silently makes every later check use the wrong compiler.
 
-Skipping this and "checking by reading the code" is how type errors reach CI -- the type annotation left on an old type (`Dict String (List Post)` after the value became a record) failed CI twice before this skill existed. **Run `check.sh` before pushing any Elm change.**
+Skipping this and "checking by reading the code" is how type errors reach CI -- a type annotation left on an old type (`Dict String (List Post)` after the value became a record) failed CI twice before this skill existed. **Run `check.sh` before pushing any Elm change.**
 
 ## Quick start
 
 ```
 cd /path/to/rellm
 .claude/skills/elm-sandbox/setup.sh     # once per container (~20s): git-clones the packages into ~/.elm
-.claude/skills/elm-sandbox/check.sh     # compile + elm-review + tests (~40s). Prints ALL OK or what failed.
+.claude/skills/elm-sandbox/check.sh     # compile + elm-review + tests (~1 min). Prints ALL OK or what failed.
 ```
 
-`check.sh compile|review|test|build` runs just one step. All steps use the same trick: `check.sh` rewrites `"elm-version"` to `0.19.1` in `elm.json` and `review/elm.json` for the run and **always restores them** (an `EXIT` trap), so a version-patched `elm.json` can't end up in a commit. If a run was hard-killed (`kill -9`), the originals are left beside them as `elm.json.sandbox-bak` / `review/elm.json.sandbox-bak` -- `mv` them back and check `git status` before committing.
+`check.sh compile|review|test|build` runs just one step. It runs `npm ci` itself if `node_modules` is missing or holds a different Elm than `package.json` pins (and refuses to check with the wrong compiler). Nothing in the repo is patched. Two side effects to know about: `npm ci` can rewrite `frontends/elm-spa/yarn.lock`'s platform-specific `@elm_binaries` entry (`check.sh` reverts it, but check `git status` before committing), and `elm-spa gen` writes the (gitignored) generated routing code.
 
-`setup.sh` is idempotent (skips what's cached). The cache lives in the container, so a fresh session needs it again. It reads both `elm.json` files, plus the test runner package `elm-test-rs` needs (`mpizenberg/elm-test-runner`; if `elm-test-rs --offline` ever says "no version of X in Y", bump the version in `setup.sh`).
+`setup.sh` is idempotent (skips what's cached) and exits nonzero if any package couldn't be cloned (re-run to retry). It reads both `elm.json` files plus the test runner package `elm-test-rs` needs (`mpizenberg/elm-test-runner`; if `elm-test-rs --offline` ever says "no version of X in Y", bump the version in `setup.sh`), and fills the cache for the pinned Elm *and* 0.19.1 -- each Elm release has its own cache directory, so a cache filled for one is invisible to the other. The caches live in the container, so a fresh session needs `setup.sh` again.
 
-Notes on what each step is:
+What each step is:
 
 - **compile** runs `elm-spa gen` first (`Gen.*`, `Route`, `Request` only exist once generated -- a bare `elm make` shows spurious missing-module errors) and then `elm make src/Main.elm`. This is the real compiler, so it catches type errors in code paths nothing exercises.
-- **elm-review** is what CI gates on (`NoUnused.*`, `NoPrematureLetComputation`, ...). It does *not* run as part of `elm make`: an unused function or a `let` value computed before an `if` that doesn't always use it passes the compiler and fails CI.
-- **tests** is `elm-test-rs --offline` (967 tests at time of writing). `--offline` is what makes it use the cache instead of the blocked package index; plain `elm-test` isn't needed.
+- **elm-review** is what CI gates on (`NoUnused.*`, `NoPrematureLetComputation`, ...). It is *not* part of `elm make`: an unused function, or a `let` value computed before an `if` that doesn't always use it, passes the compiler and fails CI.
+- **tests** is `elm-test-rs --offline` (967 tests at time of writing). `--offline` makes it use the cache instead of the blocked package index; plain `elm-test` isn't needed.
 
 ## Driving the app in a headless browser
 
@@ -34,7 +34,7 @@ Chromium and Playwright are pre-installed (`require('playwright')` works from an
 
 ```
 .claude/skills/elm-sandbox/check.sh build                 # -> frontends/elm-spa/public/dist/elm.js (gitignored)
-node .claude/skills/elm-sandbox/serve.cjs 1234 &           # static server + SPA fallback; optional 2nd arg = another public/ dir
+node .claude/skills/elm-sandbox/serve.cjs 1234 &           # static server (loopback only) + SPA fallback; optional 2nd arg = another public/ dir
 node .claude/skills/elm-sandbox/ui-check-starred.cjs       # worked example, see below
 ```
 
@@ -54,8 +54,8 @@ A check that has only ever passed proves little. Build the pre-change commit and
 
 ```
 git worktree add --detach /tmp/wt <old-commit>
-cd /tmp/wt/frontends/elm-spa && ln -s /path/to/rellm/frontends/elm-spa/node_modules node_modules
-sed -i 's/"elm-version": "0.19.3"/"elm-version": "0.19.1"/' elm.json && npx elm-spa build   # /tmp/wt is throwaway, so no restore needed
+cd /tmp/wt/frontends/elm-spa && ln -s /path/to/rellm/frontends/elm-spa/node_modules node_modules   # reuse the pinned Elm
+PATH=$PWD/node_modules/.bin:$PATH npx elm-spa build
 node /path/to/rellm/.claude/skills/elm-sandbox/serve.cjs 1235 /tmp/wt/frontends/elm-spa/public &
 APP=http://localhost:1235 node /path/to/rellm/.claude/skills/elm-sandbox/ui-check-starred.cjs   # should FAIL on the old code
 git worktree remove --force /tmp/wt

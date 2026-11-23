@@ -15,13 +15,33 @@ python3 - "$ELM_SPA" <<'PY'
 import json, os, re, shutil, subprocess, sys
 
 elm_spa = sys.argv[1]
-base = os.path.expanduser("~/.elm/0.19.1/packages")
-os.makedirs(base, exist_ok=True)
+failed = []
+
+# Each Elm release keeps its own package cache: ~/.elm/<elm version>/packages. The npm-pinned compiler
+# (package.json "elm") is what check.sh uses, so that is the one that must be filled; 0.19.1 is also
+# filled for anyone using the older global `elm`. Everything is cloned into `base` and copied to the rest.
+pinned = re.search(r'"elm":\s*"(\d+\.\d+\.\d+)', open(f"{elm_spa}/package.json").read()).group(1)
+cache_dirs = [os.path.expanduser(f"~/.elm/{v}/packages") for v in dict.fromkeys([pinned, "0.19.1"])]
+base = cache_dirs[0]
+for d in cache_dirs:
+    os.makedirs(d, exist_ok=True)
+
+
+def sync(pkg, ver):
+    """Copy `pkg ver` from `base` into the other versions' caches."""
+    src = f"{base}/{pkg}/{ver}"
+    for d in cache_dirs[1:]:
+        dst = f"{d}/{pkg}/{ver}"
+        if not os.path.isdir(dst + "/src") and os.path.isdir(src):
+            shutil.rmtree(dst, ignore_errors=True)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copytree(src, dst)
 
 
 def get(pkg, ver):
     d = f"{base}/{pkg}/{ver}"
     if os.path.isdir(d + "/src"):
+        sync(pkg, ver)
         return d
     tmp = d + ".tmp"
     shutil.rmtree(tmp, ignore_errors=True)
@@ -32,10 +52,12 @@ def get(pkg, ver):
     )
     if r.returncode:
         print(f"FAILED {pkg} {ver}: {r.stderr[-200:]}", file=sys.stderr)
+        failed.append(f"{pkg} {ver}")
         return None
     shutil.rmtree(tmp + "/.git", ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     os.rename(tmp, d)
+    sync(pkg, ver)
     print(f"cloned {pkg} {ver}")
     return d
 
@@ -77,7 +99,12 @@ for project in (f"{elm_spa}/elm.json", f"{elm_spa}/review/elm.json"):
 # elm-test-rs's own runner package (version must match what the installed elm-test-rs asks for; it
 # says so in its "no version of mpizenberg/elm-test-runner in X" error if this ever changes).
 walk_package("mpizenberg/elm-test-runner", "6.0.1")
+
+if failed:
+    print(f"\nSetup INCOMPLETE -- {len(failed)} package(s) could not be cloned (re-run to retry):", file=sys.stderr)
+    for f in failed:
+        print(f"  {f}", file=sys.stderr)
+    sys.exit(1)
 PY
 
-echo "elm: $(elm --version 2>/dev/null || echo 'not found')"
-echo "Done. Next: .claude/skills/elm-sandbox/check.sh"
+echo "Done. Next: .claude/skills/elm-sandbox/check.sh (installs the project's pinned Elm with npm ci if needed)"
