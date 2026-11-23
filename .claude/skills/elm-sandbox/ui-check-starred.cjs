@@ -25,15 +25,25 @@ const postView = (uri, text, liked) => ({
   viewer: liked ? { like: "at://did:plc:me/app.bsky.feed.like/xyz" } : {},
 });
 
-/** Fake Bluesky: `likes` is what the AppView currently reports; a new like only shows up after `indexLagMs`. */
-function makeBluesky({ indexLagMs, likesDelayMs, failWrite }) {
-  const state = { likes: [OTHER], pending: [], log: [] };
+/**
+ * Fake Bluesky. `initialLikes` is what the account has liked; a like (or unlike) only shows up in what the
+ * AppView reports (`getActorLikes`, `viewer.like`) after `indexLagMs` -- in BOTH directions, like the real
+ * one: right after an unlike the old list still has the post.
+ */
+function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false }) {
+  const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [] };
   const visible = () => {
     const now = Date.now();
-    return [...state.likes, ...state.pending.filter(p => now - p.at >= indexLagMs).map(p => p.uri)];
+    let likes = state.likes.slice();
+    for (const op of state.ops) {
+      if (now - op.at < indexLagMs) continue;
+      likes = op.add ? (likes.includes(op.uri) ? likes : [op.uri, ...likes]) : likes.filter(x => x !== op.uri);
+    }
+    return likes;
   };
   return {
     state,
+    likesNow: visible,
     async handle(route) {
       const req = route.request(), u = new URL(req.url()), p = u.pathname;
       const json = (body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(body) });
@@ -45,7 +55,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite }) {
       }
       if (p.endsWith("getPosts")) {
         const uri = u.searchParams.get("uris");
-        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", visible().includes(uri))] });
+        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", !hideViewerLike && visible().includes(uri))] });
       }
       if (p.endsWith("getPostThread")) {
         const uri = u.searchParams.get("uri");
@@ -53,23 +63,30 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite }) {
       }
       if (p.endsWith("createRecord")) {
         if (failWrite) return json({ error: "InternalServerError", message: "boom" }, 500);
-        state.pending.push({ uri: TARGET, at: Date.now() });
-        return json({ uri: "at://did:plc:me/app.bsky.feed.like/new", cid: "bafylike" });
+        state.ops.push({ add: true, uri: TARGET, at: Date.now() });
+        return json({ uri: "at://did:plc:me/app.bsky.feed.like/like1", cid: "bafylike" });
       }
-      if (p.endsWith("deleteRecord")) { state.pending = []; state.likes = state.likes.filter(x => x === OTHER); return json({}); }
+      if (p.endsWith("deleteRecord")) {
+        // Like the real server: deleting a record key that isn't one of the account's like records changes nothing.
+        const rkey = JSON.parse(req.postData() || "{}").rkey;
+        state.deleted.push(rkey);
+        if (rkey === "like1" || rkey === "xyz") state.ops.push({ add: false, uri: TARGET, at: Date.now() });
+        return json({});
+      }
       return json({}, 404);
     },
   };
 }
 
-async function newPage(browser, bsky) {
+async function newPage(browser, bsky, browserStars = []) {
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, deviceScaleFactor: Number(process.env.DSF || 1) });
-  await ctx.addInitScript(() => {
+  await ctx.addInitScript(stars => {
+    localStorage.setItem("rellmStarredPosts", JSON.stringify(stars));
     localStorage.setItem("rellmBlueskyAccounts", JSON.stringify([{
       handle: "me.test", accessToken: "tok", refreshToken: "ref", enabled: true, avatarUrl: null,
       displayName: "Me", sortOrder: 0, needsReauth: false, pdsHost: "bsky.social",
     }]));
-  });
+  }, browserStars);
   await ctx.route(url => !/localhost|127\.0\.0\.1/.test(new URL(url).host), r => bsky.handle(r));
   const page = await ctx.newPage();
   page.on("pageerror", e => console.log("PAGE ERROR:", String(e).slice(0, 200)));
@@ -88,6 +105,18 @@ const tabCounts = page => page.evaluate(() => Object.fromEntries([...document.qu
   const n = t.querySelector(".tab-count-badge");
   return [t.textContent.replace(n ? n.textContent : "", "").trim(), n ? Number(n.textContent) : null];
 })));
+/** Everything a person sees counted: both corner badges and both tab counts (the panel is mounted while closed). */
+const counts = async page => {
+  const b = await badge(page);
+  const tabs = await tabCounts(page);
+  const top = await page.evaluate(() => {
+    const e = document.querySelector(".starred-menu .corner-badge-top-right");
+    return e ? Number(e.textContent.replace("↻", "").trim()) : null;
+  });
+  const [browserTab, serverTab] = Object.values(tabs);
+  return { topBadge: top, bottomBadge: b && !b.hidden ? Number(b.text || 0) : 0, spinning: !!(b && b.spinning), browserTab, serverTab };
+};
+const fmt = c => `top=${c.topBadge} bottom=${c.bottomBadge}${c.spinning ? "↻" : ""} | tabs: browser=${c.browserTab} server=${c.serverTab}`;
 const errorBanner = page => page.evaluate(() => {
   const e = document.querySelector(".starred-panel-error");
   if (!e) return null;
@@ -101,6 +130,110 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
 (async () => {
   const browser = await chromium.launch();
   const postUrl = `${APP}/post/${DID}~3myichbpp522p@bluesky`;
+
+  const only = process.env.ONLY; // e.g. ONLY=counts runs just the count-consistency scenarios
+  const KEY = `${TARGET}@bluesky:`; // how the browser persists a star on TARGET
+  // A browser star on some unrelated post, so the Browser/Server tab strip is always rendered (as for anyone
+  // with both kinds of star) and the Server tab's count can be read at every step.
+  const FILLER = "at://did:plc:zzzzzzzzzzzzzzzzzzzzzzzz/app.bsky.feed.post/3zzzzzzzzzzzz@bluesky:";
+
+  /** Counts as they change over `ms`, right after `action` -- so both the instant and the post-refetch values show. */
+  async function timeline(page, label, action, expect, ms = 8000) {
+    const first = await counts(page);
+    await action();
+    const samples = [{ t: 0, ...(await counts(page)) }];
+    for (let t = 300; t <= ms; t += 300) { await sleep(300); samples.push({ t, ...(await counts(page)) }); }
+    const lines = [];
+    for (const smp of samples) if (!lines.length || fmt(lines[lines.length - 1].c) !== fmt(smp)) lines.push({ t: smp.t, c: smp });
+    console.log(`   ${label}\n     before: ${fmt(first)}`);
+    for (const l of lines) console.log(`     +${String(l.t).padStart(4)}ms: ${fmt(l.c)}`);
+    const last = samples[samples.length - 1];
+    check(samples.every(x => x.topBadge === x.browserTab && x.bottomBadge === x.serverTab),
+      `${label}: the badges show the same numbers as the Browser/Server tabs at every step`);
+    check(last.serverTab === first.serverTab + expect.server && last.browserTab === first.browserTab + expect.browser,
+      `${label}: settles at Server ${first.serverTab + expect.server}, Browser ${first.browserTab + expect.browser} (was ${first.serverTab} / ${first.browserTab})`);
+    check(samples.every(x => x.serverTab === samples[0].serverTab && x.browserTab === samples[0].browserTab),
+      `${label}: no flip-flop after the optimistic change -- the refetch doesn't undo it`);
+    return { first, last, samples };
+  }
+  const clickStar = page => page.locator(".post-star >> visible=true").first().click();
+  const open = async (initialLikes, stars) => {
+    const bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes });
+    const page = await newPage(browser, bsky, stars);
+    await page.goto(postUrl, { waitUntil: "load" });
+    await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
+    await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
+    await sleep(2000);
+    return page;
+  };
+
+  // ---- C/D/E: do the counts agree with each other, and move the right way on star / unstar? ---------
+  if (!only || only === "counts") {
+    console.log("\nC  liked on Bluesky, not starred here (server-only)");
+    let page = await open([OTHER, TARGET], [FILLER]);
+    await timeline(page, "click the (filled) star -> unstar", () => clickStar(page), { server: -1, browser: 0 });
+    await timeline(page, "click again -> star", () => clickStar(page), { server: +1, browser: +1 });
+    await page.close();
+
+    console.log("\nD  starred here AND liked on Bluesky (overlap)");
+    page = await open([OTHER, TARGET], [FILLER, KEY]);
+    await timeline(page, "click -> unstar", () => clickStar(page), { server: -1, browser: -1 });
+    await timeline(page, "click again -> star", () => clickStar(page), { server: +1, browser: +1 });
+    await page.close();
+
+    console.log("\nE  not starred, not liked");
+    page = await open([OTHER], [FILLER]);
+    await timeline(page, "click -> star", () => clickStar(page), { server: +1, browser: +1 });
+    await timeline(page, "click again -> unstar", () => clickStar(page), { server: -1, browser: -1 });
+    await page.close();
+  }
+
+  // ---- F/G: Bluesky hasn't told us about the like yet -----------------------------------------------
+  if (!only || only === "counts") {
+    console.log("\nF  star, then unstar before the AppView has indexed the like (viewer.like still empty)");
+    let bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes: [OTHER] });
+    let page = await newPage(browser, bsky, [FILLER]);
+    await page.goto(postUrl, { waitUntil: "load" });
+    await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
+    await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
+    await sleep(2000);
+    const start = await counts(page);
+    await clickStar(page);          // like
+    await sleep(900);               // well inside the 3s lag
+    await clickStar(page);          // unlike, while viewer.like is still empty
+    await sleep(9000);              // the AppView catches up, a few refetches happen
+    const end = await counts(page);
+    console.log(`   start: ${fmt(start)}\n   end:   ${fmt(end)}\n   deleteRecord keys sent: ${JSON.stringify(bsky.state.deleted)}`);
+    check(bsky.state.deleted.includes("like1"), "F  the unlike deleted the like it had just created (via the remembered record URI)");
+    check(!bsky.likesNow().includes(TARGET), "F  once the AppView has caught up, Bluesky really no longer has the like (nothing left hidden by Rellm)");
+    await page.close();
+
+    check(end.serverTab === start.serverTab && end.bottomBadge === end.serverTab, "F  the Server tab/badge end where they started, not hiding or inventing a like");
+
+    console.log("\nG  unlike when no like record can be found (nothing remembered, viewer.like empty)");
+    bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes: [OTHER, TARGET], hideViewerLike: true });
+    page = await newPage(browser, bsky, [FILLER]);
+    await page.goto(postUrl, { waitUntil: "load" });
+    await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
+    await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
+    await sleep(2000);
+    const gStart = await counts(page);
+    await clickStar(page);
+    await sleep(3000);
+    const gEnd = await counts(page);
+    const err = await errorBanner(page);
+    console.log(`   start: ${fmt(gStart)}\n   end:   ${fmt(gEnd)}\n   banner: ${JSON.stringify(err && err.text)}`);
+    check(err && err.visible && /Couldn't unlike on Bluesky/.test(err.text), "G  says it couldn't unlike, instead of pretending it worked");
+    check(gEnd.serverTab === gStart.serverTab, "G  the still-liked post stays in the Server tab (not hidden)");
+    check(bsky.state.deleted.length === 0, "G  no deleteRecord was sent (there was nothing to delete)");
+    await page.close();
+  }
+
+  if (only) {
+    await browser.close();
+    console.log(failures ? `\n${failures} check(s) FAILED` : "\nall checks passed");
+    process.exit(failures ? 1 : 0);
+  }
 
   // ---- A: slow AppView indexing --------------------------------------------------------------
   {

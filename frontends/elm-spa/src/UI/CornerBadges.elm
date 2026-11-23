@@ -24,7 +24,8 @@ Messages buttons. Counts fill the corners in a fixed order: top-right, bottom-ri
 (for a fourth) top-left. A `Nothing` leaves its corner empty (a count that's hidden at zero) but still
 holds its place, so a given kind of count always lands in the same corner.
 
-  - Starred: top-right is the stars in this browser, bottom-right the server-side stars (when any).
+  - Starred: top-right is the stars in this browser, bottom-right the server-side stars (when any) -- the
+    same two numbers as the panel's Browser and Server tabs.
   - Messages: top-right is unread Messages, bottom-right unread Subscriptions notes, bottom-left
     Fulfillment orders awaiting a host admin (server admins).
 

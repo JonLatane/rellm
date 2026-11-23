@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, serverStarCount, serverStarsLoading, subscriptions, toggleStarMsg, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, subscriptions, toggleStarMsg, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -144,6 +144,12 @@ type alias Model =
     -- banner fades out. See `ServerStarFailed`.
     , serverStarError : { token : Int, text : String, visible : Bool }
 
+    -- The `at://` URI of the like record each Bluesky post got when *this session* liked it, per account
+    -- (see `knownLike`) -- a like record belongs to the account that made it. Bluesky's AppView lags behind a write, so right after a like the post's own `viewer.like`
+    -- is still empty; without this, starring then quickly unstarring finds no like to delete and silently
+    -- leaves it on Bluesky. See `Bluesky.setLike`.
+    , likeRecords : Dict String String
+
     -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
     -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
     -- (enter/unstar-fade), which stays authoritative while an unstar fade is running -- see
@@ -185,13 +191,71 @@ type StarredTab
     | ServerTab
 
 
-{-| Posts just starred from Rellm that a refetched list may not show yet, and the `serverAccountKey` of the
-account that sent them -- another account's fetch never picks them up. See `Model.pendingServerStars`.
+{-| Changes made from Rellm that the service's own list may not reflect yet, and the `serverAccountKey` of
+the account that made them -- another account's fetch never picks them up. Bluesky's AppView lags behind
+a like *and* an unlike, so a refetch right after either returns the old list: `posts` are likes it may not
+list yet (kept in the list until it does), `removed` are unlikes it may still list (kept out of the list
+until it stops). See `Model.pendingServerStars`.
 -}
 type alias PendingStars =
     { account : String
     , posts : List Post
+    , removed : List Post
     }
+
+
+{-| Records that `post` was just starred (`starring`) or unstarred as `accountKey` -- on `host`'s list,
+replacing any earlier opposite note about the same post.
+-}
+notePending : Bool -> String -> String -> Post -> Dict String PendingStars -> Dict String PendingStars
+notePending starring host accountKey post =
+    Dict.update (canonicalHost host)
+        (\existing ->
+            let
+                current : PendingStars
+                current =
+                    case existing of
+                        Just pending ->
+                            if pending.account == accountKey then
+                                pending
+
+                            else
+                                { account = accountKey, posts = [], removed = [] }
+
+                        Nothing ->
+                            { account = accountKey, posts = [], removed = [] }
+
+                without : List Post -> List Post
+                without =
+                    List.filter (\p -> not (sameStarredPost (canonicalHost host) post (canonicalHost host) p))
+            in
+            Just
+                (if starring then
+                    { current | posts = post :: without current.posts, removed = without current.removed }
+
+                 else
+                    { current | posts = without current.posts, removed = post :: without current.removed }
+                )
+        )
+
+
+{-| A push of `post` (`starring` or not) failed, so the change it would have noted never happened.
+-}
+dropPending : Bool -> String -> Post -> Dict String PendingStars -> Dict String PendingStars
+dropPending starring host post =
+    Dict.map
+        (\listHost pending ->
+            let
+                without : List Post -> List Post
+                without =
+                    List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p))
+            in
+            if starring then
+                { pending | posts = without pending.posts }
+
+            else
+                { pending | removed = without pending.removed }
+        )
 
 
 {-| `account` identifies whichever connected account `status` was fetched for (see
@@ -236,6 +300,9 @@ type Msg
       -- A favourite/like push succeeding -- only carries a token-persist to forward (a failed one is
       -- `ServerStarFailed`; the local browser star stands regardless).
     | GotServerStarPushed (Maybe AccountsPanel.Msg)
+      -- A Bluesky like/unlike that really changed something: the post id and what changed -- remembers the new
+      -- like's URI (or forgets it once deleted), then carries on exactly like `GotServerStarPushed`.
+    | GotLikeChange String String Bluesky.LikeChange (Maybe AccountsPanel.Msg)
       -- A push that failed: the server host the star was filed under, whether it was a star (not an
       -- unstar), the post, a human-readable reason, and a reauth flag to forward. Rolls the optimistic
       -- Server-tab entry back, shows the reason and refetches the real list.
@@ -408,6 +475,7 @@ init flags =
     , pendingServerStars = Dict.empty
     , serverRefreshing = Dict.empty
     , serverStarError = { token = 0, text = "", visible = False }
+    , likeRecords = Dict.empty
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
     , transition = Nothing
@@ -603,7 +671,7 @@ sendUpdate accountsPanelModel msg model =
                 pushCmd =
                     case account of
                         Just acct ->
-                            pushServerStar host acct starring post
+                            pushServerStar host acct starring (knownLike (serverAccountKey acct) post.id model) post
 
                         Nothing ->
                             Cmd.none
@@ -638,29 +706,7 @@ sendUpdate accountsPanelModel msg model =
                         -- an account actually sends the like, and bound to that account.
                         case ( String.startsWith "bluesky:" serverHost, account ) of
                             ( True, Just acct ) ->
-                                Dict.update (canonicalHost serverHost)
-                                    (\existing ->
-                                        let
-                                            accountKey : String
-                                            accountKey =
-                                                serverAccountKey acct
-
-                                            others : List Post
-                                            others =
-                                                case existing of
-                                                    Just pending ->
-                                                        if pending.account == accountKey then
-                                                            List.filter (\p -> p.id /= post.id) pending.posts
-
-                                                        else
-                                                            []
-
-                                                    Nothing ->
-                                                        []
-                                        in
-                                        Just { account = accountKey, posts = post :: others }
-                                    )
-                                    model.pendingServerStars
+                                notePending True serverHost (serverAccountKey acct) post model.pendingServerStars
 
                             _ ->
                                 model.pendingServerStars
@@ -684,9 +730,15 @@ sendUpdate accountsPanelModel msg model =
 
                 else
                     let
+                        -- Bluesky only, as for a star: until its list stops showing this post, it stays out.
                         withoutPending : Dict String PendingStars
                         withoutPending =
-                            Dict.map (\listHost pending -> { pending | posts = List.filter (\p -> not (sameStarredPost (canonicalHost host) post listHost p)) pending.posts }) model.pendingServerStars
+                            case ( String.startsWith "bluesky:" (account |> Maybe.map serverHostOf |> Maybe.withDefault host), account ) of
+                                ( True, Just acct ) ->
+                                    notePending False (serverHostOf acct) (serverAccountKey acct) post model.pendingServerStars
+
+                                _ ->
+                                    model.pendingServerStars
 
                         -- On unstarring, a server-side entry for this same post under a *different* key
                         -- (the same status on the account's own instance) goes right away; the same-key one
@@ -738,28 +790,41 @@ sendUpdate accountsPanelModel msg model =
         GotServerStars host account (Ok ( maybeAccountsPanelMsg, posts )) ->
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
                 let
-                    -- Only the posts starred as the account this list was fetched for.
-                    pending : List Post
+                    -- Only the changes made as the account this list was fetched for.
+                    pending : PendingStars
                     pending =
                         case Dict.get host model.pendingServerStars of
                             Just p ->
                                 if p.account == account then
-                                    p.posts
+                                    p
 
                                 else
-                                    []
+                                    { account = account, posts = [], removed = [] }
 
                             Nothing ->
-                                []
+                                { account = account, posts = [], removed = [] }
 
-                    -- Likes the service's list doesn't show yet stay (at the top) until it does.
+                    listed : Post -> List Post -> Bool
+                    listed p list =
+                        List.any (\q -> sameStarredPost host p host q) list
+
+                    -- Likes the service's list doesn't show yet stay (at the top) until it does...
                     notYetListed : List Post
                     notYetListed =
-                        List.filter (\p -> not (List.any (\q -> sameStarredPost host p host q) posts)) pending
+                        List.filter (\p -> not (listed p posts)) pending.posts
+
+                    -- ...and unlikes it still shows stay out until it stops.
+                    stillListed : List Post
+                    stillListed =
+                        List.filter (\p -> listed p posts) pending.removed
+
+                    shown : List Post
+                    shown =
+                        List.filter (\q -> not (listed q stillListed)) posts
                 in
                 { model
-                    | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ posts) } model.serverStars
-                    , pendingServerStars = Dict.insert host { account = account, posts = notYetListed } model.pendingServerStars
+                    | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ shown) } model.serverStars
+                    , pendingServerStars = Dict.insert host { account = account, posts = notYetListed, removed = stillListed } model.pendingServerStars
                     , serverRefreshing = finishRefresh host model.serverRefreshing
                 }
 
@@ -782,6 +847,11 @@ sendUpdate accountsPanelModel msg model =
             , Nothing
             )
 
+        GotLikeChange accountKey postId change maybeAccountsPanelMsg ->
+            sendUpdate accountsPanelModel
+                (GotServerStarPushed maybeAccountsPanelMsg)
+                (noteLikeChange accountKey postId change model)
+
         GotServerStarPushed maybeAccountsPanelMsg ->
             -- Trailing-edge debounce: a quick run of stars/unstars only refetches once, after the
             -- last one's push finishes and 800ms pass with no further one.
@@ -801,19 +871,20 @@ sendUpdate accountsPanelModel msg model =
                 counter =
                     model.serverRefetchCounter + 1
 
-                -- A failed star never reached the service: take its optimistic entry back out. (A failed
-                -- unstar is put right by the refetch below.)
+                -- A failed star never reached the service: take its optimistic entry back out. A failed unstar
+                -- didn't happen either, so stop holding the post out of the list (the refetch below brings it
+                -- back).
                 rolledBack : Model
                 rolledBack =
-                    if starring then
-                        { model
-                            | serverStars = updateServerStars serverHost False post model.serverStars
-                            , pendingServerStars =
-                                Dict.map (\listHost pending -> { pending | posts = List.filter (\p -> not (sameStarredPost (canonicalHost serverHost) post listHost p)) pending.posts }) model.pendingServerStars
-                        }
+                    { model
+                        | serverStars =
+                            if starring then
+                                updateServerStars serverHost False post model.serverStars
 
-                    else
-                        model
+                            else
+                                model.serverStars
+                        , pendingServerStars = dropPending starring serverHost post model.pendingServerStars
+                    }
             in
             ( { rolledBack | serverRefetchCounter = counter, serverStarError = { token = counter, text = reason, visible = True } }
             , Cmd.batch
@@ -1888,6 +1959,38 @@ fetchServerStars host account =
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
 
+{-| The like record URI remembered for `postId` as the Bluesky account `accountKey` (`serverAccountKey`) --
+never another account's: a like record belongs to whoever made it, and handing one account's URI to
+another's `setLike` would make it think there is nothing left to like.
+-}
+knownLike : String -> String -> Model -> Maybe String
+knownLike accountKey postId model =
+    Dict.get (likeRecordKey accountKey postId) model.likeRecords
+
+
+{-| Remembers (or, once deleted, forgets) the like record a Bluesky like/unlike just changed -- see `knownLike`.
+-}
+noteLikeChange : String -> String -> Bluesky.LikeChange -> Model -> Model
+noteLikeChange accountKey postId change model =
+    { model
+        | likeRecords =
+            case change of
+                Bluesky.Created likeUri ->
+                    Dict.insert (likeRecordKey accountKey postId) likeUri model.likeRecords
+
+                Bluesky.Deleted ->
+                    Dict.remove (likeRecordKey accountKey postId) model.likeRecords
+
+                Bluesky.NothingToDo ->
+                    model.likeRecords
+    }
+
+
+likeRecordKey : String -> String -> String
+likeRecordKey accountKey postId =
+    accountKey ++ "|" ++ postId
+
+
 {-| Favourites (`starring`) or unfavourites `post` on the service. A failure comes back as
 `ServerStarFailed` (with a reason to show), and a 401/403 from Mastodon (a token connected before
 `write:favourites` was requested -- see `public/index.html`) also flags the account `needsReauth` so it
@@ -1898,8 +2001,8 @@ instance is first looked up there for its ActivityPub `uri` (`Mastodon.fetchStat
 `link` if that fails), which the account's instance then resolves to its own copy
 (`Mastodon.resolveStatusId`).
 -}
-pushServerStar : String -> ServerAccount -> Bool -> Post -> Cmd Msg
-pushServerStar host account starring post =
+pushServerStar : String -> ServerAccount -> Bool -> Maybe String -> Post -> Cmd Msg
+pushServerStar host account starring rememberedLike post =
     case account of
         MastodonServerAccount a ->
             let
@@ -1960,13 +2063,28 @@ pushServerStar host account starring post =
                     )
 
         BlueskyServerAccount a ->
-            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token post.id)
-                |> Task.map (\( refreshed, () ) -> rotatedBluesky a refreshed)
+            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token rememberedLike post.id)
+                |> Task.map (\( refreshed, change ) -> ( rotatedBluesky a refreshed, change ))
                 |> Task.attempt
                     (\result ->
                         case result of
-                            Ok maybeAccountsPanelMsg ->
-                                GotServerStarPushed maybeAccountsPanelMsg
+                            Ok ( maybeAccountsPanelMsg, Bluesky.NothingToDo ) ->
+                                if starring then
+                                    -- Already liked: nothing to undo or hold.
+                                    GotServerStarPushed maybeAccountsPanelMsg
+
+                                else
+                                    -- No like record to delete could be found (not even one remembered from this
+                                    -- session): the like is still on Bluesky, so say so rather than pretend, and
+                                    -- don't hold the post out of the list.
+                                    ServerStarFailed "bluesky:"
+                                        False
+                                        post
+                                        "Couldn't unlike on Bluesky: it hasn't finished registering that like yet -- try again in a moment."
+                                        maybeAccountsPanelMsg
+
+                            Ok ( maybeAccountsPanelMsg, change ) ->
+                                GotLikeChange (serverAccountKey account) post.id change maybeAccountsPanelMsg
 
                             Err err ->
                                 ServerStarFailed "bluesky:"
@@ -2120,16 +2238,6 @@ serverStarsLoading : Model -> Bool
 serverStarsLoading model =
     not (Dict.isEmpty model.serverRefreshing)
         || (model.serverStars |> Dict.values |> List.any (\stars -> stars.status == ServerStarsFetching))
-
-
-{-| Server-side stars (Mastodon favourites / Bluesky likes) not also starred in this browser -- the nav
-button's bottom-right count, hidden when zero. Together with `browserStarCount` it's the old total.
--}
-serverStarCount : Model -> Int
-serverStarCount model =
-    serverStarredPosts model
-        |> List.filter (\( host, post ) -> not (Set.member (starKey host post) model.starredPostIds))
-        |> List.length
 
 
 
@@ -2647,8 +2755,8 @@ serverStarErrorView error =
         ]
 
 
-{-| A tab's label and how many posts it lists -- the Server tab's count is every post under its account
-sections (including one also starred in this browser, which `serverStarCount` leaves out of the nav button).
+{-| A tab's label and how many posts it lists. The nav button's two badges show these same two numbers
+(`browserStarCount`, `serverTabCount`), so they always agree with the tabs.
 -}
 starredTabButton : StarredTab -> StarredTab -> String -> Int -> Html Msg
 starredTabButton activeTab tab label count =
