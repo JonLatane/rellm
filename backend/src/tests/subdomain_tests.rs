@@ -850,3 +850,54 @@ fn a_user_named_like_the_cdn_backend_cannot_buy_it_and_the_backend_host_stays_th
         Ok(())
     });
 }
+
+#[test]
+fn backend_host_discovery_under_a_cloudflare_frontend() {
+    use crate::web::external_cdn::backend_domain_for_host;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_cdn(conn, "rellm.org", "backend.rellm.org");
+        let admin_user = create_user(conn, "sd19_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let jon = create_user(conn, "sd19jon");
+        subscribe(conn, &admin, &jon, SubdomainSettings::default());
+        // A user named `backend` who somehow holds a subscription must not capture the backend host: without the CDN
+        // guard this label would resolve (it is a valid, held label under the frontend) and the answer would be wrong.
+        let backend_user = create_user(conn, "backend");
+        subscribe(conn, &admin, &backend_user, SubdomainSettings::default());
+        let cdn = crate::rpcs::get_server_configuration_proto(conn)?.external_cdn_config.unwrap();
+
+        // What `GET /backend_host` answers for each host, with the subdomain lookup done exactly as the route does it.
+        let mut answer = |host: &str| {
+            let label = scope(conn, host).map(|s| s.settings.subdomain);
+            backend_domain_for_host(Some(&cdn), host, || label)
+        };
+        // The reported failure: the backend host is itself a label under the frontend, and must stay itself.
+        assert_eq!(answer("backend.rellm.org"), "backend.rellm.org");
+        assert_eq!(answer("rellm.org"), "backend.rellm.org");
+        // An unsubscribed label is not a subdomain.
+        assert_eq!(answer("nobody.rellm.org"), "backend.rellm.org");
+        // A subscriber gets its own backend name, from either of its hosts.
+        assert_eq!(answer("sd19jon.rellm.org"), "sd19jon.backend.rellm.org");
+        assert_eq!(answer("sd19jon.backend.rellm.org"), "sd19jon.backend.rellm.org");
+        Ok(())
+    });
+}
+
+#[test]
+fn backend_host_discovery_without_a_separate_backend() {
+    use crate::web::external_cdn::backend_domain_for_host;
+    let never = || -> Option<String> { panic!("the subdomain lookup must not run") };
+    // No CDN configuration, or no backend host: the request's own host is the backend, with no lookup at all.
+    assert_eq!(backend_domain_for_host(None, "rellm.org", never), "rellm.org");
+    let no_backend = ExternalCdnConfig { frontend_host: "rellm.org".to_string(), ..Default::default() };
+    assert_eq!(backend_domain_for_host(Some(&no_backend), "jon.rellm.org", never), "jon.rellm.org");
+    // `cdn_grpc` on: gRPC goes through the CDN to the request's own host.
+    let cdn_grpc = ExternalCdnConfig {
+        frontend_host: "rellm.org".to_string(),
+        backend_host: "backend.rellm.org".to_string(),
+        cdn_grpc: true,
+        ..Default::default()
+    };
+    assert_eq!(backend_domain_for_host(Some(&cdn_grpc), "jon.rellm.org", never), "jon.rellm.org");
+}

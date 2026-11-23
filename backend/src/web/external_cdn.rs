@@ -22,25 +22,34 @@ async fn frontend_host(state: &State<RocketState>, host: &Host<'_>) -> CacheResp
 }
 
 pub fn configured_backend_domain(state: &State<RocketState>, host: &Host<'_>) -> String {
-    match external_cdn_config(state) {
-        Some(cdn_config) => match (cdn_config.backend_host.clone(), cdn_config.cdn_grpc) {
-            // A Rellm Subdomain (`jon.bullcity.social`) gets its own backend name, `jon.<backend_host>`: gRPC to it
-            // then arrives with a `Host` that says which subdomain it is for (see `logic::subdomains`).
-            (backend_host, false) if backend_host != "" => {
-                // Only a host with an *active subscription* behind it is a subdomain -- not merely any label under the
-                // frontend host. In particular the backend host itself (`backend.rellm.org` under a `rellm.org`
-                // frontend) must be told its backend is itself, never `backend.backend.rellm.org`.
-                let mut conn = state.pool.get().unwrap();
-                match crate::web::subdomain_web::request_subdomain(&mut conn, host)
-                    .expect("failed to look up the request's subdomain")
-                {
-                    Some(subdomain) => format!("{}.{backend_host}", subdomain.settings.subdomain),
-                    None => backend_host,
-                }
+    backend_domain_for_host(external_cdn_config(state).as_ref(), &host.domain().to_string(), || {
+        // Only a host with an *active subscription* behind it is a subdomain -- not merely any label under the
+        // frontend host. In particular the backend host itself (`backend.rellm.org` under a `rellm.org` frontend)
+        // must be told its backend is itself, never `backend.backend.rellm.org`.
+        let mut conn = state.pool.get().unwrap();
+        crate::web::subdomain_web::request_subdomain(&mut conn, host)
+            .expect("failed to look up the request's subdomain")
+            .map(|subdomain| subdomain.settings.subdomain)
+    })
+}
+
+/// What `/backend_host` answers for a request to `host_domain`: the configured `backend_host` -- or, for a Rellm
+/// Subdomain (`jon.rellm.org`, found by `resolve_subdomain`, consulted only when a separate backend host is configured),
+/// its own backend name `jon.<backend_host>`, so gRPC to it arrives with a `Host` that says which subdomain it is for (see
+/// `logic::subdomains`). With `cdn_grpc` on, or no backend host, the request's own host is the backend.
+pub fn backend_domain_for_host(
+    cdn_config: Option<&ExternalCdnConfig>,
+    host_domain: &str,
+    resolve_subdomain_label: impl FnOnce() -> Option<String>,
+) -> String {
+    match cdn_config {
+        Some(cdn_config) if !cdn_config.cdn_grpc && !cdn_config.backend_host.is_empty() => {
+            match resolve_subdomain_label() {
+                Some(label) => format!("{label}.{}", cdn_config.backend_host),
+                None => cdn_config.backend_host.clone(),
             }
-            _ => host.domain().to_string(),
-        },
-        None => host.domain().to_string(),
+        }
+        _ => host_domain.to_string(),
     }
 }
 
