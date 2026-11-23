@@ -4988,9 +4988,15 @@ starredPostsToggle shared =
             , title "Starred"
             ]
             (text "⭐"
-                :: cornerBadges shared.accounts.mainFrontendHost
+                :: cornerBadgesLoading shared.accounts.mainFrontendHost
+                    1
+                    (StarredPanel.serverStarsLoading shared.panels.starredPanel)
                     [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
-                    , nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
+                    , if StarredPanel.serverStarsLoading shared.panels.starredPanel then
+                        Just (StarredPanel.serverStarCount shared.panels.starredPanel)
+
+                      else
+                        nonZero (StarredPanel.serverStarCount shared.panels.starredPanel)
                     ]
             )
         ]
@@ -5019,15 +5025,29 @@ holds its place, so a given kind of count always lands in the same corner.
 -}
 cornerBadges : String -> List (Maybe Int) -> List (Html msg)
 cornerBadges mainFrontendHost counts =
+    cornerBadgesLoading mainFrontendHost -1 False counts
+
+
+{-| `cornerBadges` where the badge at index `loadingIndex` (0 = top-right, 1 = bottom-right, ...) also
+holds a spinning `↻` (`.starred-count-spinner`, which CSS-transitions its width and opacity in and out)
+while `loading`. A `Just 0` count there shows just the spinner, no number.
+-}
+cornerBadgesLoading : String -> Int -> Bool -> List (Maybe Int) -> List (Html msg)
+cornerBadgesLoading mainFrontendHost loadingIndex loading counts =
     let
         corners : List String
         corners =
             [ "corner-badge-top-right", "corner-badge-bottom-right", "corner-badge-bottom-left", "corner-badge-top-left" ]
 
-        badge : String -> Maybe Int -> Html msg
-        badge corner maybeCount =
+        badge : Int -> String -> Maybe Int -> Html msg
+        badge index corner maybeCount =
             case maybeCount of
                 Just count ->
+                    let
+                        hasSpinner : Bool
+                        hasSpinner =
+                            index == loadingIndex
+                    in
                     span
                         [ classes
                             [ "starred-count-badge"
@@ -5037,12 +5057,38 @@ cornerBadges mainFrontendHost counts =
                             , "border-color-primary-text"
                             ]
                         ]
-                        [ text (String.fromInt count) ]
+                        ((if hasSpinner then
+                            [ span
+                                [ classes
+                                    ("starred-count-spinner"
+                                        :: (if loading then
+                                                [ "loading" ]
+
+                                            else
+                                                []
+                                           )
+                                    )
+                                ]
+                                [ text "↻" ]
+                            ]
+
+                          else
+                            []
+                         )
+                            ++ [ text
+                                    (if hasSpinner && count == 0 then
+                                        ""
+
+                                     else
+                                        String.fromInt count
+                                    )
+                               ]
+                        )
 
                 Nothing ->
                     text ""
     in
-    List.map2 badge corners counts
+    List.map3 badge (List.range 0 (List.length corners - 1)) corners counts
 
 
 {-| The Starred panel's content -- see `starredPostsToggle` for why this

@@ -124,6 +124,39 @@
   border-style: solid;
 }
 
+/* The ↻ in the server-count badge while server-side stars load (`UI.cornerBadgesLoading`): always
+   rendered, collapsed to zero width/opacity, so loading starting/ending transitions both in `em`. It
+   spins only while `.loading`. (↻ has no emoji form, so it can't be drawn as a color emoji on iOS.) */
+.starred-count-spinner {
+  display: inline-block;
+  width: 0;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  vertical-align: top;
+  text-align: center;
+  line-height: inherit;
+  transition: max-width 0.25s ease, width 0.25s ease, opacity 0.25s ease;
+}
+
+.starred-count-spinner.loading {
+  width: 0.9em;
+  max-width: 0.9em;
+  opacity: 1;
+  animation: starred-count-spin 1s linear infinite;
+}
+
+/* Inline with the count: a little gap only while both are showing. */
+.starred-count-spinner.loading:not(:last-child) {
+  margin-right: 0.15em;
+}
+
+@keyframes starred-count-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .starred-panel-header {
   font-weight: 700;
   display: flex;

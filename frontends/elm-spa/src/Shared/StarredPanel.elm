@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, serverStarCount, subscriptions, toggleStarMsg, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, serverStarCount, serverStarsLoading, subscriptions, toggleStarMsg, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -133,6 +133,10 @@ type alias Model =
     -- the push can omit it). `GotServerStars` keeps them in the list until a fetch includes them;
     -- unstarring drops them.
     , pendingServerStars : Dict String (List Post)
+
+    -- Hosts whose already-loaded server-side list is being refetched in place (`RefetchServerStars`)
+    -- -- see `serverStarsLoading`.
+    , serverRefreshing : Set String
 
     -- Per-post collapse animation for a collapsed Server-tab section -- in place, so the posts
     -- fade/shrink away through `UI.Flip`'s own item collapse. Kept apart from `starAnimations`
@@ -382,6 +386,7 @@ init flags =
     , collapsedServerGroups = Set.empty
     , serverRefetchCounter = 0
     , pendingServerStars = Dict.empty
+    , serverRefreshing = Set.empty
     , collapseAnimations = Dict.empty
     , drag = UI.Drag.init
     , transition = Nothing
@@ -695,20 +700,24 @@ sendUpdate accountsPanelModel msg model =
                 { model
                     | serverStars = Dict.insert host { account = account, status = ServerStarsLoaded (notYetListed ++ posts) } model.serverStars
                     , pendingServerStars = Dict.insert host notYetListed model.pendingServerStars
+                    , serverRefreshing = Set.remove host model.serverRefreshing
                 }
 
               else
-                model
+                { model | serverRefreshing = Set.remove host model.serverRefreshing }
             , Cmd.none
             , maybeAccountsPanelMsg
             )
 
         GotServerStars host account (Err _) ->
             ( if Dict.get host model.serverStars |> Maybe.map .account |> (==) (Just account) then
-                { model | serverStars = Dict.insert host { account = account, status = ServerStarsFailed } model.serverStars }
+                { model
+                    | serverStars = Dict.insert host { account = account, status = ServerStarsFailed } model.serverStars
+                    , serverRefreshing = Set.remove host model.serverRefreshing
+                }
 
               else
-                model
+                { model | serverRefreshing = Set.remove host model.serverRefreshing }
             , Cmd.none
             , Nothing
             )
@@ -733,8 +742,13 @@ sendUpdate accountsPanelModel msg model =
             else
                 -- Refetches in place (no clearing -- the lists keep showing meanwhile) so the
                 -- panel reflects what the services actually have.
-                ( model
-                , Cmd.batch (List.map (\( host, account ) -> fetchServerStars host account) (serverStarSources accountsPanelModel))
+                let
+                    sources : List ( String, ServerAccount )
+                    sources =
+                        serverStarSources accountsPanelModel
+                in
+                ( { model | serverRefreshing = Set.union model.serverRefreshing (Set.fromList (List.map Tuple.first sources)) }
+                , Cmd.batch (List.map (\( host, account ) -> fetchServerStars host account) sources)
                 , Nothing
                 )
 
@@ -1900,6 +1914,15 @@ hasAnyStars model =
 browserStarCount : Model -> Int
 browserStarCount model =
     Set.size model.starredPostIds
+
+
+{-| Whether any server-side star list is being fetched (first load) or refetched -- the nav button's
+bottom-right badge shows a spinner meanwhile.
+-}
+serverStarsLoading : Model -> Bool
+serverStarsLoading model =
+    not (Set.isEmpty model.serverRefreshing)
+        || (model.serverStars |> Dict.values |> List.any (\stars -> stars.status == ServerStarsFetching))
 
 
 {-| Server-side stars (Mastodon favourites / Bluesky likes) not also starred in this browser -- the nav
