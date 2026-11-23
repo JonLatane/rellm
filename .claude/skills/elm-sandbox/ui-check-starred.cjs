@@ -63,7 +63,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite }) {
 }
 
 async function newPage(browser, bsky) {
-  const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 } });
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, deviceScaleFactor: Number(process.env.DSF || 1) });
   await ctx.addInitScript(() => {
     localStorage.setItem("rellmBlueskyAccounts", JSON.stringify([{
       handle: "me.test", accessToken: "tok", refreshToken: "ref", enabled: true, avatarUrl: null,
