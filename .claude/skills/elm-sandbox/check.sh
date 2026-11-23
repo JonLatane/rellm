@@ -18,15 +18,20 @@ want="$(sed -n 's/.*"elm": *"\([0-9.]*\)\(-[0-9]*\)\?".*/\1/p' package.json | he
 have="$(node_modules/.bin/elm --version 2>/dev/null || true)"
 if [ -z "$have" ] || [ "$have" != "$want" ]; then
   echo "node_modules has Elm '${have:-none}', project pins $want -- running npm ci"
-  rm -rf node_modules && npm ci --silent || { echo "npm ci failed"; exit 1; }
+  # `npm ci` can rewrite yarn.lock's platform-specific @elm_binaries entry. Put back exactly what was
+  # there before (not `git checkout`, which would also throw away the developer's own lockfile edits).
+  lock_backup="$(mktemp)"
+  cp yarn.lock "$lock_backup"
+  rm -rf node_modules
+  npm ci --silent; ci_status=$?
+  cp "$lock_backup" yarn.lock; rm -f "$lock_backup"
+  [ "$ci_status" = 0 ] || { echo "npm ci failed"; exit 1; }
   have="$(node_modules/.bin/elm --version 2>/dev/null || true)"
 fi
 if [ "$have" != "$want" ]; then
   echo "Elm in node_modules is '$have', expected $want -- not checking with the wrong compiler"
   exit 1
 fi
-# `npm ci` can rewrite yarn.lock's platform-specific @elm_binaries entry; never commit that.
-git checkout -q -- yarn.lock 2>/dev/null || true
 
 # elm-spa and elm-review shell out to `elm`: make sure they find the pinned one, not the global.
 export PATH="$PWD/node_modules/.bin:$PATH"
