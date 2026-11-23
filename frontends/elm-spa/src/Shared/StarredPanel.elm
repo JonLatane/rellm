@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, subscriptions, toggleStarMsg, update, view)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, subscriptions, toggleStarMsg, update, view)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -144,8 +144,8 @@ type alias Model =
     -- banner fades out. See `ServerStarFailed`.
     , serverStarError : { token : Int, text : String, visible : Bool }
 
-    -- The `at://` URI of the like record each Bluesky post got when *this session* liked it (post id ->
-    -- like URI). Bluesky's AppView lags behind a write, so right after a like the post's own `viewer.like`
+    -- The `at://` URI of the like record each Bluesky post got when *this session* liked it, per account
+    -- (see `knownLike`) -- a like record belongs to the account that made it. Bluesky's AppView lags behind a write, so right after a like the post's own `viewer.like`
     -- is still empty; without this, starring then quickly unstarring finds no like to delete and silently
     -- leaves it on Bluesky. See `Bluesky.setLike`.
     , likeRecords : Dict String String
@@ -302,7 +302,7 @@ type Msg
     | GotServerStarPushed (Maybe AccountsPanel.Msg)
       -- A Bluesky like/unlike that really changed something: the post id and what changed -- remembers the new
       -- like's URI (or forgets it once deleted), then carries on exactly like `GotServerStarPushed`.
-    | GotLikeChange String Bluesky.LikeChange (Maybe AccountsPanel.Msg)
+    | GotLikeChange String String Bluesky.LikeChange (Maybe AccountsPanel.Msg)
       -- A push that failed: the server host the star was filed under, whether it was a star (not an
       -- unstar), the post, a human-readable reason, and a reauth flag to forward. Rolls the optimistic
       -- Server-tab entry back, shows the reason and refetches the real list.
@@ -671,7 +671,7 @@ sendUpdate accountsPanelModel msg model =
                 pushCmd =
                     case account of
                         Just acct ->
-                            pushServerStar host acct starring (Dict.get post.id model.likeRecords) post
+                            pushServerStar host acct starring (knownLike (serverAccountKey acct) post.id model) post
 
                         Nothing ->
                             Cmd.none
@@ -847,21 +847,10 @@ sendUpdate accountsPanelModel msg model =
             , Nothing
             )
 
-        GotLikeChange postId change maybeAccountsPanelMsg ->
+        GotLikeChange accountKey postId change maybeAccountsPanelMsg ->
             sendUpdate accountsPanelModel
                 (GotServerStarPushed maybeAccountsPanelMsg)
-                { model
-                    | likeRecords =
-                        case change of
-                            Bluesky.Created likeUri ->
-                                Dict.insert postId likeUri model.likeRecords
-
-                            Bluesky.Deleted ->
-                                Dict.remove postId model.likeRecords
-
-                            Bluesky.NothingToDo ->
-                                model.likeRecords
-                }
+                (noteLikeChange accountKey postId change model)
 
         GotServerStarPushed maybeAccountsPanelMsg ->
             -- Trailing-edge debounce: a quick run of stars/unstars only refetches once, after the
@@ -1970,6 +1959,38 @@ fetchServerStars host account =
                 |> Task.attempt (GotServerStars host (serverAccountKey account))
 
 
+{-| The like record URI remembered for `postId` as the Bluesky account `accountKey` (`serverAccountKey`) --
+never another account's: a like record belongs to whoever made it, and handing one account's URI to
+another's `setLike` would make it think there is nothing left to like.
+-}
+knownLike : String -> String -> Model -> Maybe String
+knownLike accountKey postId model =
+    Dict.get (likeRecordKey accountKey postId) model.likeRecords
+
+
+{-| Remembers (or, once deleted, forgets) the like record a Bluesky like/unlike just changed -- see `knownLike`.
+-}
+noteLikeChange : String -> String -> Bluesky.LikeChange -> Model -> Model
+noteLikeChange accountKey postId change model =
+    { model
+        | likeRecords =
+            case change of
+                Bluesky.Created likeUri ->
+                    Dict.insert (likeRecordKey accountKey postId) likeUri model.likeRecords
+
+                Bluesky.Deleted ->
+                    Dict.remove (likeRecordKey accountKey postId) model.likeRecords
+
+                Bluesky.NothingToDo ->
+                    model.likeRecords
+    }
+
+
+likeRecordKey : String -> String -> String
+likeRecordKey accountKey postId =
+    accountKey ++ "|" ++ postId
+
+
 {-| Favourites (`starring`) or unfavourites `post` on the service. A failure comes back as
 `ServerStarFailed` (with a reason to show), and a 401/403 from Mastodon (a token connected before
 `write:favourites` was requested -- see `public/index.html`) also flags the account `needsReauth` so it
@@ -1981,7 +2002,7 @@ instance is first looked up there for its ActivityPub `uri` (`Mastodon.fetchStat
 (`Mastodon.resolveStatusId`).
 -}
 pushServerStar : String -> ServerAccount -> Bool -> Maybe String -> Post -> Cmd Msg
-pushServerStar host account starring knownLike post =
+pushServerStar host account starring rememberedLike post =
     case account of
         MastodonServerAccount a ->
             let
@@ -2042,7 +2063,7 @@ pushServerStar host account starring knownLike post =
                     )
 
         BlueskyServerAccount a ->
-            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token knownLike post.id)
+            BlueskyAccounts.performWithBlueskyAccount a (\token -> Bluesky.setLike starring a.handle token rememberedLike post.id)
                 |> Task.map (\( refreshed, change ) -> ( rotatedBluesky a refreshed, change ))
                 |> Task.attempt
                     (\result ->
@@ -2063,7 +2084,7 @@ pushServerStar host account starring knownLike post =
                                         maybeAccountsPanelMsg
 
                             Ok ( maybeAccountsPanelMsg, change ) ->
-                                GotLikeChange post.id change maybeAccountsPanelMsg
+                                GotLikeChange (serverAccountKey account) post.id change maybeAccountsPanelMsg
 
                             Err err ->
                                 ServerStarFailed "bluesky:"
