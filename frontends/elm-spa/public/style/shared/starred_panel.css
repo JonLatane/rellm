@@ -438,19 +438,16 @@
 }
 
 /* A toggle with a badge in a left corner (`UI.CornerBadges`) sticks out 4px to its left -- keep that
-   clear of whatever sits beside the button. */
-.nav-menu-toggle:has(> .corner-badge-bottom-left:not(.count-badge-hidden)),
-.nav-menu-toggle:has(> .corner-badge-top-left:not(.count-badge-hidden)) {
+   clear of whatever sits beside the button. The room is made on the *wrapper* (`.starred-menu`/`.messaging-menu`),
+   which is a fixed-width flex item in the nav, so everything to its right shifts right to make way. (Put on the
+   button inside the wrapper instead, the margin only slid the button right within the wrapper's fixed width, and it
+   then overlapped the next nav button.) Both wrappers already transition `margin` (0.2s), in step with the badge's
+   own fade (`.starred-count-badge`), so the shift animates both in and out and nothing jumps. */
+.starred-menu:not(.hidden):has(> .nav-menu-toggle > .corner-badge-bottom-left:not(.count-badge-hidden)),
+.starred-menu:not(.hidden):has(> .nav-menu-toggle > .corner-badge-top-left:not(.count-badge-hidden)),
+.messaging-menu:not(.hidden):has(> .nav-menu-toggle > .corner-badge-bottom-left:not(.count-badge-hidden)),
+.messaging-menu:not(.hidden):has(> .nav-menu-toggle > .corner-badge-top-left:not(.count-badge-hidden)) {
   margin-left: 8px;
-}
-
-/* ...and the margin animates, in step with the badge's own fade (`.starred-count-badge`, 0.2s), so a left
-   badge appearing -- e.g. the Messages button's Fulfillment spinner -- doesn't make the button jump 8px.
-   Declared on every toggle that has badges (not only while the margin applies) so it animates both in and out,
-   and repeats `.nav-menu-toggle`'s own transitions (accounts_panel.css) because a `transition` here replaces
-   that list rather than adding to it. */
-.nav-menu-toggle:has(> .starred-count-badge) {
-  transition: border-radius 0.15s ease, background-color 0.2s ease, max-width 0.2s ease, width 0.2s ease, margin-left 0.2s ease;
 }
 
 /* Why a favourite/like push failed (`StarredPanel.serverStarErrorView`). Always mounted; `.hidden` fades
