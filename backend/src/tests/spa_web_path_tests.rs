@@ -52,8 +52,24 @@ async fn plain() -> CacheResponse<Result<RellmResponder, Status>> {
     .await
 }
 
+#[get("/marker")]
+async fn marker() -> CacheResponse<Result<RellmResponder, Status>> {
+    spa_web_path(
+        SpaApp::Elm,
+        "index.html",
+        Some(RellmSummary {
+            title: Some("Rellm Social Link".to_string()),
+            description: None,
+            image: None,
+        }),
+        false,
+        &context(),
+    )
+    .await
+}
+
 fn body_of(path: &str) -> String {
-    let client = Client::tracked(rocket::build().mount("/", routes![hostile, plain]))
+    let client = Client::tracked(rocket::build().mount("/", routes![hostile, plain, marker]))
         .expect("valid rocket instance");
     let response = client.get(path.to_string()).dispatch();
     assert_eq!(response.status(), Status::Ok, "{}", path);
@@ -109,6 +125,13 @@ fn an_ordinary_summary_renders_as_before() {
     assert!(!body.contains("easy-to-deploy"));
     // Crawlers need an absolute image URL.
     assert!(body.contains("<meta property=\"og:image\" content=\"https://example.test/media/abc\"/>"));
+}
+
+#[test]
+fn a_title_containing_the_placeholder_text_still_fills_og_title() {
+    let body = body_of("/marker");
+    assert!(body.contains("<title>Rellm Social Link</title>"), "{}", body);
+    assert!(body.contains("<meta property=\"og:title\" content=\"Rellm Social Link\" />"), "{}", body);
 }
 
 #[test]

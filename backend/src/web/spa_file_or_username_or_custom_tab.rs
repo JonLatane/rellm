@@ -82,8 +82,9 @@ pub async fn spa_file_or_username_or_custom_tab(
                     Err(_) => {
                         // TODO: Preload social link data (i.e., <meta property="og:title" ... />) for this user.
                         let mut connection = state.pool.get().unwrap();
+                        // Subdomain-aware, like every other preview route: the site being shared, not its parent.
                         let configuration =
-                            rpcs::get_server_configuration_proto(&mut connection).unwrap();
+                            crate::web::subdomain_web::request_configuration(&mut connection, host);
                         let server_info = configuration.server_info.clone().unwrap_or_default();
                         let short_name = configuration.short_name();
                         let context = PreviewContext::new(

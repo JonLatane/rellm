@@ -202,19 +202,17 @@ pub async fn spa_web_path(
 
     match (summary, template.as_mut()) {
         (Some(summary), Some(template)) => {
-            let mut page_title = None;
             if let Some(title) = summary.title {
+                // `og:title` first: the page's own text is inserted by each step, so a post titled
+                // "Rellm Social Link" must not be found by a later step's marker search.
+                template.inner = template.inner.replacen(
+                    "Rellm Social Link",
+                    &meta_text(&og_title(&title, &context.site_name)),
+                    1,
+                );
                 template.inner = template.inner.replacen(
                     "<title>Rellm</title>",
                     &format!("<title>{}</title>", meta_text(&title)),
-                    1,
-                );
-                page_title = Some(og_title(&title, &context.site_name));
-            }
-            if let Some(title) = page_title {
-                template.inner = template.inner.replacen(
-                    "Rellm Social Link",
-                    &meta_text(&title),
                     1,
                 );
             }
