@@ -76,6 +76,63 @@ pub fn meta_text(text: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// Per-request facts a link preview needs beyond its `RellmSummary`: where the page lives (crawlers need *absolute*
+/// `og:image`/`og:url` URLs -- iMessage, Slack, Discord and Mastodon all ignore a relative `/media/ID`) and what the
+/// site is called (`og:site_name`, kept out of `og:title`).
+#[derive(Clone, Debug)]
+pub struct PreviewContext {
+    /// `https://host` (no trailing slash) -- the request's own host, so subdomains and custom domains preview as
+    /// themselves.
+    pub origin: String,
+    /// The request path, as the browser sees it (including any `/elm` or `/tamagui` prefix).
+    pub path: String,
+    pub site_name: String,
+}
+
+impl PreviewContext {
+    pub fn new(host: &rocket::http::uri::Host<'_>, path: &str, site_name: &str) -> Self {
+        PreviewContext {
+            origin: origin_for_host(&host.domain().to_string(), host.port()),
+            path: path.to_string(),
+            site_name: site_name.to_string(),
+        }
+    }
+}
+
+/// `https://domain`, except `http://` (and the port kept) for local development hosts -- Rocket can't see the scheme
+/// behind a TLS-terminating proxy, and every real deployment is https.
+pub fn origin_for_host(domain: &str, port: Option<u16>) -> String {
+    let local = domain == "localhost"
+        || domain.ends_with(".localhost")
+        || domain.parse::<std::net::IpAddr>().is_ok();
+    match port {
+        Some(port) if local => format!("http://{}:{}", domain, port),
+        _ if local => format!("http://{}", domain),
+        _ => format!("https://{}", domain),
+    }
+}
+
+/// A link to `origin` + `path` when `path` is site-relative; anything else (already absolute) is left alone.
+fn absolute_url(origin: &str, path: &str) -> String {
+    if path.starts_with('/') && !path.starts_with("//") {
+        format!("{}{}", origin, path)
+    } else {
+        path.to_string()
+    }
+}
+
+/// `og:title`: the page's title without the trailing `| Site Name` (that is `og:site_name`), and with the remaining
+/// `|` separators as dashes -- iMessage showed only the text after the last `|` ("Bull City | Social" -> "Social")
+/// as the whole title of a link.
+pub fn og_title(title: &str, site_name: &str) -> String {
+    let suffix = format!(" | {}", site_name);
+    let without_site = match title.strip_suffix(&suffix) {
+        Some(rest) if !rest.is_empty() => rest,
+        _ => title,
+    };
+    without_site.replace(" | ", " \u{2013} ")
+}
+
 /// The link-preview summary shown for each SPA's home page. Shared so both
 /// apps' home routes (and the "/" root dispatcher in `main_index.rs`) render
 /// identical text, regardless of which app ends up serving the request.
@@ -113,6 +170,7 @@ pub async fn spa_web_path(
     tamagui_html_path: &str,
     summary: Option<RellmSummary>,
     is_tamagui_prefixed: bool,
+    context: &PreviewContext,
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut template = match app {
         SpaApp::Tamagui => {
@@ -144,35 +202,52 @@ pub async fn spa_web_path(
 
     match (summary, template.as_mut()) {
         (Some(summary), Some(template)) => {
-            match summary.title {
-                Some(title) => {
-                    let updated_body = template
-                        .inner
-                        .replacen(
-                            "Rellm Social Link",
-                            &meta_text(&title),
-                            1,
-                        )
-                        .replacen(
-                            "<title>Rellm</title>",
-                            &format!("<title>{}</title>", meta_text(&title)),
-                            1,
-                        );
-                    template.inner = updated_body;
-                }
-                None => (),
-            };
+            if let Some(title) = summary.title {
+                // `og:title` first: the page's own text is inserted by each step, so a post titled
+                // "Rellm Social Link" must not be found by a later step's marker search.
+                template.inner = template.inner.replacen(
+                    "Rellm Social Link",
+                    &meta_text(&og_title(&title, &context.site_name)),
+                    1,
+                );
+                template.inner = template.inner.replacen(
+                    "<title>Rellm</title>",
+                    &format!("<title>{}</title>", meta_text(&title)),
+                    1,
+                );
+            }
 
-            template.inner = template.inner.replacen(
-                "A link from a fediverse community with events, posts, and realtime chat",
-                &meta_text(&summary.description.unwrap_or_default()),
-                1,
-            );
+            let description = meta_text(&summary.description.unwrap_or_default());
+            template.inner = template
+                .inner
+                .replacen(
+                    "A link from a fediverse community with events, posts, and realtime chat",
+                    &description,
+                    1,
+                )
+                // The plain `<meta name="description">` (what search engines and non-OpenGraph crawlers read).
+                .replacen(
+                    "Rellm is a decentralized, federated, easy-to-deploy social network built in Rust and gRPC, with Flutter and Web frontends.",
+                    &description,
+                    1,
+                );
 
-            let og_image_tag: String = summary
-                .image
-                .map(|i| format!("<meta property=\"og:image\" content=\"{}\"/>", meta_text(&i)))
-                .unwrap_or_default();
+            let mut tags = String::new();
+            if let Some(image) = &summary.image {
+                tags.push_str(&format!(
+                    "<meta property=\"og:image\" content=\"{}\"/>",
+                    meta_text(&absolute_url(&context.origin, image))
+                ));
+            }
+            tags.push_str(&format!(
+                "<meta property=\"og:site_name\" content=\"{}\"/>\
+                 <meta property=\"og:url\" content=\"{}\"/>\
+                 <meta property=\"og:type\" content=\"website\"/>\
+                 <meta name=\"twitter:card\" content=\"{}\"/>",
+                meta_text(&context.site_name),
+                meta_text(&absolute_url(&context.origin, &context.path)),
+                if summary.image.is_some() { "summary_large_image" } else { "summary" },
+            ));
             // The Tamagui static export minifies its HTML (no space before
             // "/>"), while the Elm SPA's index.html is hand-formatted (space
             // before "/>") -- both variants must be matched here, or the
@@ -181,12 +256,12 @@ pub async fn spa_web_path(
                 .inner
                 .replacen(
                     "<meta property=\"og:image\" content=\"/favicon.png\"/>",
-                    &og_image_tag,
+                    &tags,
                     1,
                 )
                 .replacen(
                     "<meta property=\"og:image\" content=\"/favicon.png\" />",
-                    &og_image_tag,
+                    &tags,
                     1,
                 );
         }

@@ -20,7 +20,7 @@ use crate::{
 use super::short_url_preview::{is_short_url_segment, short_url_summary};
 use super::spa_path::SpaPath;
 use super::{
-    rellm_path, root_app, spa_prefix, spa_web_path, strip_spa_prefix, RellmResponder,
+    rellm_path, root_app, spa_prefix, spa_web_path, strip_spa_prefix, PreviewContext, RellmResponder,
     RellmSummary, ServerSummaryInfo, SpaApp,
 };
 
@@ -45,6 +45,7 @@ pub async fn spa_file_or_username_or_custom_tab(
     file: SpaPath,
     state: &State<RocketState>,
     origin: &Origin<'_>,
+    host: &rocket::http::uri::Host<'_>,
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     // `SpaPath`, not `PathBuf`: a short Bluesky post URL (`/~did:plc:…~rkey@bluesky:`) ends in `:`.
     let file = file.0;
@@ -81,10 +82,16 @@ pub async fn spa_file_or_username_or_custom_tab(
                     Err(_) => {
                         // TODO: Preload social link data (i.e., <meta property="og:title" ... />) for this user.
                         let mut connection = state.pool.get().unwrap();
+                        // Subdomain-aware, like every other preview route: the site being shared, not its parent.
                         let configuration =
-                            rpcs::get_server_configuration_proto(&mut connection).unwrap();
+                            crate::web::subdomain_web::request_configuration(&mut connection, host);
                         let server_info = configuration.server_info.clone().unwrap_or_default();
                         let short_name = configuration.short_name();
+                        let context = PreviewContext::new(
+                            host,
+                            origin.path().as_str(),
+                            &configuration.display_name(),
+                        );
                         let app = spa_prefix(origin.path().as_str())
                             .unwrap_or_else(|| root_app(&server_info));
                         let server_name = server_info.name.clone().unwrap_or("Rellm".to_string());
@@ -103,6 +110,7 @@ pub async fn spa_file_or_username_or_custom_tab(
                                 relative_file.to_str().unwrap(),
                                 None,
                                 is_tamagui,
+                                &context,
                             )
                             .await;
                         }
@@ -126,7 +134,7 @@ pub async fn spa_file_or_username_or_custom_tab(
                             let summary =
                                 short_url_summary(&path_segment, &configuration, &mut connection)
                                     .await;
-                            return spa_web_path(app, "[username].html", summary, is_tamagui).await;
+                            return spa_web_path(app, "[username].html", summary, is_tamagui, &context).await;
                         }
 
                         let (page_title, description, avatar) = match matched_tab
@@ -286,7 +294,7 @@ pub async fn spa_file_or_username_or_custom_tab(
                             description,
                             image: avatar,
                         });
-                        return spa_web_path(app, "[username].html", summary, is_tamagui).await;
+                        return spa_web_path(app, "[username].html", summary, is_tamagui, &context).await;
                     }
                 }
             }
