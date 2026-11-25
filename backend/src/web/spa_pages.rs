@@ -28,7 +28,7 @@ use crate::{
 };
 
 use super::{
-    RellmResponder, RellmSummary, SpaApp, root_app, spa_prefix, spa_web_path, strip_spa_prefix,
+    PreviewContext, RellmResponder, RellmSummary, SpaApp, root_app, spa_prefix, spa_web_path, strip_spa_prefix,
 };
 
 // Pages shared by both SPA frontends: each of these is mounted three times
@@ -87,12 +87,13 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
+            let context = PreviewContext::new(host, origin.path().as_str(), &configuration.display_name());
             let server_info = configuration.server_info.unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
             let app = spa_prefix(raw_path).unwrap_or_else(|| root_app(&server_info));
             let is_tamagui_prefixed = spa_prefix(raw_path) == Some(SpaApp::Tamagui);
-            spa_web_path(app, $html_path, None, is_tamagui_prefixed).await
+            spa_web_path(app, $html_path, None, is_tamagui_prefixed, &context).await
         }
     };
     ($name:tt, $web_route:tt, $html_path:literal, rank = $rank:literal) => {
@@ -104,12 +105,13 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
+            let context = PreviewContext::new(host, origin.path().as_str(), &configuration.display_name());
             let server_info = configuration.server_info.unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
             let app = spa_prefix(raw_path).unwrap_or_else(|| root_app(&server_info));
             let is_tamagui_prefixed = spa_prefix(raw_path) == Some(SpaApp::Tamagui);
-            spa_web_path(app, $html_path, None, is_tamagui_prefixed).await
+            spa_web_path(app, $html_path, None, is_tamagui_prefixed, &context).await
         }
     };
     // (@inner $summary:stmt) => { $summary };
@@ -122,6 +124,7 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
+            let context = PreviewContext::new(host, origin.path().as_str(), &configuration.display_name());
             let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -130,7 +133,7 @@ macro_rules! webui {
             let path = strip_spa_prefix(raw_path);
             let summary: Option<RellmSummary> =
                 ($summary)(connection, &configuration, &path);
-            spa_web_path(app, $html_path, summary, is_tamagui_prefixed).await
+            spa_web_path(app, $html_path, summary, is_tamagui_prefixed, &context).await
         }
     };
     ($name:tt, $web_route:tt, $html_path:literal, $summary:expr, rank = $rank:literal) => {
@@ -142,6 +145,7 @@ macro_rules! webui {
         ) -> CacheResponse<Result<RellmResponder, Status>> {
             let mut connection = state.pool.get().unwrap();
             let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
+            let context = PreviewContext::new(host, origin.path().as_str(), &configuration.display_name());
             let server_info = configuration.server_info.clone().unwrap_or_default();
             let raw_path = origin.path();
             let raw_path = raw_path.as_str();
@@ -150,7 +154,7 @@ macro_rules! webui {
             let path = strip_spa_prefix(raw_path);
             let summary: Option<RellmSummary> =
                 ($summary)(connection, &configuration, &path);
-            spa_web_path(app, $html_path, summary, is_tamagui_prefixed).await
+            spa_web_path(app, $html_path, summary, is_tamagui_prefixed, &context).await
         }
     };
 }
@@ -306,6 +310,7 @@ pub async fn post(
 ) -> CacheResponse<Result<RellmResponder, Status>> {
     let mut connection = state.pool.get().unwrap();
     let configuration = crate::web::subdomain_web::request_configuration(&mut connection, host);
+    let context = PreviewContext::new(host, origin.path().as_str(), &configuration.display_name());
     let server_info = configuration.server_info.clone().unwrap_or_default();
     let raw_path = origin.path();
     let raw_path = raw_path.as_str();
@@ -313,7 +318,7 @@ pub async fn post(
     let is_tamagui_prefixed = spa_prefix(raw_path) == Some(SpaApp::Tamagui);
     let path = strip_spa_prefix(raw_path);
     let summary = post_page_summary(&path, &configuration, &mut connection).await;
-    spa_web_path(app, "post/[postId].html", summary, is_tamagui_prefixed).await
+    spa_web_path(app, "post/[postId].html", summary, is_tamagui_prefixed, &context).await
 }
 
 async fn post_page_summary(

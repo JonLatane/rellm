@@ -4,7 +4,17 @@
 use rocket::{get, http::Status, local::blocking::Client, routes};
 use rocket_cache_response::CacheResponse;
 
-use crate::web::{RellmResponder, RellmSummary, SpaApp, meta_text, spa_web_path};
+use crate::web::{
+    PreviewContext, RellmResponder, RellmSummary, SpaApp, meta_text, og_title, origin_for_host, spa_web_path,
+};
+
+fn context() -> PreviewContext {
+    PreviewContext {
+        origin: "https://example.test".to_string(),
+        path: "/event/abc".to_string(),
+        site_name: "Bull City | Social".to_string(),
+    }
+}
 
 const HOSTILE_TITLE: &str = "\" /><script>window.__pwned=1</script><meta x=\"";
 const HOSTILE_DESCRIPTION: &str = "desc \"/><img src=x onerror=window.__pwned2=1>";
@@ -21,6 +31,7 @@ async fn hostile() -> CacheResponse<Result<RellmResponder, Status>> {
             image: Some(HOSTILE_IMAGE.to_string()),
         }),
         false,
+        &context(),
     )
     .await
 }
@@ -31,11 +42,12 @@ async fn plain() -> CacheResponse<Result<RellmResponder, Status>> {
         SpaApp::Elm,
         "index.html",
         Some(RellmSummary {
-            title: Some("Fish & Chips | Post Details".to_string()),
+            title: Some("Fish & Chips | Post Details | Bull City | Social".to_string()),
             description: Some("First line\nsecond line".to_string()),
             image: Some("/media/abc".to_string()),
         }),
         false,
+        &context(),
     )
     .await
 }
@@ -76,7 +88,7 @@ fn a_hostile_title_description_and_image_cannot_inject_markup() {
     // ...they're all inert text inside the attributes, in the very tags the template already had.
     assert!(body.contains("&lt;script&gt;window.__pwned=1&lt;/script&gt;"));
     assert!(body.contains(
-        "<meta property=\"og:image\" content=\"/media/x&quot; onerror=&quot;window.__pwned3=1\"/>"
+        "<meta property=\"og:image\" content=\"https://example.test/media/x&quot; onerror=&quot;window.__pwned3=1\"/>"
     ));
     assert!(body.contains("<title>&quot; /&gt;&lt;script&gt;"));
 }
@@ -84,10 +96,33 @@ fn a_hostile_title_description_and_image_cannot_inject_markup() {
 #[test]
 fn an_ordinary_summary_renders_as_before() {
     let body = body_of("/plain");
-    assert!(body.contains("<title>Fish &amp; Chips | Post Details</title>"));
+    assert!(body.contains("<title>Fish &amp; Chips | Post Details | Bull City | Social</title>"));
+    // No `|` in og:title (iMessage keeps only what follows the last one), and the site name is its own tag.
     assert!(
-        body.contains("<meta property=\"og:title\" content=\"Fish &amp; Chips | Post Details\" />")
+        body.contains("<meta property=\"og:title\" content=\"Fish &amp; Chips \u{2013} Post Details\" />")
     );
+    assert!(body.contains("<meta property=\"og:site_name\" content=\"Bull City | Social\"/>"));
+    assert!(body.contains("<meta property=\"og:url\" content=\"https://example.test/event/abc\"/>"));
+    assert!(body.contains("<meta name=\"twitter:card\" content=\"summary_large_image\"/>"));
     assert!(body.contains("content=\"First line\""));
-    assert!(body.contains("<meta property=\"og:image\" content=\"/media/abc\"/>"));
+    // Both the OpenGraph and the plain description are the page's, not the generic Rellm text.
+    assert!(!body.contains("easy-to-deploy"));
+    // Crawlers need an absolute image URL.
+    assert!(body.contains("<meta property=\"og:image\" content=\"https://example.test/media/abc\"/>"));
+}
+
+#[test]
+fn og_title_drops_the_site_suffix_and_pipes() {
+    assert_eq!(og_title("Movie | Event Details | Bull City | Social", "Bull City | Social"), "Movie \u{2013} Event Details");
+    assert_eq!(og_title("People | Rellm", "Rellm"), "People");
+    // A title that is only the site name stays.
+    assert_eq!(og_title("Rellm", "Rellm"), "Rellm");
+}
+
+#[test]
+fn origins_are_https_except_for_local_development() {
+    assert_eq!(origin_for_host("bullcity.social", None), "https://bullcity.social");
+    assert_eq!(origin_for_host("bullcity.social", Some(8000)), "https://bullcity.social");
+    assert_eq!(origin_for_host("localhost", Some(8000)), "http://localhost:8000");
+    assert_eq!(origin_for_host("127.0.0.1", None), "http://127.0.0.1");
 }
