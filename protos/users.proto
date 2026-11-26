@@ -10,6 +10,7 @@ import "federation.proto";
 import "sync.proto";
 import "ai_providers.proto";
 import "market.proto";
+import "server_configuration.proto";
 
 // Model for a Rellm user. This user may have [`Media`](#rellm-Media), [`Group`](#rellm-Group) [`Membership`](#rellm-Membership)s,
 // [`Post`](#rellm-Post)s, [`Event`](#rellm-Event)s, and other objects associated with them.
@@ -126,6 +127,13 @@ message User {
   // user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
   bool has_password = 86;
 
+  // The user's Rellm Subdomain -- see [`UserSubdomain`](#rellm-UserSubdomain). Gated and populated the same way as
+  // `market_subscriptions` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing
+  // type, plus `Login`/`CreateAccount`/`GetCurrentUser`); unset for everyone else, and ignored by
+  // [`UpdateUser`](#grpc-api-UpdateUser) -- use [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) and
+  // [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+  optional UserSubdomain subdomain = 87;
+
   // The time the user was created.
   google.protobuf.Timestamp created_at = 100;
   // The time the user was last updated.
@@ -133,6 +141,44 @@ message User {
 }
 
 // Model for a user's follow of another user.
+// A user's Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon`), stored on the user -- the settings, who may
+// use them and why. A subdomain is *enabled* while the user holds an in-force `PURCHASE_TYPE_SUBDOMAIN`
+// [`MarketSubscription`](#rellm-MarketSubscription) (`subscribed`) **or** an `ADMIN` enabled it for them
+// (`granted_by_admin`, [`SetUserSubdomain`](#grpc-api-SetUserSubdomain)) -- no subscription needed. The user edits the
+// settings with [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) while it is enabled; they are kept when it
+// lapses, so re-enabling brings the old theme and toggles back.
+message UserSubdomain {
+  // The settings. `subdomain_of`/`subdomain` are set while the user holds the label (always the user's lower-cased
+  // username, fixed when first enabled, released when the subdomain stops being enabled); `custom_css` is never carried
+  // here -- read it with `GetCustomCSS` on the subdomain's own host.
+  SubdomainSettings settings = 1;
+  // Whether the subdomain resolves right now: `subscribed || granted_by_admin`.
+  bool enabled = 2;
+  // The user holds an in-force (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription.
+  bool subscribed = 3;
+  // An `ADMIN` enabled the subdomain for this user without a subscription.
+  bool granted_by_admin = 4;
+}
+
+// Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings).
+message SaveSubdomainSettingsRequest {
+  // The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
+  // read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  SubdomainSettings subdomain_settings = 1;
+  // When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+  // only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+  bool keep_sharing_settings = 2;
+}
+
+// Request for [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+message SetUserSubdomainRequest {
+  // The ID of the user to enable/disable a subdomain for.
+  string user_id = 1;
+  // True to enable the subdomain without a subscription; false to withdraw that grant (a subscription, if the user has
+  // one, keeps the subdomain enabled).
+  bool enabled = 2;
+}
+
 message Follow {
   // The follower in the relationship.
   string user_id = 1;

@@ -67,10 +67,13 @@ pub fn fulfill_purchase(
         // No automatic entitlement -- just leaves the `Purchase` record (with domain/contact/
         // notes) for Jon to act on by hand. See `market.proto`'s own framing.
         PurchaseType::RellmHosting => Ok(()),
-        // The subdomain's label and settings were recorded on the subscription itself when it was
-        // created (`web::stripe_webhook`) -- there is nothing to apply: it resolves for as long as the
-        // subscription is in force (`logic::subdomains::resolve_subdomain`).
-        PurchaseType::Subdomain => Ok(()),
+        // Reserves the buyer's label (their lower-cased username) on their user row -- a no-op when they already hold
+        // it (a renewal). Nothing else to apply: the subdomain resolves for as long as the subscription is in force
+        // (or an admin granted it) -- `logic::subdomains::resolve_subdomain`.
+        PurchaseType::Subdomain => {
+            let buyer = models::get_user(buyer_id, conn)?;
+            crate::logic::subdomains::claim_label(&buyer, conn).map(|_| ())
+        }
         // Adds the product's configured `Permission`s to the buyer's own `User.permissions`,
         // union-style (never removes anything the buyer already had, from this grant or any other
         // source) -- "just grant the permissions to the subscribed user," per Jon's own framing.
@@ -176,8 +179,11 @@ pub fn terminate_entitlement(
                 })?;
             Ok(())
         }
+        // The subdomain stops resolving on its own once the subscription is out of force; what's left is freeing the
+        // label for someone else -- unless an admin granted the subdomain (or another subscription is in force), in
+        // which case the user keeps it. Their settings stay either way.
+        PurchaseType::Subdomain => crate::logic::subdomains::release_label_if_not_enabled(buyer_id, conn),
         // Out of scope for this MVP -- no automatic revocation action for either.
-        // Nothing to claw back -- `logic::subdomains::resolve_subdomain` stops resolving it on its own.
-        PurchaseType::AiGrants | PurchaseType::RellmHosting | PurchaseType::Subdomain => Ok(()),
+        PurchaseType::AiGrants | PurchaseType::RellmHosting => Ok(()),
     }
 }

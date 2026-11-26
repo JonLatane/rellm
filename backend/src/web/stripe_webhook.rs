@@ -282,16 +282,11 @@ fn process_checkout_session_completed(
             additional_information: get_meta("rellm_hosting_additional_information"),
         })
     } else if purchase_type == PurchaseType::Subdomain {
-        // The purchase records which label it paid for; the subscription (below) carries the live,
-        // buyer-editable settings. `MakeMarketPurchase` checked the label was free when checkout started, but two
-        // checkouts can race: free a label whose holder has lapsed, then check again. If it is *still* taken (someone
-        // else's paid checkout got there first) nothing is created -- the unique index would refuse it anyway -- and
-        // the error is logged with this session's id so the charge can be refunded by hand.
+        // The purchase records which label it paid for (the label itself is reserved on the buyer's user row at
+        // fulfillment). `MakeMarketPurchase` checked the label was free when checkout started, but two checkouts can
+        // race, so check again (`validate_label_available` also frees a label whose holder has lapsed). If it is *still*
+        // taken (someone else's paid checkout got there first) nothing is created and the charge is refunded.
         let buyer = models::get_user(buyer_id, conn)?;
-        crate::logic::subdomains::release_lapsed_subdomain_labels(
-            &crate::logic::subdomains::label_for_username(&buyer.username),
-            conn,
-        )?;
         let label = match crate::logic::subdomains::validate_label_available(&buyer, conn) {
             Ok(label) => label,
             // The label can't be had (taken, no longer valid, or the buyer already holds one): nothing is created and
@@ -366,8 +361,7 @@ fn process_checkout_session_completed(
         product.details.clone()
     };
     let subscription_details = if purchase_type == PurchaseType::Subdomain {
-        let buyer = models::get_user(buyer_id, conn)?;
-        crate::logic::subdomains::new_subscription_details_json(&buyer)
+        crate::logic::subdomains::new_subscription_details_json()
     } else {
         details.clone()
     };

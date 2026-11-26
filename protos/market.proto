@@ -3,7 +3,6 @@ syntax = "proto3";
 package rellm;
 import "media.proto";
 import "permissions.proto";
-import "server_configuration.proto";
 import "google/protobuf/timestamp.proto";
 
 // What a `MarketProduct`/`MarketPurchase`/`MarketSubscription` actually grants the buyer once
@@ -40,11 +39,12 @@ enum PurchaseType {
   // hold).
   PURCHASE_TYPE_PERMISSIONS_ACCESS = 3;
   // A Rellm Subdomain for the buyer's own profile: `bullcity.social/jon` becomes reachable as
-  // `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment records the buyer's lower-cased username as the
-  // subscription's `SubdomainSettings.subdomain` (failing if another active subscription already holds it);
-  // there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force.
-  // The buyer then edits their `SubdomainSettings` with `SaveMarketSubscription`. Revoked (the subdomain stops
-  // resolving) as soon as the subscription's `service_terminated_at` is set.
+  // `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment reserves the buyer's lower-cased username as their
+  // `User.subdomain` label (refunding the checkout if another user holds it); there is no other entitlement to
+  // apply -- the subdomain simply resolves while the subscription is in force (or an admin has enabled it for the
+  // user, see `UserSubdomain`). The settings live on the user, and the buyer edits them with
+  // `SaveSubdomainSettings`. Revoked (the subdomain stops resolving and the label is released) as soon as the
+  // subscription's `service_terminated_at` is set, unless an admin granted the subdomain.
   PURCHASE_TYPE_SUBDOMAIN = 4;
 }
 
@@ -747,14 +747,13 @@ message MarkFulfillmentNotesReadRequest {
 }
 
 
-// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. On a
-// `MarketProduct` it carries nothing (a subdomain product has no parameters -- the label comes from the buyer's
-// username); on a `MarketSubscription` it holds the live, buyer-editable [`SubdomainSettings`](#rellm-SubdomainSettings)
-// (unlike every other details type, these are *not* frozen at purchase -- `SaveMarketSubscription` changes them).
+// `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. A subdomain product has no
+// parameters (the label comes from the buyer's username), and the subdomain's settings are not kept here -- they live
+// on the user (`User.subdomain`, [`UserSubdomain`](#rellm-UserSubdomain)), so they work the same whether the subdomain
+// was bought or enabled by an admin.
 message SubdomainSubscriptionDetails {
-  // The subdomain's settings; `settings.subdomain_of`/`settings.subdomain` are filled in by the server at
-  // fulfillment. Unset on a product.
-  optional SubdomainSettings settings = 1;
+  reserved 1;
+  reserved "settings";
 
   // The fulfillment chat -- see `MediaStorageSubscriptionDetails.fulfillment_status`. Always
   // `FULFILLMENT_STATUS_FULFILLED` (the system fulfills this type automatically).
@@ -767,17 +766,4 @@ message SubdomainSubscriptionDetails {
 message SubdomainPurchaseDetails {
   // The DNS label that was (or, on renewal, is being kept) reserved, e.g. `jon`.
   string subdomain = 1;
-}
-
-// Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
-message SaveMarketSubscriptionRequest {
-  // The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning "my active subdomain
-  // subscription" (a subdomain's own pages don't know the ID -- see `ServerConfiguration.subdomain_settings`).
-  string market_subscription_id = 1;
-  // The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
-  // are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
-  SubdomainSettings subdomain_settings = 2;
-  // When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
-  // only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
-  bool keep_sharing_settings = 3;
 }

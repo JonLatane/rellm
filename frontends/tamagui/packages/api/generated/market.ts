@@ -9,7 +9,6 @@ import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
 import { Timestamp } from "./google/protobuf/timestamp";
 import { Author } from "./media";
 import { Permission, permissionFromJSON, permissionToJSON } from "./permissions";
-import { SubdomainSettings } from "./server_configuration";
 
 export const protobufPackage = "rellm";
 
@@ -58,11 +57,12 @@ export enum PurchaseType {
   PURCHASE_TYPE_PERMISSIONS_ACCESS = 3,
   /**
    * PURCHASE_TYPE_SUBDOMAIN - A Rellm Subdomain for the buyer's own profile: `bullcity.social/jon` becomes reachable as
-   * `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment records the buyer's lower-cased username as the
-   * subscription's `SubdomainSettings.subdomain` (failing if another active subscription already holds it);
-   * there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force.
-   * The buyer then edits their `SubdomainSettings` with `SaveMarketSubscription`. Revoked (the subdomain stops
-   * resolving) as soon as the subscription's `service_terminated_at` is set.
+   * `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment reserves the buyer's lower-cased username as their
+   * `User.subdomain` label (refunding the checkout if another user holds it); there is no other entitlement to
+   * apply -- the subdomain simply resolves while the subscription is in force (or an admin has enabled it for the
+   * user, see `UserSubdomain`). The settings live on the user, and the buyer edits them with
+   * `SaveSubdomainSettings`. Revoked (the subdomain stops resolving and the label is released) as soon as the
+   * subscription's `service_terminated_at` is set, unless an admin granted the subdomain.
    */
   PURCHASE_TYPE_SUBDOMAIN = 4,
   UNRECOGNIZED = -1,
@@ -1110,19 +1110,12 @@ export interface MarkFulfillmentNotesReadRequest {
 }
 
 /**
- * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. On a
- * `MarketProduct` it carries nothing (a subdomain product has no parameters -- the label comes from the buyer's
- * username); on a `MarketSubscription` it holds the live, buyer-editable [`SubdomainSettings`](#rellm-SubdomainSettings)
- * (unlike every other details type, these are *not* frozen at purchase -- `SaveMarketSubscription` changes them).
+ * `MarketProduct.details`/`MarketSubscription.details`' `PURCHASE_TYPE_SUBDOMAIN` variant. A subdomain product has no
+ * parameters (the label comes from the buyer's username), and the subdomain's settings are not kept here -- they live
+ * on the user (`User.subdomain`, [`UserSubdomain`](#rellm-UserSubdomain)), so they work the same whether the subdomain
+ * was bought or enabled by an admin.
  */
 export interface SubdomainSubscriptionDetails {
-  /**
-   * The subdomain's settings; `settings.subdomain_of`/`settings.subdomain` are filled in by the server at
-   * fulfillment. Unset on a product.
-   */
-  settings?:
-    | SubdomainSettings
-    | undefined;
   /**
    * The fulfillment chat -- see `MediaStorageSubscriptionDetails.fulfillment_status`. Always
    * `FULFILLMENT_STATUS_FULFILLED` (the system fulfills this type automatically).
@@ -1136,27 +1129,6 @@ export interface SubdomainSubscriptionDetails {
 export interface SubdomainPurchaseDetails {
   /** The DNS label that was (or, on renewal, is being kept) reserved, e.g. `jon`. */
   subdomain: string;
-}
-
-/** Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). */
-export interface SaveMarketSubscriptionRequest {
-  /**
-   * The ID of the buyer's own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning "my active subdomain
-   * subscription" (a subdomain's own pages don't know the ID -- see `ServerConfiguration.subdomain_settings`).
-   */
-  marketSubscriptionId: string;
-  /**
-   * The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration`
-   * are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
-   */
-  subdomainSettings:
-    | SubdomainSettings
-    | undefined;
-  /**
-   * When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
-   * only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
-   */
-  keepSharingSettings: boolean;
 }
 
 function createBaseMarketProduct(): MarketProduct {
@@ -4258,14 +4230,11 @@ export const MarkFulfillmentNotesReadRequest: MessageFns<MarkFulfillmentNotesRea
 };
 
 function createBaseSubdomainSubscriptionDetails(): SubdomainSubscriptionDetails {
-  return { settings: undefined, fulfillmentStatus: 0, fulfillmentNotes: [], notesLastRead: undefined };
+  return { fulfillmentStatus: 0, fulfillmentNotes: [], notesLastRead: undefined };
 }
 
 export const SubdomainSubscriptionDetails: MessageFns<SubdomainSubscriptionDetails> = {
   encode(message: SubdomainSubscriptionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.settings !== undefined) {
-      SubdomainSettings.encode(message.settings, writer.uint32(10).fork()).join();
-    }
     if (message.fulfillmentStatus !== 0) {
       writer.uint32(56).int32(message.fulfillmentStatus);
     }
@@ -4285,14 +4254,6 @@ export const SubdomainSubscriptionDetails: MessageFns<SubdomainSubscriptionDetai
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.settings = SubdomainSettings.decode(reader, reader.uint32());
-          continue;
-        }
         case 7: {
           if (tag !== 56) {
             break;
@@ -4328,7 +4289,6 @@ export const SubdomainSubscriptionDetails: MessageFns<SubdomainSubscriptionDetai
 
   fromJSON(object: any): SubdomainSubscriptionDetails {
     return {
-      settings: isSet(object.settings) ? SubdomainSettings.fromJSON(object.settings) : undefined,
       fulfillmentStatus: isSet(object.fulfillmentStatus) ? fulfillmentStatusFromJSON(object.fulfillmentStatus) : 0,
       fulfillmentNotes: globalThis.Array.isArray(object?.fulfillmentNotes)
         ? object.fulfillmentNotes.map((e: any) => FulfillmentNote.fromJSON(e))
@@ -4339,9 +4299,6 @@ export const SubdomainSubscriptionDetails: MessageFns<SubdomainSubscriptionDetai
 
   toJSON(message: SubdomainSubscriptionDetails): unknown {
     const obj: any = {};
-    if (message.settings !== undefined) {
-      obj.settings = SubdomainSettings.toJSON(message.settings);
-    }
     if (message.fulfillmentStatus !== 0) {
       obj.fulfillmentStatus = fulfillmentStatusToJSON(message.fulfillmentStatus);
     }
@@ -4359,9 +4316,6 @@ export const SubdomainSubscriptionDetails: MessageFns<SubdomainSubscriptionDetai
   },
   fromPartial<I extends Exact<DeepPartial<SubdomainSubscriptionDetails>, I>>(object: I): SubdomainSubscriptionDetails {
     const message = createBaseSubdomainSubscriptionDetails();
-    message.settings = (object.settings !== undefined && object.settings !== null)
-      ? SubdomainSettings.fromPartial(object.settings)
-      : undefined;
     message.fulfillmentStatus = object.fulfillmentStatus ?? 0;
     message.fulfillmentNotes = object.fulfillmentNotes?.map((e) => FulfillmentNote.fromPartial(e)) || [];
     message.notesLastRead = object.notesLastRead ?? undefined;
@@ -4423,104 +4377,6 @@ export const SubdomainPurchaseDetails: MessageFns<SubdomainPurchaseDetails> = {
   fromPartial<I extends Exact<DeepPartial<SubdomainPurchaseDetails>, I>>(object: I): SubdomainPurchaseDetails {
     const message = createBaseSubdomainPurchaseDetails();
     message.subdomain = object.subdomain ?? "";
-    return message;
-  },
-};
-
-function createBaseSaveMarketSubscriptionRequest(): SaveMarketSubscriptionRequest {
-  return { marketSubscriptionId: "", subdomainSettings: undefined, keepSharingSettings: false };
-}
-
-export const SaveMarketSubscriptionRequest: MessageFns<SaveMarketSubscriptionRequest> = {
-  encode(message: SaveMarketSubscriptionRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.marketSubscriptionId !== "") {
-      writer.uint32(10).string(message.marketSubscriptionId);
-    }
-    if (message.subdomainSettings !== undefined) {
-      SubdomainSettings.encode(message.subdomainSettings, writer.uint32(18).fork()).join();
-    }
-    if (message.keepSharingSettings !== false) {
-      writer.uint32(24).bool(message.keepSharingSettings);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): SaveMarketSubscriptionRequest {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseSaveMarketSubscriptionRequest();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.marketSubscriptionId = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.subdomainSettings = SubdomainSettings.decode(reader, reader.uint32());
-          continue;
-        }
-        case 3: {
-          if (tag !== 24) {
-            break;
-          }
-
-          message.keepSharingSettings = reader.bool();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): SaveMarketSubscriptionRequest {
-    return {
-      marketSubscriptionId: isSet(object.marketSubscriptionId) ? globalThis.String(object.marketSubscriptionId) : "",
-      subdomainSettings: isSet(object.subdomainSettings)
-        ? SubdomainSettings.fromJSON(object.subdomainSettings)
-        : undefined,
-      keepSharingSettings: isSet(object.keepSharingSettings) ? globalThis.Boolean(object.keepSharingSettings) : false,
-    };
-  },
-
-  toJSON(message: SaveMarketSubscriptionRequest): unknown {
-    const obj: any = {};
-    if (message.marketSubscriptionId !== "") {
-      obj.marketSubscriptionId = message.marketSubscriptionId;
-    }
-    if (message.subdomainSettings !== undefined) {
-      obj.subdomainSettings = SubdomainSettings.toJSON(message.subdomainSettings);
-    }
-    if (message.keepSharingSettings !== false) {
-      obj.keepSharingSettings = message.keepSharingSettings;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<SaveMarketSubscriptionRequest>, I>>(base?: I): SaveMarketSubscriptionRequest {
-    return SaveMarketSubscriptionRequest.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<SaveMarketSubscriptionRequest>, I>>(
-    object: I,
-  ): SaveMarketSubscriptionRequest {
-    const message = createBaseSaveMarketSubscriptionRequest();
-    message.marketSubscriptionId = object.marketSubscriptionId ?? "";
-    message.subdomainSettings = (object.subdomainSettings !== undefined && object.subdomainSettings !== null)
-      ? SubdomainSettings.fromPartial(object.subdomainSettings)
-      : undefined;
-    message.keepSharingSettings = object.keepSharingSettings ?? false;
     return message;
   },
 };

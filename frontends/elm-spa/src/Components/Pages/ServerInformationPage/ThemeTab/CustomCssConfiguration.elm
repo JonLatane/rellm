@@ -206,7 +206,7 @@ updateInner shared targetHost msg model =
         SaveClicked ->
             -- A demo can never be saved (it has no Save button; this just makes sure).
             -- On a Rellm Subdomain the page is the owner's, whatever else they are: the save is always
-            -- `SaveMarketSubscription` -- never `ConfigureCustomCSS`, which would overwrite the *parent* server's theme
+            -- `SaveSubdomainSettings` -- never `ConfigureCustomCSS`, which would overwrite the *parent* server's theme
             -- when the owner also happens to be an admin. Decided by the page, before looking at anyone's permissions.
             case ( model.edit |> Maybe.andThen (\e -> if e.demo then Nothing else Just e), Common.subdomainSettingsFor shared targetHost ) of
                 ( Just edit, Just settings ) ->
@@ -219,19 +219,18 @@ updateInner shared targetHost msg model =
                             in
                             ( mapEdit (\e -> { e | status = AccountsPanel.Submitting }) model
                             , -- `True`: only the stylesheet changes here; the sharing toggles (edited on the About tab) stay as stored.
-                              Market.saveMarketSubscription shared.accounts
+                              Market.saveSubdomainSettings shared.accounts
                                 ( Just account.userId, targetHost )
-                                ""
                                 True
                                 { settings | customCssConfiguration = Just request }
                                 |> Task.map
                                     (Tuple.mapSecond
-                                        (\subscription ->
-                                            -- Subscriptions never carry the stylesheet text (it is read through `GetCustomCSS`), so
+                                        (\saved ->
+                                            -- `UserSubdomain` never carries the stylesheet text (it is read through `GetCustomCSS`), so
                                             -- the text that was just saved is the request's own.
-                                            Market.subdomainSettingsOf subscription
+                                            saved.settings
                                                 |> Maybe.andThen .customCssConfiguration
-                                                |> Maybe.map (\saved -> { saved | customCss = request.customCss })
+                                                |> Maybe.map (\savedConfig -> { savedConfig | customCss = request.customCss })
                                                 |> Maybe.withDefault request
                                         )
                                     )

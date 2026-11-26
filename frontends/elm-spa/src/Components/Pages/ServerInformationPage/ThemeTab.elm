@@ -513,7 +513,7 @@ view shared server maybeAdminAccount model =
 
 {-| A Rellm Subdomain's theme *is* its custom CSS -- the logo, colors, tabs and Web UI are the parent server's (and
 the user's own name/bio), so none of those editors apply. Only the subdomain's owner can edit the CSS (saved via
-`SaveMarketSubscription`, see `CustomCssConfiguration`'s `SaveClicked`); everyone else gets the usual demo.
+`SaveSubdomainSettings`, see `CustomCssConfiguration`'s `SaveClicked`); everyone else gets the usual demo.
 -}
 subdomainView : Shared.Model -> RellmServer -> Model -> Html Msg
 subdomainView shared server model =

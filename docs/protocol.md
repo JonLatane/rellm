@@ -37,7 +37,10 @@
     - [GetUsersRequest](#rellm-GetUsersRequest)
     - [GetUsersResponse](#rellm-GetUsersResponse)
     - [Membership](#rellm-Membership)
+    - [SaveSubdomainSettingsRequest](#rellm-SaveSubdomainSettingsRequest)
+    - [SetUserSubdomainRequest](#rellm-SetUserSubdomainRequest)
     - [User](#rellm-User)
+    - [UserSubdomain](#rellm-UserSubdomain)
     - [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest)
   
     - [ContactConsentState](#rellm-ContactConsentState)
@@ -231,7 +234,6 @@
     - [PermissionsAccessSubscriptionDetails](#rellm-PermissionsAccessSubscriptionDetails)
     - [RellmHostingPurchaseDetails](#rellm-RellmHostingPurchaseDetails)
     - [RellmHostingSubscriptionDetails](#rellm-RellmHostingSubscriptionDetails)
-    - [SaveMarketSubscriptionRequest](#rellm-SaveMarketSubscriptionRequest)
     - [SubdomainPurchaseDetails](#rellm-SubdomainPurchaseDetails)
     - [SubdomainSubscriptionDetails](#rellm-SubdomainSubscriptionDetails)
   
@@ -1336,6 +1338,8 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | DeleteMediaSizes | [Media](#rellm-Media) | [Media](#rellm-Media) | Deletes only the given `sizes` (matched by `conversion`) of a Media item by ID, e.g. to reclaim space by dropping `MEDIA_CONVERSION_ORIGINAL` once converted copies exist to serve in its place. *Authenticated.* Deleting other users&#39; media requires `ADMIN` permissions. Errors if this would leave the Media item with no `sizes` at all -- use `DeleteMedia` to remove the whole item instead. |
 | GetUsers | [GetUsersRequest](#rellm-GetUsersRequest) | [GetUsersResponse](#rellm-GetUsersResponse) | Gets Users. *Publicly accessible **or** Authenticated.* Unauthenticated calls only return Users of `GLOBAL_PUBLIC` visibility. |
 | UpdateUser | [User](#rellm-User) | [User](#rellm-User) | Update a user by ID. *Authenticated.* Updating other users requires `ADMIN` permissions. |
+| SaveSubdomainSettings | [SaveSubdomainSettingsRequest](#rellm-SaveSubdomainSettingsRequest) | [UserSubdomain](#rellm-UserSubdomain) | Saves the caller&#39;s own Rellm Subdomain settings ([`SubdomainSettings`](#rellm-SubdomainSettings): custom CSS and the `share_content_from_*` toggles), which live on the user. Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32 `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet. *Authenticated* -- the caller&#39;s own subdomain only (even an Admin edits just their own), and it must be enabled (`FailedPrecondition` `subdomain_not_enabled` otherwise): the caller has a `PURCHASE_TYPE_SUBDOMAIN` subscription in force or an Admin enabled it ([`SetUserSubdomain`](#grpc-api-SetUserSubdomain)). On a subdomain&#39;s own host the owner&#39;s saves are the &#34;admin&#34; of that virtual server -- its Theme and About tabs call this. Returns the updated [`UserSubdomain`](#rellm-UserSubdomain). |
+| SetUserSubdomain | [SetUserSubdomainRequest](#rellm-SetUserSubdomainRequest) | [UserSubdomain](#rellm-UserSubdomain) | Enables or disables a user&#39;s Rellm Subdomain without a subscription. *Authenticated*, requires `ADMIN`. Enabling reserves the user&#39;s lower-cased username as their subdomain label (`FailedPrecondition`: `username_not_a_valid_subdomain`, `subdomain_reserved` for a label the CDN setup uses itself, `subdomain_taken` if another user holds it); disabling withdraws only the grant -- a subscription in force keeps the subdomain enabled. Returns the user&#39;s [`UserSubdomain`](#rellm-UserSubdomain). |
 | StartContactMethodVerification | [ContactMethod](#rellm-ContactMethod) | [ContactMethod](#rellm-ContactMethod) | Starts SMS verification of the current user&#39;s own phone [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/ [`TelnyxConfig`](#rellm-TelnyxConfig) SMS provider configured and enabled (see [`ContactProtocol`](#rellm-ContactProtocol) for the corresponding server-wide toggle). Also requires the phone `ContactMethod`&#39;s own `consent_state` to already be `CONTACT_CONSENT_GRANTED` -- fails with `contact_consent_not_granted` otherwise, since the verification code is itself an outbound SMS sent through that same provider (see [`ContactMethod.consent_state`](#rellm-ContactMethod)&#39;s own doc; this is checked even though the user is the one requesting the send). Generates a 6-digit code, sends it via SMS, and stores it (with a start time and attempt counter) on the phone `ContactMethod` (`verification_in_progress`). Works for both `tel:` (via SMS) and `mailto:` (via the server&#39;s email providers -- Postmark/SendGrid/Mailgun/Stalwart -- which must be enabled, see [`ContactProtocol`](#rellm-ContactProtocol)) values, verifying the user&#39;s `phone` or `email` respectively. Rate-limited to one send per 60 seconds per user. A contact method that is already verified on a *different* account can&#39;t be verified here (`contact_already_verified`). Verified contact methods are what [`Login`](#grpc-api-Login) via SMS/email and [`CreateAccount`](#grpc-api-CreateAccount) with a verified phone/email are built on. |
 | VerifyContactMethod | [VerifyContactMethodRequest](#rellm-VerifyContactMethodRequest) | [ContactMethod](#rellm-ContactMethod) | Verifies a code sent by [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification). *Authenticated, self-only.* On match, sets [`ContactMethod.verified_at`](#rellm-ContactMethod) and clears `verification_in_progress`. Codes expire after 10 minutes and allow at most 5 attempts before requiring a fresh [`StartContactMethodVerification`](#grpc-api-StartContactMethodVerification) call. |
 | DeleteUser | [User](#rellm-User) | [.google.protobuf.Empty](#google-protobuf-Empty) | Deletes a user by ID. *Authenticated.* Deleting other users requires `ADMIN` permissions. |
@@ -1399,7 +1403,6 @@ discarded and a fresh keypair generated, so it&#39;s single-use per completed/fa
 | MakeMarketPurchase | [MakeMarketPurchaseRequest](#rellm-MakeMarketPurchaseRequest) | [MakeMarketPurchaseResponse](#rellm-MakeMarketPurchaseResponse) | Starts (or resumes) buying a MarketProduct for the current user, returning a Stripe Checkout URL to redirect to. *Authenticated*. See `MakeMarketPurchaseRequest`&#39;s own doc -- no MarketPurchase/ MarketSubscription is created by this call itself, only once Stripe confirms payment via webhook. If the buyer already has a `SUBSCRIPTION_ACTIVE_BUT_CANCELED` subscription to the product, it is resumed on the spot instead (no checkout, no charge) -- see `MakeMarketPurchaseResponse.resumed_subscription`. |
 | CancelMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Cancels a MarketSubscription by setting `canceled_at` to now -- entitlement (media storage quota, granted permissions, etc.) stays active until whichever is later of `renews_at`/`canceled_at`; the `renew_market_subscriptions` background job is what actually revokes it and sets `service_terminated_at`, once both have passed. *Authenticated* -- the subscription&#39;s own buyer, or an Admin. |
 | UpdateMarketSubscription | [MarketSubscription](#rellm-MarketSubscription) | [MarketSubscription](#rellm-MarketSubscription) | Appends to a MarketSubscription&#39;s own `fulfillment_notes` (any `PurchaseType` -- see `MediaStorageSubscriptionDetails.fulfillment_notes`; the request&#39;s `details` must be the variant matching the subscription&#39;s type; nothing else -- every other field, including `additional_information`, is immutable after purchase and silently ignored if changed) -- backs `/market/fulfillment`. A new entry must be appended (not inserted/reordered/removed) after whatever&#39;s already stored, and its `user_id` must match the caller&#39;s own -- the server stamps `created_at` itself, ignoring whatever the client sent. Its `note` text is required unless the entry also changes `fulfillment_status` from the previous entry&#39;s own value (see `FulfillmentNote.note`&#39;s own doc). `fulfillment_status` on the returned `RellmHostingSubscriptionDetails` is always the last appended entry&#39;s own value -- there&#39;s no way to set it independently of a note. *Authenticated*, requires Admin (for now -- see that field&#39;s own doc on why this may loosen to &#34;buyer, or Admin&#34; later). |
-| SaveMarketSubscription | [SaveMarketSubscriptionRequest](#rellm-SaveMarketSubscriptionRequest) | [MarketSubscription](#rellm-MarketSubscription) | Saves a buyer-editable setting of one of the caller&#39;s own MarketSubscriptions -- today only `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32 `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet. *Authenticated* -- the subscription&#39;s own buyer only (`PermissionDenied` otherwise, even for an Admin), and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription. On a subdomain&#39;s own host the buyer&#39;s saves are the &#34;admin&#34; of that virtual server -- its Theme and About tabs call this. |
 | MarkFulfillmentNotesRead | [MarkFulfillmentNotesReadRequest](#rellm-MarkFulfillmentNotesReadRequest) | [MarketSubscription](#rellm-MarketSubscription) | Marks all of a MarketSubscription&#39;s current `fulfillment_notes` read (any `PurchaseType`) by stamping its details&#39; `notes_last_read` with now. *Authenticated*, and only the subscription&#39;s own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is the buyer&#39;s). Idempotent. Returns the updated subscription. |
 | GenerateMedia | [GenerateMediaRequest](#rellm-GenerateMediaRequest) | [Media](#rellm-Media) | Generates (or edits, given reference `media_ids`) an image via one of the current user&#39;s AIModels, storing it as a new Media and, if `target` is set, attaching it to that Post/Event. *Authenticated* - caller must own or have been granted access to the chosen AIProvider, and (if `target` is set) have edit access to that Post/Event. A grantee (never the provider&#39;s own owner) spends real AIProviderGrant.tokens_remaining on every call - the provider&#39;s own reported token usage once generation succeeds, or (rejected before any request is even sent to the provider) a rough pre-flight estimate of the request&#39;s input cost alone, whichever catches an insufficient balance first. |
 | GetRsvps | [GetRsvpsRequest](#rellm-GetRsvpsRequest) | [Rsvps](#rellm-Rsvps) | Gets Rsvps for an Occasion. *Publicly accessible **or** Authenticated.* |
@@ -2000,7 +2003,7 @@ begin until contact consent (`ContactMethod.consent_state`) is granted -- see
 <a name="rellm-Follow"></a>
 
 ### Follow
-Model for a user&#39;s follow of another user.
+
 
 
 | Field | Type | Label | Description |
@@ -2082,6 +2085,38 @@ to reconcile memberships with groups.
 
 
 
+<a name="rellm-SaveSubdomainSettingsRequest"></a>
+
+### SaveSubdomainSettingsRequest
+Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored. |
+| keep_sharing_settings | [bool](#bool) |  | When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can&#39;t undo a change made elsewhere. |
+
+
+
+
+
+
+<a name="rellm-SetUserSubdomainRequest"></a>
+
+### SetUserSubdomainRequest
+Request for [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| user_id | [string](#string) |  | The ID of the user to enable/disable a subdomain for. |
+| enabled | [bool](#bool) |  | True to enable the subdomain without a subscription; false to withdraw that grant (a subscription, if the user has one, keeps the subdomain enabled). |
+
+
+
+
+
+
 <a name="rellm-User"></a>
 
 ### User
@@ -2121,8 +2156,33 @@ Model for a Rellm user. This user may have [`Media`](#rellm-Media), [`Group`](#r
 | ai_models | [AIModel](#rellm-AIModel) | repeated | Every [`AIProvider`](#rellm-AIProvider) model the target user may currently call - their own providers&#39; models, plus any models granted to them on other users&#39; providers (see [`AIModel`](#rellm-AIModel)). Gated and populated the same way as `sync_sources` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)). |
 | market_subscriptions | [MarketSubscription](#rellm-MarketSubscription) | repeated | The target user&#39;s own MarketSubscriptions (`market.proto`), each with its own `billing_history`. Gated and populated the same way as `ai_models`/`sync_sources` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus [`Login`](#grpc-api-Login)/[`CreateAccount`](#grpc-api-CreateAccount)/[`GetCurrentUser`](#grpc-api-GetCurrentUser)). |
 | has_password | [bool](#bool) |  | Whether the account has a password it can sign in with. `false` for an account created without one (a passwordless SMS/email account) until a password is set with [`ResetPassword`](#grpc-api-ResetPassword). While `false`, a sign-in [`ContactMethod`](#rellm-ContactMethod) can&#39;t be turned off, changed or removed. Only sent to the user themselves or an `ADMIN`; `true` for everyone else (so it&#39;s never read as a signal). |
+| subdomain | [UserSubdomain](#rellm-UserSubdomain) | optional | The user&#39;s Rellm Subdomain -- see [`UserSubdomain`](#rellm-UserSubdomain). Gated and populated the same way as `market_subscriptions` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing type, plus `Login`/`CreateAccount`/`GetCurrentUser`); unset for everyone else, and ignored by [`UpdateUser`](#grpc-api-UpdateUser) -- use [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) and [`SetUserSubdomain`](#grpc-api-SetUserSubdomain). |
 | created_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | The time the user was created. |
 | updated_at | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional | The time the user was last updated. |
+
+
+
+
+
+
+<a name="rellm-UserSubdomain"></a>
+
+### UserSubdomain
+Model for a user&#39;s follow of another user.
+A user&#39;s Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon`), stored on the user -- the settings, who may
+use them and why. A subdomain is *enabled* while the user holds an in-force `PURCHASE_TYPE_SUBDOMAIN`
+[`MarketSubscription`](#rellm-MarketSubscription) (`subscribed`) **or** an `ADMIN` enabled it for them
+(`granted_by_admin`, [`SetUserSubdomain`](#grpc-api-SetUserSubdomain)) -- no subscription needed. The user edits the
+settings with [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) while it is enabled; they are kept when it
+lapses, so re-enabling brings the old theme and toggles back.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The settings. `subdomain_of`/`subdomain` are set while the user holds the label (always the user&#39;s lower-cased username, fixed when first enabled, released when the subdomain stops being enabled); `custom_css` is never carried here -- read it with `GetCustomCSS` on the subdomain&#39;s own host. |
+| enabled | [bool](#bool) |  | Whether the subdomain resolves right now: `subscribed || granted_by_admin`. |
+| subscribed | [bool](#bool) |  | The user holds an in-force (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription. |
+| granted_by_admin | [bool](#bool) |  | An `ADMIN` enabled the subdomain for this user without a subscription. |
 
 
 
@@ -4130,7 +4190,7 @@ Configuration for a Rellm server instance.
 | postmark_config | [PostmarkConfig](#rellm-PostmarkConfig) | optional | Postmark Config -- see [`PostmarkConfig`](#rellm-PostmarkConfig). Only serialized for admin users. |
 | sendgrid_config | [SendgridConfig](#rellm-SendgridConfig) | optional | SendGrid Config -- see [`SendgridConfig`](#rellm-SendgridConfig). Only serialized for admin users. |
 | mailgun_config | [MailgunConfig](#rellm-MailgunConfig) | optional | Mailgun Config -- see [`MailgunConfig`](#rellm-MailgunConfig). Only serialized for admin users. |
-| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) | optional | Set *only* on the virtual configuration a server returns to requests addressed to a user&#39;s Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)). Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is derived from the owner&#39;s `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by checking `subdomain_settings?.subdomain_of`. |
+| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) | optional | Set *only* on the virtual configuration a server returns to requests addressed to a user&#39;s Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)). Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is derived from the owner&#39;s [`UserSubdomain`](#rellm-UserSubdomain) (stored on the user), and edited through [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings). Clients tell a subdomain from a full server by checking `subdomain_settings?.subdomain_of`. |
 
 
 
@@ -4227,23 +4287,24 @@ webhook deliveries (`stripe_webhook_signing_secret`).
 <a name="rellm-SubdomainSettings"></a>
 
 ### SubdomainSettings
-A user&#39;s Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
+A user&#39;s Rellm Subdomain settings (stored on the user -- see [`UserSubdomain`](#rellm-UserSubdomain)).
 A server answers requests whose `Host` is `&lt;subdomain&gt;.&lt;its frontend_host&gt;` (`ExternalCDNConfig.frontend_host`) over
 both gRPC and HTTP, as a &#34;virtual server&#34; that shares everything with its parent (CDN configuration, contact
 integrations, media, login) except that it is scoped to one user: `GetPosts`/`GetEvents` only return that user&#39;s
 content (plus whatever the `share_content_from_*` toggles add), and `GetServerConfiguration` describes the user
-(see `subdomain_of`) rather than the whole server. The subscription&#39;s `details` hold these settings; the
-subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+(see `subdomain_of`) rather than the whole server. The owner edits these settings with
+[`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings); the subdomain exists while the owner has a
+`PURCHASE_TYPE_SUBDOMAIN` subscription in force or an `ADMIN` enabled it for them.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| subdomain_of | [string](#string) |  | The user ID of the subdomain&#39;s owner -- the user whose profile the subdomain&#39;s About tab shows and whose content it is scoped to. Server-assigned; ignored on `SaveMarketSubscription`. |
-| subdomain | [string](#string) |  | The subdomain&#39;s DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner&#39;s username when the subscription is fulfilled. Server-assigned; ignored on `SaveMarketSubscription`. |
+| subdomain_of | [string](#string) |  | The user ID of the subdomain&#39;s owner -- the user whose profile the subdomain&#39;s About tab shows and whose content it is scoped to. Server-assigned; ignored on `SaveSubdomainSettings`. |
+| subdomain | [string](#string) |  | The subdomain&#39;s DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner&#39;s username when the subdomain is first enabled. Server-assigned; ignored on `SaveSubdomainSettings`. |
 | share_content_from_followers | [bool](#bool) |  | Also show posts/events by users who *follow* the owner (an accepted `Follow` of the owner). |
 | share_content_from_following | [bool](#bool) |  | Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner). |
 | share_content_from_friends | [bool](#bool) |  | Also show posts/events by the owner&#39;s *friends* -- users who follow the owner and whom the owner follows back. |
-| custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The subdomain&#39;s own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain. Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`). `custom_css` is never carried in subscription listings (`GetMarketSubscriptions`, `User.market_subscriptions`) or in `GetServerConfiguration`&#39;s copy -- read the text with `GetCustomCSS` on the subdomain&#39;s host, same as `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the stored stylesheet. |
+| custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The subdomain&#39;s own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain. Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`). `custom_css` is never carried in `User.subdomain` or in `GetServerConfiguration`&#39;s copy -- read the text with `GetCustomCSS` on the subdomain&#39;s host, same as `ServerConfiguration.custom_css_configuration`. On `SaveSubdomainSettings`, an unset `custom_css` keeps the stored stylesheet. |
 
 
 
@@ -5811,23 +5872,6 @@ no `*PurchaseDetails` counterpart, since they&#39;re only ever meaningful on the
 
 
 
-<a name="rellm-SaveMarketSubscriptionRequest"></a>
-
-### SaveMarketSubscriptionRequest
-Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| market_subscription_id | [string](#string) |  | The ID of the buyer&#39;s own `PURCHASE_TYPE_SUBDOMAIN` subscription. May be empty, meaning &#34;my active subdomain subscription&#34; (a subdomain&#39;s own pages don&#39;t know the ID -- see `ServerConfiguration.subdomain_settings`). |
-| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored. |
-| keep_sharing_settings | [bool](#bool) |  | When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can&#39;t undo a change made elsewhere. |
-
-
-
-
-
-
 <a name="rellm-SubdomainPurchaseDetails"></a>
 
 ### SubdomainPurchaseDetails
@@ -5846,15 +5890,14 @@ Request for [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
 <a name="rellm-SubdomainSubscriptionDetails"></a>
 
 ### SubdomainSubscriptionDetails
-`MarketProduct.details`/`MarketSubscription.details`&#39; `PURCHASE_TYPE_SUBDOMAIN` variant. On a
-`MarketProduct` it carries nothing (a subdomain product has no parameters -- the label comes from the buyer&#39;s
-username); on a `MarketSubscription` it holds the live, buyer-editable [`SubdomainSettings`](#rellm-SubdomainSettings)
-(unlike every other details type, these are *not* frozen at purchase -- `SaveMarketSubscription` changes them).
+`MarketProduct.details`/`MarketSubscription.details`&#39; `PURCHASE_TYPE_SUBDOMAIN` variant. A subdomain product has no
+parameters (the label comes from the buyer&#39;s username), and the subdomain&#39;s settings are not kept here -- they live
+on the user (`User.subdomain`, [`UserSubdomain`](#rellm-UserSubdomain)), so they work the same whether the subdomain
+was bought or enabled by an admin.
 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| settings | [SubdomainSettings](#rellm-SubdomainSettings) | optional | The subdomain&#39;s settings; `settings.subdomain_of`/`settings.subdomain` are filled in by the server at fulfillment. Unset on a product. |
 | fulfillment_status | [FulfillmentStatus](#rellm-FulfillmentStatus) |  | The fulfillment chat -- see `MediaStorageSubscriptionDetails.fulfillment_status`. Always `FULFILLMENT_STATUS_FULFILLED` (the system fulfills this type automatically). |
 | fulfillment_notes | [FulfillmentNote](#rellm-FulfillmentNote) | repeated |  |
 | notes_last_read | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
@@ -5948,7 +5991,7 @@ is delisted and replaced with a new one instead.
 | PURCHASE_TYPE_AI_GRANTS | 1 | AI provider token grants -- fulfillment resets (never adds to) the buyer&#39;s `AIProviderGrant.tokens_remaining` for `AIGrantPurchaseDetails.ai_provider_id`/`model_names` to `AIGrantPurchaseDetails.tokens`, same &#34;reset, don&#39;t add&#34; semantics every renewal uses. Not automatically revoked on cancellation/expiry -- whatever tokens remain when the subscription lapses just aren&#39;t replenished again. |
 | PURCHASE_TYPE_RELLM_HOSTING | 2 | A dedicated Rellm server instance, hosted and administered by Jon. Deliberately NOT automated -- fulfillment applies no entitlement at all; an admin provisions the server by hand and tracks progress via `RellmHostingSubscriptionDetails.fulfillment_status`/`fulfillment_notes` on the `/market/fulfillment` admin page. Not automatically revoked on cancellation/expiry either (out of scope for this MVP -- an admin handles teardown manually too). |
 | PURCHASE_TYPE_PERMISSIONS_ACCESS | 3 | A bundle of `Permission`s (e.g. `SYNC_EVENTS_TO_FACEBOOK`) granted directly to the buyer&#39;s own `User.permissions`, union-style -- fulfillment only ever adds permissions the buyer doesn&#39;t already have from some other source, never removes any. Unlike the other three types, this ONE eventually claws back what it granted: once cancellation/expiry actually takes effect (see `MarketSubscription.canceled_at`/`service_terminated_at`), `logic::market::market_fulfillment:: terminate_entitlement` removes exactly the permissions this subscription granted (a plain set difference, not a reconciliation against any other subscription/grant the buyer might also hold). |
-| PURCHASE_TYPE_SUBDOMAIN | 4 | A Rellm Subdomain for the buyer&#39;s own profile: `bullcity.social/jon` becomes reachable as `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment records the buyer&#39;s lower-cased username as the subscription&#39;s `SubdomainSettings.subdomain` (failing if another active subscription already holds it); there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force. The buyer then edits their `SubdomainSettings` with `SaveMarketSubscription`. Revoked (the subdomain stops resolving) as soon as the subscription&#39;s `service_terminated_at` is set. |
+| PURCHASE_TYPE_SUBDOMAIN | 4 | A Rellm Subdomain for the buyer&#39;s own profile: `bullcity.social/jon` becomes reachable as `jon.bullcity.social` (see `SubdomainSettings`). Fulfillment reserves the buyer&#39;s lower-cased username as their `User.subdomain` label (refunding the checkout if another user holds it); there is no other entitlement to apply -- the subdomain simply resolves while the subscription is in force (or an admin has enabled it for the user, see `UserSubdomain`). The settings live on the user, and the buyer edits them with `SaveSubdomainSettings`. Revoked (the subdomain stops resolving and the label is released) as soon as the subscription&#39;s `service_terminated_at` is set, unless an admin granted the subdomain. |
 
 
  
