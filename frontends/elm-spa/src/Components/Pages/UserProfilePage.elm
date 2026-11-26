@@ -6556,17 +6556,23 @@ subdomainSection mainFrontendHost maybeHost isAdmin isOwn expanded status user =
                             , text labelText
                             ]
 
+                    -- On the subdomain itself the connected host already *is* `<label>.<parent>`; anywhere else it is the
+                    -- parent, so the label goes in front.
                     address : String
                     address =
-                        case ( settings.subdomain, maybeHost ) of
-                            ( "", _ ) ->
-                                "None"
+                        let
+                            host : String
+                            host =
+                                maybeHost |> Maybe.withDefault mainFrontendHost
+                        in
+                        if settings.subdomain == "" then
+                            "None"
 
-                            ( label_, Just host ) ->
-                                label_ ++ "." ++ host
+                        else if String.startsWith (settings.subdomain ++ ".") host then
+                            host
 
-                            ( label_, Nothing ) ->
-                                label_ ++ "." ++ mainFrontendHost
+                        else
+                            settings.subdomain ++ "." ++ host
 
                     why : String
                     why =

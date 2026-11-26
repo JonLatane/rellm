@@ -270,51 +270,97 @@ pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnect
     Ok(label)
 }
 
-/// Reserves `user`'s label for them (their lower-cased username, unless they already hold one -- fixed once claimed) and
-/// returns it. The caller has checked the subdomain is (about to be) enabled. A unique violation -- a racing claimant got
-/// the label between `check_label_for` and here -- is `subdomain_taken`; `idx_users_subdomain` is the backstop that makes
-/// the claim atomic.
+/// `conn.transaction`'s error type must absorb Diesel's own errors (it rolls back through them) while carrying the
+/// `Status` the steps inside return.
+pub struct TxError(pub Status);
+
+impl From<diesel::result::Error> for TxError {
+    fn from(e: diesel::result::Error) -> Self {
+        log::error!("Subdomain transaction failed: {:?}", crate::logic::log_redaction::safe_error(&e));
+        TxError(Status::new(Code::Internal, "db_error"))
+    }
+}
+
+impl From<Status> for TxError {
+    fn from(status: Status) -> Self {
+        TxError(status)
+    }
+}
+
+/// Runs `f` in a transaction (a savepoint when already inside one), rolling back on a `Status` error.
+pub fn in_transaction<T>(
+    conn: &mut PgPooledConnection,
+    f: impl FnOnce(&mut PgPooledConnection) -> Result<T, Status>,
+) -> Result<T, Status> {
+    conn.transaction::<T, TxError, _>(|conn| f(conn).map_err(TxError)).map_err(|e| e.0)
+}
+
+/// Locks `user_id`'s row (`SELECT ... FOR UPDATE`) until the surrounding transaction ends, so a grant, a claim and a
+/// release for one user can't interleave. Callers must be inside a transaction (a savepoint inside one counts -- the lock
+/// is held until the outermost commit).
+pub fn lock_user_row(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), Status> {
+    users::table
+        .filter(users::id.eq(user_id))
+        .select(users::id)
+        .for_update()
+        .first::<i64>(conn)
+        .map(|_| ())
+        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+}
+
+/// Reserves `user`'s label for them and returns it: the one they already hold (fixed once claimed -- a later rename
+/// never invalidates it, so a renewal after a username change still works), else their lower-cased username if
+/// `check_label_for` allows it. The caller has checked the subdomain is (about to be) enabled. A unique violation -- a
+/// racing claimant got the label between `check_label_for` and here -- is `subdomain_taken`; `idx_users_subdomain` is the
+/// backstop that makes the claim atomic.
 pub fn claim_label(user: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
-    let label = check_label_for(user, conn)?;
-    let held = users::table
-        .filter(users::id.eq(user.id))
-        .select(users::subdomain)
-        .first::<Option<String>>(conn)
-        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))?;
-    if let Some(held) = held {
-        return Ok(held);
-    }
-    // A savepoint, so a lost race doesn't abort a surrounding transaction (the webhook's) -- it is just a refusal.
-    let claimed = conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-        diesel::update(users::table.filter(users::id.eq(user.id)).filter(users::subdomain.is_null()))
-            .set(users::subdomain.eq(Some(label.clone())))
-            .execute(conn)
-    });
-    match claimed {
-        Ok(_) => {
-            invalidate_cache();
-            Ok(label)
+    in_transaction(conn, |conn| {
+        lock_user_row(user.id, conn)?;
+        let held = users::table
+            .filter(users::id.eq(user.id))
+            .select(users::subdomain)
+            .first::<Option<String>>(conn)
+            .map_err(|_| Status::new(Code::NotFound, "user_not_found"))?;
+        if let Some(held) = held {
+            return Ok(held);
         }
-        Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
-            Err(Status::new(Code::FailedPrecondition, "subdomain_taken"))
+        let label = check_label_for(user, conn)?;
+        // A savepoint, so a lost race doesn't abort a surrounding transaction (the webhook's) -- it is just a refusal.
+        let claimed = conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            diesel::update(users::table.filter(users::id.eq(user.id)).filter(users::subdomain.is_null()))
+                .set(users::subdomain.eq(Some(label.clone())))
+                .execute(conn)
+        });
+        match claimed {
+            Ok(_) => {
+                invalidate_cache();
+                Ok(label)
+            }
+            Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
+                Err(Status::new(Code::FailedPrecondition, "subdomain_taken"))
+            }
+            Err(e) => Err(internal("Failed to claim a subdomain label", "failed_to_claim_subdomain")(e)),
         }
-        Err(e) => Err(internal("Failed to claim a subdomain label", "failed_to_claim_subdomain")(e)),
-    }
+    })
 }
 
 /// Releases `user_id`'s label if their subdomain is no longer enabled -- no grant, no in-force subscription. Their
 /// settings stay, so enabling it again brings the old theme and toggles back. Called wherever an entitlement can end
-/// (a grant withdrawn, a subscription terminated) and for a label someone else wants (`check_label_for`).
+/// (a grant withdrawn, a subscription terminated) and for a label someone else wants (`check_label_for`). The decision
+/// and the write happen under the user's row lock, so a grant or claim racing it can't have its label cleared.
 pub fn release_label_if_not_enabled(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), Status> {
-    let summary = models::get_subdomain_summary(user_id, conn)?;
-    if summary.subdomain.is_none() || is_enabled(&summary, conn)? {
-        return Ok(());
-    }
-    diesel::update(users::table.filter(users::id.eq(user_id)))
-        .set(users::subdomain.eq(None::<String>))
-        .execute(conn)
-        .map(|_| invalidate_cache())
-        .map_err(internal("Failed to release a subdomain label", "failed_to_release_subdomain"))
+    in_transaction(conn, |conn| {
+        lock_user_row(user_id, conn)?;
+        let summary = models::get_subdomain_summary(user_id, conn)?;
+        if summary.subdomain.is_none() || is_enabled(&summary, conn)? {
+            return Ok(());
+        }
+        diesel::update(users::table.filter(users::id.eq(user_id)))
+            .set(users::subdomain.eq(None::<String>))
+            .execute(conn)
+            .map(|_| invalidate_cache())
+            .map_err(internal("Failed to release a subdomain label", "failed_to_release_subdomain"))
+    })
 }
 
 /// `market_subscriptions.details` for a brand-new subdomain subscription -- just the (automatic) fulfillment status; the

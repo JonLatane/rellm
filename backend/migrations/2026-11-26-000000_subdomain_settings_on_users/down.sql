@@ -1,9 +1,18 @@
--- Put each user's settings back on their newest subdomain subscription (in-force first), as before.
+-- A canceled subscription whose paid period has run out is over; the renewal job would terminate it, and the label
+-- index below only counts subscriptions that aren't terminated.
+UPDATE market_subscriptions SET service_terminated_at = NOW()
+WHERE product_type = 'PURCHASE_TYPE_SUBDOMAIN' AND service_terminated_at IS NULL AND canceled_at IS NOT NULL
+  AND GREATEST(canceled_at, COALESCE(renews_at, canceled_at)) <= NOW();
+
+-- Put each user's settings back on their newest subdomain subscription (in-force first), as before. `subdomain_of` is
+-- left out (it needs the base58 proto id encoding; the server always fills it in from the owner when serving). A user
+-- who holds no label gets their lower-cased username only if no other user holds it.
 UPDATE market_subscriptions s SET details = jsonb_set(
     s.details, '{settings}',
     jsonb_strip_nulls(jsonb_build_object(
-        'subdomain_of', u.id::text,
-        'subdomain', COALESCE(u.subdomain, lower(u.username)),
+        'subdomain', COALESCE(u.subdomain, CASE WHEN NOT EXISTS (
+            SELECT 1 FROM users o WHERE o.id <> u.id AND o.subdomain = lower(u.username)
+        ) THEN lower(u.username) END),
         'share_content_from_followers', u.subdomain_share_followers,
         'share_content_from_following', u.subdomain_share_following,
         'share_content_from_friends', u.subdomain_share_friends,

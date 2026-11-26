@@ -1004,3 +1004,23 @@ fn backend_host_discovery_without_a_separate_backend() {
     };
     assert_eq!(backend_domain_for_host(Some(&cdn_grpc), "jon.rellm.org", never), "jon.rellm.org");
 }
+
+#[test]
+fn a_renewal_after_a_username_change_keeps_the_label_the_user_already_holds() {
+    use crate::schema::users;
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_frontend_host(conn);
+        let admin_user = create_user(conn, "sd24_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd24old");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        // The subscriber renames to a name that isn't a valid DNS label; the subdomain keeps its original label.
+        diesel::update(users::table.find(owner.id)).set(users::username.eq("sd24_new")).execute(conn).unwrap();
+        let renamed = models::get_user(owner.id, conn)?;
+        // What `fulfill_purchase` runs on every renewal: it must not fail (a failure cancels future renewals).
+        assert_eq!(crate::logic::subdomains::claim_label(&renamed, conn)?, "sd24old");
+        assert!(scope(conn, "sd24old.bullcity.test").is_some());
+        Ok(())
+    });
+}
