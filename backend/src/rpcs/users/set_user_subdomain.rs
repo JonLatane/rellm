@@ -44,5 +44,6 @@ pub fn set_user_subdomain(
     subdomains::invalidate_cache();
     log::info!("Subdomain grant for user {} set to {} by admin {}", user.id, request.enabled, current_user.id);
     let subscribed = subdomains::has_subscription(user.id, conn)?;
-    Ok(subdomains::user_subdomain_proto(&models::get_subdomain_summary(user.id, conn)?, subscribed))
+    let frontend_host = models::get_subdomain_frontend_host(user.id, conn)?;
+    Ok(subdomains::user_subdomain_proto(&models::get_subdomain_summary(user.id, conn)?, subscribed, frontend_host))
 }

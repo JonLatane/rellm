@@ -505,6 +505,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    subdomain_frontend_hosts (host) {
+        host -> Varchar,
+        user_id -> Int8,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     sync_destinations (id) {
         id -> Int8,
         user_id -> Int8,
@@ -624,6 +632,7 @@ diesel::table! {
 diesel::joinable!(ai_provider_grants -> ai_providers (ai_provider_id));
 diesel::joinable!(ai_provider_grants -> users (grantee_id));
 diesel::joinable!(ai_providers -> users (user_id));
+diesel::joinable!(subdomain_frontend_hosts -> users (user_id));
 diesel::joinable!(rsvps -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> occasions (occasion_id));
 diesel::joinable!(occasion_sync_destinations -> sync_destinations (sync_destination_id));
@@ -707,6 +716,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     posts,
     push_subscriptions,
     server_configurations,
+    subdomain_frontend_hosts,
     sync_destinations,
     sync_sources,
     user_access_tokens,

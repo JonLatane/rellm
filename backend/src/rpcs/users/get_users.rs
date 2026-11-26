@@ -483,16 +483,21 @@ pub fn attach_advanced_admin_data(
         }
     }
 
-    // Rellm Subdomain state (stored on the user; no stylesheet text) -- two batched queries however many users.
-    if let (Ok(summaries), Ok(subscribed)) = (
+    // Rellm Subdomain state (stored on the user; no stylesheet text) -- three batched queries however many users.
+    if let (Ok(summaries), Ok(subscribed), Ok(mut frontend_hosts)) = (
         models::get_subdomain_summaries(&allowed_ids, conn),
         crate::logic::subdomains::subscribed_user_ids(&allowed_ids, conn),
+        models::get_subdomain_frontend_hosts(&allowed_ids, conn),
     ) {
         let mut by_id: HashMap<i64, models::UserSubdomainSummary> = summaries.into_iter().map(|s| (s.id, s)).collect();
         for proto_user in users.iter_mut() {
             if let Some(summary) = proto_user.id.to_db_id().ok().and_then(|id| by_id.remove(&id)) {
-                proto_user.subdomain =
-                    Some(crate::logic::subdomains::user_subdomain_proto(&summary, subscribed.contains(&summary.id)));
+                let frontend_host = frontend_hosts.remove(&summary.id);
+                proto_user.subdomain = Some(crate::logic::subdomains::user_subdomain_proto(
+                    &summary,
+                    subscribed.contains(&summary.id),
+                    frontend_host,
+                ));
             }
         }
     }

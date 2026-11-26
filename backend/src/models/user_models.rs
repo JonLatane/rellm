@@ -4,7 +4,7 @@ use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
-use crate::schema::{follows, users};
+use crate::schema::{follows, subdomain_frontend_hosts, users};
 
 /// The ids of every user holding the `ADMIN` permission -- the people who can handle fulfillment of
 /// Market orders (`UpdateMarketSubscription` and the Fulfillment tab require it), so who a new
@@ -213,6 +213,42 @@ pub fn get_user_by_subdomain_label(label: &str, conn: &mut PgPooledConnection) -
             log::error!("Failed to look up a subdomain: {:?}", crate::logic::log_redaction::safe_error(&e));
             Status::new(Code::Internal, "failed_to_load_user")
         })
+}
+
+/// The user who set `host` (lower case) as their `custom_frontend_host` (a primary-key probe on
+/// `subdomain_frontend_hosts`). Like `get_user_by_subdomain_label`, holding it is not being entitled to it.
+pub fn get_user_by_subdomain_frontend_host(host: &str, conn: &mut PgPooledConnection) -> Result<Option<User>, Status> {
+    users::table
+        .inner_join(subdomain_frontend_hosts::table)
+        .filter(subdomain_frontend_hosts::host.eq(host))
+        .select(USER_COLUMNS)
+        .first::<User>(conn)
+        .optional()
+        .map_err(|e| {
+            log::error!("Failed to look up a subdomain frontend host: {:?}", crate::logic::log_redaction::safe_error(&e));
+            Status::new(Code::Internal, "failed_to_load_user")
+        })
+}
+
+/// The custom frontend hosts of `user_ids` (those that have one), in one query.
+pub fn get_subdomain_frontend_hosts(
+    user_ids: &[i64],
+    conn: &mut PgPooledConnection,
+) -> Result<std::collections::HashMap<i64, String>, Status> {
+    subdomain_frontend_hosts::table
+        .filter(subdomain_frontend_hosts::user_id.eq_any(user_ids))
+        .select((subdomain_frontend_hosts::user_id, subdomain_frontend_hosts::host))
+        .load::<(i64, String)>(conn)
+        .map(|rows| rows.into_iter().collect())
+        .map_err(|e| {
+            log::error!("Failed to load subdomain frontend hosts: {:?}", crate::logic::log_redaction::safe_error(&e));
+            Status::new(Code::Internal, "failed_to_load_users")
+        })
+}
+
+/// `get_subdomain_frontend_hosts` for one user.
+pub fn get_subdomain_frontend_host(user_id: i64, conn: &mut PgPooledConnection) -> Result<Option<String>, Status> {
+    Ok(get_subdomain_frontend_hosts(&[user_id], conn)?.remove(&user_id))
 }
 
 /// `get_subdomain_summaries` for one user.

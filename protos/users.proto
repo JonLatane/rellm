@@ -162,8 +162,8 @@ message UserSubdomain {
 
 // Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings).
 message SaveSubdomainSettingsRequest {
-  // The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
-  // read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  // The new settings. Only `share_content_from_followers`/`_following`/`_friends`, `custom_css_configuration` and
+  // `custom_frontend_host` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
   SubdomainSettings subdomain_settings = 1;
   // When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
   // only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.

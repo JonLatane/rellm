@@ -483,7 +483,7 @@ fn an_admin_can_enable_a_subdomain_without_a_subscription() {
 
         // It shows on the profile (`User.subdomain`), self-or-admin.
         let summaries = models::get_subdomain_summaries(&[user.id], conn)?;
-        let proto = crate::logic::subdomains::user_subdomain_proto(&summaries[0], false);
+        let proto = crate::logic::subdomains::user_subdomain_proto(&summaries[0], false, None);
         assert!(proto.granted_by_admin && proto.enabled && proto.settings.unwrap().share_content_from_followers);
 
         // Withdrawing releases the label and stops resolving; the settings are kept for next time.
@@ -1021,6 +1021,147 @@ fn a_renewal_after_a_username_change_keeps_the_label_the_user_already_holds() {
         // What `fulfill_purchase` runs on every renewal: it must not fail (a failure cancels future renewals).
         assert_eq!(crate::logic::subdomains::claim_label(&renamed, conn)?, "sd24old");
         assert!(scope(conn, "sd24old.bullcity.test").is_some());
+        Ok(())
+    });
+}
+
+#[test]
+fn custom_frontend_hosts_must_be_domains_outside_the_servers_own() {
+    use crate::logic::subdomains::{is_domain_like, validate_custom_frontend_host};
+    let validate = |raw: &str| validate_custom_frontend_host(raw, "rellm.org", "backend.rellm.org");
+    assert_eq!(validate("  UserSite.COM ").unwrap(), "usersite.com", "trimmed and lower-cased");
+    assert_eq!(validate("blog.usersite.co.uk").unwrap(), "blog.usersite.co.uk");
+    for bad in ["", "usersite", "localhost", "127.0.0.1", "1.2.3.4", "https://usersite.com", "usersite.com/", "usersite.com:8000", "-a.com", "a-.com", "a_b.com", "a..com", ".com", "usersite.com."] {
+        assert_eq!(validate(bad).unwrap_err().message(), "invalid_frontend_host", "{bad:?}");
+    }
+    for reserved in ["rellm.org", "jon.rellm.org", "a.b.rellm.org", "backend.rellm.org", "jon.backend.rellm.org", "REALLY.Rellm.Org"] {
+        assert_eq!(validate(reserved).unwrap_err().message(), "frontend_host_reserved", "{reserved:?}");
+    }
+    // A lookalike that merely ends the same way isn't beneath the parent.
+    assert_eq!(validate("notrellm.org").unwrap(), "notrellm.org");
+    // With no CDN split configured nothing is reserved.
+    assert_eq!(validate_custom_frontend_host("rellm.org", "", "").unwrap(), "rellm.org");
+    assert!(!is_domain_like(&format!("{}.com", "a".repeat(64))), "a label is at most 63 characters");
+}
+
+#[test]
+fn a_users_own_domain_serves_their_subdomain() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_cdn(conn, "rellm.org", "backend.rellm.org");
+        let admin_user = create_user(conn, "sd25_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let owner = create_user(conn, "sd25owner");
+        subscribe(conn, &admin, &owner, SubdomainSettings::default());
+        let save = |conn: &mut crate::db_connection::PgPooledConnection, host: Option<&str>| {
+            save_subdomain_settings(
+                SaveSubdomainSettingsRequest {
+                    subdomain_settings: Some(SubdomainSettings {
+                        custom_frontend_host: host.map(str::to_string),
+                        ..Default::default()
+                    }),
+                    keep_sharing_settings: true,
+                },
+                &owner,
+                conn,
+            )
+        };
+
+        // Nothing set: the host is just another domain, not a subdomain -- and the label hosts work as before.
+        assert!(scope(conn, "usersite.com").is_none());
+        assert!(scope(conn, "sd25owner.rellm.org").is_some());
+
+        let saved = save(conn, Some("UserSite.com"))?;
+        assert_eq!(saved.settings.unwrap().custom_frontend_host.as_deref(), Some("usersite.com"));
+        // The owner's domain (any port) now resolves to the same subdomain...
+        for host in ["usersite.com", "UserSite.com:8000"] {
+            let context = scope(conn, host).unwrap_or_else(|| panic!("{host} should resolve"));
+            assert_eq!(context.owner.id, owner.id);
+            assert_eq!(context.settings.subdomain, "sd25owner");
+        }
+        // ...and so do the label hosts (gRPC arrives at `<label>.<backend_host>`).
+        assert!(scope(conn, "sd25owner.backend.rellm.org").is_some());
+        assert!(scope(conn, "sd25owner.rellm.org").is_some());
+        // Other domains and the parent's own hosts stay what they were.
+        assert!(scope(conn, "other.com").is_none());
+        assert!(scope(conn, "rellm.org").is_none());
+        assert!(scope(conn, "backend.rellm.org").is_none());
+        assert!(scope(conn, "127.0.0.1:8000").is_none());
+
+        // The virtual configuration makes the owner's domain the site's identity; gRPC still goes to the label's backend.
+        let context = scope(conn, "usersite.com");
+        let config = crate::rpcs::get_server_configuration_for((), &None, &context, conn)?;
+        let cdn = config.external_cdn_config.unwrap();
+        assert_eq!(cdn.frontend_host, "usersite.com");
+        assert_eq!(cdn.backend_host, "sd25owner.backend.rellm.org");
+        assert_eq!(config.subdomain_settings.unwrap().custom_frontend_host.as_deref(), Some("usersite.com"));
+        // `/backend_host` on the owner's domain answers the label's backend, and feeds link to the owner's domain.
+        assert_eq!(
+            crate::web::external_cdn::backend_domain_for_host(
+                crate::rpcs::get_server_configuration_proto(conn)?.external_cdn_config.as_ref(),
+                "usersite.com",
+                || scope(conn, "usersite.com").map(|s| s.settings.subdomain),
+            ),
+            "sd25owner.backend.rellm.org"
+        );
+        assert_eq!(
+            crate::web::subdomain_web::feed_frontend_domain("rellm.org".to_string(), "usersite.com", &context),
+            "usersite.com"
+        );
+
+        // A save that doesn't mention the domain keeps it; an empty string clears it.
+        save(conn, None)?;
+        assert!(scope(conn, "usersite.com").is_some(), "unset keeps the stored domain");
+        let cleared = save(conn, Some(""))?;
+        assert_eq!(cleared.settings.unwrap().custom_frontend_host, None);
+        assert!(scope(conn, "usersite.com").is_none());
+        // Setting the same domain again is idempotent, and a later CDN change can't break an unrelated save of it.
+        save(conn, Some("usersite.com"))?;
+        save(conn, Some("usersite.com"))?;
+        assert!(scope(conn, "usersite.com").is_some());
+
+        // Refusals save nothing.
+        assert_eq!(save(conn, Some("jon.rellm.org")).unwrap_err().message(), "frontend_host_reserved");
+        assert_eq!(save(conn, Some("not a host")).unwrap_err().message(), "invalid_frontend_host");
+        assert!(scope(conn, "usersite.com").is_some(), "the refused saves left the stored domain alone");
+        Ok(())
+    });
+}
+
+#[test]
+fn a_domain_belongs_to_one_user_until_their_subdomain_lapses() {
+    let mut conn = test_conn();
+    conn.test_transaction::<_, Status, _>(|conn| {
+        configure_cdn(conn, "rellm.org", "backend.rellm.org");
+        let admin_user = create_user(conn, "sd26_admin");
+        let admin = grant_permissions(conn, &admin_user, vec![Permission::Admin]);
+        let first = create_user(conn, "sd26first");
+        let second = create_user(conn, "sd26second");
+        let first_subscription = subscribe(conn, &admin, &first, SubdomainSettings::default());
+        subscribe(conn, &admin, &second, SubdomainSettings::default());
+        let set = |conn: &mut crate::db_connection::PgPooledConnection, user: &models::User| {
+            save_subdomain_settings(
+                SaveSubdomainSettingsRequest {
+                    subdomain_settings: Some(SubdomainSettings {
+                        custom_frontend_host: Some("shared.com".to_string()),
+                        ..Default::default()
+                    }),
+                    keep_sharing_settings: true,
+                },
+                user,
+                conn,
+            )
+        };
+        set(conn, &first)?;
+        assert_eq!(set(conn, &second).unwrap_err().message(), "frontend_host_taken");
+        assert_eq!(scope(conn, "shared.com").unwrap().owner.id, first.id);
+
+        // The first user's subdomain lapses: they no longer serve it, and the domain is free for the second user to take.
+        lapse(conn, &first_subscription);
+        assert!(scope(conn, "shared.com").is_none(), "a lapsed subdomain doesn't serve its domain");
+        set(conn, &second)?;
+        assert_eq!(scope(conn, "shared.com").unwrap().owner.id, second.id);
+        assert_eq!(models::get_subdomain_frontend_host(first.id, conn)?, None);
         Ok(())
     });
 }

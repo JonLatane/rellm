@@ -59,7 +59,7 @@ import Json.Decode as Decode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SubdomainSettings, SyncDestination, SyncSource, User, UserSubdomain, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
+import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SubdomainSettings, SyncDestination, SyncSource, User, UserSubdomain, defaultAIProvider, defaultSubdomainSettings, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
@@ -119,6 +119,7 @@ type alias Model =
     , cancelingSubscriptions : Dict String SubmitStatus
     , subdomainExpanded : Bool
     , subdomainStatus : SubmitStatus
+    , subdomainHostEdit : Maybe String
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
@@ -243,6 +244,8 @@ type Msg
     | SubscriptionsExpandedToggled
     | CancelSubscriptionClicked MarketSubscription
     | SubdomainExpandedToggled
+    | SubdomainHostChanged String
+    | SaveSubdomainHostClicked String
     | SaveSubdomainSettingsClicked SubdomainSettings
     | SetUserSubdomainClicked Bool
     | GotSubdomainResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, UserSubdomain ))
@@ -1180,6 +1183,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , cancelingSubscriptions = Dict.empty
             , subdomainExpanded = fragment == Just "subdomain"
             , subdomainStatus = Idle
+            , subdomainHostEdit = Nothing
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
@@ -2710,6 +2714,26 @@ updateInner shared msg model =
         SubdomainExpandedToggled ->
             ( { model | subdomainExpanded = not model.subdomainExpanded }, Effect.none )
 
+        SubdomainHostChanged input ->
+            ( { model | subdomainHostEdit = Just input }, Effect.none )
+
+        -- The owner's own frontend domain (`SubdomainSettings.customFrontendHost`; an empty one removes it). A host-only save:
+        -- the toggles and the stylesheet are kept as stored.
+        SaveSubdomainHostClicked host ->
+            case serverAndAccount shared model of
+                Just ( server, account ) ->
+                    ( { model | subdomainStatus = Submitting }
+                    , Market.saveSubdomainSettings shared.accounts
+                        ( Just account.userId, server.frontendHost )
+                        True
+                        { defaultSubdomainSettings | customFrontendHost = Just host }
+                        |> attemptInActingEpoch model GotSubdomainResult
+                        |> Effect.fromCmd
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
         -- A "Share Content From ..." toggle on the user's own subdomain -- saved right away (`SaveSubdomainSettings`).
         SaveSubdomainSettingsClicked settings ->
             case serverAndAccount shared model of
@@ -2737,7 +2761,7 @@ updateInner shared msg model =
                     ( model, Effect.none )
 
         GotSubdomainResult (Ok ( maybeAccountsPanelMsg, updated )) ->
-            ( { model | subdomainStatus = Idle, resolver = withResolvedSubdomain updated model.resolver }
+            ( { model | subdomainStatus = Idle, subdomainHostEdit = Nothing, resolver = withResolvedSubdomain updated model.resolver }
             , accountsPanelEffect maybeAccountsPanelMsg
             )
 
@@ -5319,7 +5343,7 @@ profileDetail shared model server maybeAccount user =
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
         , subscriptionsSection shared.time.browserTimeZone shared.basePath shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
-        , subdomainSection shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) (connectedToSubdomain shared (maybeAccount |> Maybe.map .server)) isAdmin (isOwnProfile maybeAccount user) model.subdomainExpanded model.subdomainStatus user
+        , subdomainSection shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) (connectedToSubdomain shared (maybeAccount |> Maybe.map .server)) isAdmin (isOwnProfile maybeAccount user) model.subdomainExpanded model.subdomainStatus model.subdomainHostEdit user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , accountActionsSection canEdit model.passwordResetEdit user
         ]
@@ -6514,6 +6538,56 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
         ]
 
 
+{-| The subdomain's custom frontend host (`SubdomainSettings.customFrontendHost`): read-only text for everyone else, and for
+the owner an input with a Save button (an empty value removes it). `stored` is what the server has; `hostEdit` is the
+unsaved draft, if any.
+-}
+customHostView : Bool -> SubmitStatus -> Maybe String -> String -> Html Msg
+customHostView editable status hostEdit stored =
+    if not editable then
+        span [ class "profile-subscription-row-status" ]
+            [ text
+                ("Custom frontend host: "
+                    ++ (if stored == "" then
+                            "None"
+
+                        else
+                            stored
+                       )
+                )
+            ]
+
+    else
+        let
+            draft : String
+            draft =
+                Maybe.withDefault stored hostEdit
+        in
+        div [ class "profile-subdomain-host" ]
+            [ label []
+                [ text "Custom frontend host"
+                , input
+                    [ type_ "text"
+                    , value draft
+                    , placeholder "usersite.com"
+                    , onInput SubdomainHostChanged
+                    , disabled (status == Submitting)
+                    , attribute "autocapitalize" "none"
+                    , attribute "autocomplete" "off"
+                    ]
+                    []
+                ]
+            , button
+                [ class "profile-edit-button"
+                , onClick (SaveSubdomainHostClicked draft)
+                , disabled (status == Submitting || String.trim draft == stored)
+                ]
+                [ text "Save Host" ]
+            , span [ class "profile-subscription-row-status" ]
+                [ text "A domain you point at this server to serve your subdomain from. Leave it empty to remove it." ]
+            ]
+
+
 {-| Whether `maybeHost` (the connected server's frontend host) is itself a Rellm Subdomain, per the configuration it served
 (`ServerConfiguration.subdomain_settings`).
 -}
@@ -6534,8 +6608,8 @@ immediately. Shown to the profile's own owner or an Admin, same gating as `subsc
 populated for those two viewers). Hidden for an owner with nothing to see (not enabled, no way to buy it is not this
 section's business -- the Market page sells it).
 -}
-subdomainSection : String -> Maybe String -> Bool -> Bool -> Bool -> Bool -> SubmitStatus -> User -> Html Msg
-subdomainSection mainFrontendHost maybeHost hostIsSubdomain isAdmin isOwn expanded status user =
+subdomainSection : String -> Maybe String -> Bool -> Bool -> Bool -> Bool -> SubmitStatus -> Maybe String -> User -> Html Msg
+subdomainSection mainFrontendHost maybeHost hostIsSubdomain isAdmin isOwn expanded status hostEdit user =
     case user.subdomain of
         Nothing ->
             text ""
@@ -6611,6 +6685,7 @@ subdomainSection mainFrontendHost maybeHost hostIsSubdomain isAdmin isOwn expand
                     [ div [ class "profile-subscription-subdomain" ]
                         [ span [ class "profile-subscription-row-status" ] [ text ("Address: " ++ address) ]
                         , span [ class "profile-subscription-row-status" ] [ text why ]
+                        , customHostView (isOwn && subdomain.enabled) status hostEdit (Maybe.withDefault "" settings.customFrontendHost)
                         , toggle "Share Content From Followers" settings.shareContentFromFollowers (\on -> { settings | shareContentFromFollowers = on })
                         , toggle "Share Content From Following" settings.shareContentFromFollowing (\on -> { settings | shareContentFromFollowing = on })
                         , toggle "Share Content From Friends" settings.shareContentFromFriends (\on -> { settings | shareContentFromFriends = on })

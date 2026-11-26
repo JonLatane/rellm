@@ -653,6 +653,7 @@ class SubdomainSettings extends $pb.GeneratedMessage {
     $core.bool? shareContentFromFollowing,
     $core.bool? shareContentFromFriends,
     CustomCSSConfiguration? customCssConfiguration,
+    $core.String? customFrontendHost,
   }) {
     final $result = create();
     if (subdomainOf != null) {
@@ -673,6 +674,9 @@ class SubdomainSettings extends $pb.GeneratedMessage {
     if (customCssConfiguration != null) {
       $result.customCssConfiguration = customCssConfiguration;
     }
+    if (customFrontendHost != null) {
+      $result.customFrontendHost = customFrontendHost;
+    }
     return $result;
   }
   SubdomainSettings._() : super();
@@ -686,6 +690,7 @@ class SubdomainSettings extends $pb.GeneratedMessage {
     ..aOB(4, _omitFieldNames ? '' : 'shareContentFromFollowing')
     ..aOB(5, _omitFieldNames ? '' : 'shareContentFromFriends')
     ..aOM<CustomCSSConfiguration>(6, _omitFieldNames ? '' : 'customCssConfiguration', subBuilder: CustomCSSConfiguration.create)
+    ..aOS(7, _omitFieldNames ? '' : 'customFrontendHost')
     ..hasRequiredFields = false
   ;
 
@@ -778,6 +783,26 @@ class SubdomainSettings extends $pb.GeneratedMessage {
   void clearCustomCssConfiguration() => clearField(6);
   @$pb.TagNumber(6)
   CustomCSSConfiguration ensureCustomCssConfiguration() => $_ensure(5);
+
+  /// A domain the owner points at this server to serve the subdomain from -- e.g. `usersite.com` as the frontend for
+  /// `jon.bullcity.social`, whose gRPC backend stays `jon.<ExternalCDNConfig.backend_host>`. The owner owns the DNS/CDN for
+  /// it, like the server's own `ExternalCDNConfig.frontend_host`. A request whose `Host` is this domain resolves to the
+  /// subdomain exactly like `<subdomain>.<frontend_host>` does, and the subdomain's virtual
+  /// `ServerConfiguration.external_cdn_config.frontend_host` is this domain instead, so pages adopt it as the site's
+  /// identity -- which makes `<subdomain>.<frontend_host>` itself a non-primary address (it still answers, but a page
+  /// loaded there would turn into this domain). Lower case, a hostname with at least one dot: no scheme, port or path, not
+  /// an IP address, and not the server's own `frontend_host`/`backend_host` or anything beneath them. Unique among users;
+  /// a domain held by a user whose subdomain is no longer enabled is free for another to take.
+  /// On `SaveSubdomainSettings`: unset keeps the stored value, an empty string clears it. Unset in a
+  /// `GetServerConfiguration` reply when there is none.
+  @$pb.TagNumber(7)
+  $core.String get customFrontendHost => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set customFrontendHost($core.String v) { $_setString(6, v); }
+  @$pb.TagNumber(7)
+  $core.bool hasCustomFrontendHost() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearCustomFrontendHost() => clearField(7);
 }
 
 ///  Coordinates a small piece of shared, cluster-wide state across multiple independent Rellm
