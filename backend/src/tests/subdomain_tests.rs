@@ -900,6 +900,21 @@ fn the_manifest_uses_a_configured_primary_color_and_pads_small_ones() {
 }
 
 /// rellm.org's own setup: a Cloudflare frontend at `rellm.org`, the real backend at `backend.rellm.org`.
+/// Changes the CDN hosts of the (already created) server configuration.
+fn set_cdn_hosts(conn: &mut crate::db_connection::PgPooledConnection, frontend_host: &str, backend_host: &str) {
+    diesel::update(server_configurations::table)
+        .set(server_configurations::external_cdn_config.eq(Some(
+            serde_json::to_value(ExternalCdnConfig {
+                frontend_host: frontend_host.to_string(),
+                backend_host: backend_host.to_string(),
+                ..Default::default()
+            })
+            .unwrap(),
+        )))
+        .execute(conn)
+        .expect("failed to change the CDN hosts");
+}
+
 fn configure_cdn(conn: &mut crate::db_connection::PgPooledConnection, frontend_host: &str, backend_host: &str) {
     let mut new_config = models::default_server_configuration();
     new_config.external_cdn_config = Some(
@@ -1115,10 +1130,17 @@ fn a_users_own_domain_serves_their_subdomain() {
         let cleared = save(conn, Some(""))?;
         assert_eq!(cleared.settings.unwrap().custom_frontend_host, None);
         assert!(scope(conn, "usersite.com").is_none());
-        // Setting the same domain again is idempotent, and a later CDN change can't break an unrelated save of it.
+        // Setting the same domain again is idempotent...
         save(conn, Some("usersite.com"))?;
         save(conn, Some("usersite.com"))?;
         assert!(scope(conn, "usersite.com").is_some());
+        // ...and a later CDN change that makes the stored domain reserved can't break a save that carries it (the value is
+        // compared before anything is validated), while setting a *new* domain under it is refused.
+        set_cdn_hosts(conn, "usersite.com", "backend.usersite.com");
+        save(conn, Some("usersite.com"))?;
+        save(conn, Some(" UserSite.com "))?;
+        assert_eq!(save(conn, Some("other.usersite.com")).unwrap_err().message(), "frontend_host_reserved");
+        set_cdn_hosts(conn, "rellm.org", "backend.rellm.org");
 
         // Refusals save nothing.
         assert_eq!(save(conn, Some("jon.rellm.org")).unwrap_err().message(), "frontend_host_reserved");

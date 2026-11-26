@@ -288,13 +288,19 @@ pub fn set_custom_frontend_host(user: &models::User, requested: &str, conn: &mut
         let wanted = if requested.trim().is_empty() {
             None
         } else {
-            let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
-            let host = validate_custom_frontend_host(requested, &cdn.frontend_host, &cdn.backend_host)?;
-            if current.as_deref() == Some(host.as_str()) {
+            // What the user already has is left alone *before* anything is validated, so a later CDN change that makes it
+            // reserved can't make an unrelated save of the same value fail.
+            if current.as_deref() == Some(requested.trim().to_ascii_lowercase().as_str()) {
                 return Ok(());
             }
+            let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+            let host = validate_custom_frontend_host(requested, &cdn.frontend_host, &cdn.backend_host)?;
             if let Some(holder) = models::get_user_by_subdomain_frontend_host(&host, conn)? {
                 if holder.id != user.id {
+                    // The holder's row is locked and their entitlement re-read under that lock (as
+                    // `release_label_if_not_enabled` does), so an admin re-enabling them can't slip in between the check and
+                    // the release and have their domain taken from under an enabled owner.
+                    lock_user_row(holder.id, conn)?;
                     let summary = models::get_subdomain_summary(holder.id, conn)?;
                     if is_enabled(&summary, conn)? {
                         return Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"));

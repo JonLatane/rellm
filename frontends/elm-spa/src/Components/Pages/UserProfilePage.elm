@@ -2739,7 +2739,7 @@ updateInner shared msg model =
             case serverAndAccount shared model of
                 Just ( server, account ) ->
                     ( { model | subdomainStatus = Submitting }
-                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, server.frontendHost ) False { settings | customCssConfiguration = Nothing }
+                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, server.frontendHost ) False { settings | customCssConfiguration = Nothing, customFrontendHost = Nothing }
                         |> attemptInActingEpoch model GotSubdomainResult
                         |> Effect.fromCmd
                     )

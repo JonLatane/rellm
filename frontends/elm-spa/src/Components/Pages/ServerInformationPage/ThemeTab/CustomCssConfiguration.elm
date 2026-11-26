@@ -222,7 +222,8 @@ updateInner shared targetHost msg model =
                               Market.saveSubdomainSettings shared.accounts
                                 ( Just account.userId, targetHost )
                                 True
-                                { settings | customCssConfiguration = Just request }
+                                -- `customFrontendHost = Nothing`: a stylesheet save never touches the domain, so a stale copy can't restore an old one.
+                                { settings | customCssConfiguration = Just request, customFrontendHost = Nothing }
                                 |> Task.map
                                     (Tuple.mapSecond
                                         (\saved ->
