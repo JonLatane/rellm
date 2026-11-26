@@ -297,12 +297,16 @@ pub fn set_custom_frontend_host(user: &models::User, requested: &str, conn: &mut
             let host = validate_custom_frontend_host(requested, &cdn.frontend_host, &cdn.backend_host)?;
             if let Some(holder) = models::get_user_by_subdomain_frontend_host(&host, conn)? {
                 if holder.id != user.id {
-                    // The holder's row is locked and their entitlement re-read under that lock (as
-                    // `release_label_if_not_enabled` does), so an admin re-enabling them can't slip in between the check and
-                    // the release and have their domain taken from under an enabled owner.
+                    // An enabled holder is refused without taking their lock: two owners asking for each other's
+                    // domains at once must both be refused, not wait on each other's row locks (a deadlock).
+                    if is_enabled(&models::get_subdomain_summary(holder.id, conn)?, conn)? {
+                        return Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"));
+                    }
+                    // Only a holder that looks lapsed is locked and their entitlement re-read under the lock (as
+                    // `release_label_if_not_enabled` does), so an admin re-enabling them can't slip in between the check
+                    // and the release and have their domain taken from under an enabled owner.
                     lock_user_row(holder.id, conn)?;
-                    let summary = models::get_subdomain_summary(holder.id, conn)?;
-                    if is_enabled(&summary, conn)? {
+                    if is_enabled(&models::get_subdomain_summary(holder.id, conn)?, conn)? {
                         return Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"));
                     }
                     diesel::delete(subdomain_frontend_hosts::table.filter(subdomain_frontend_hosts::user_id.eq(holder.id)))
@@ -411,7 +415,11 @@ pub fn lock_user_row(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), 
         .for_update()
         .first::<i64>(conn)
         .map(|_| ())
-        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => Status::new(Code::NotFound, "user_not_found"),
+            // A lock failure (a deadlock Postgres broke, a dropped connection) is not a missing user.
+            e => internal("Failed to lock a user row", "failed_to_lock_user")(e),
+        })
 }
 
 /// Reserves `user`'s label for them and returns it: the one they already hold (fixed once claimed -- a later rename
