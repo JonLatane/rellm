@@ -2093,7 +2093,7 @@ Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings).
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored. |
+| subdomain_settings | [SubdomainSettings](#rellm-SubdomainSettings) |  | The new settings. Only `share_content_from_followers`/`_following`/`_friends`, `custom_css_configuration` and `custom_frontend_host` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored. |
 | keep_sharing_settings | [bool](#bool) |  | When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that only changes the stylesheet (the Theme tab), so a stale copy of the toggles can&#39;t undo a change made elsewhere. |
 
 
@@ -4305,6 +4305,7 @@ content (plus whatever the `share_content_from_*` toggles add), and `GetServerCo
 | share_content_from_following | [bool](#bool) |  | Also show posts/events by users the owner *follows* (an accepted `Follow` by the owner). |
 | share_content_from_friends | [bool](#bool) |  | Also show posts/events by the owner&#39;s *friends* -- users who follow the owner and whom the owner follows back. |
 | custom_css_configuration | [CustomCSSConfiguration](#rellm-CustomCSSConfiguration) | optional | The subdomain&#39;s own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain. Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`). `custom_css` is never carried in `User.subdomain` or in `GetServerConfiguration`&#39;s copy -- read the text with `GetCustomCSS` on the subdomain&#39;s host, same as `ServerConfiguration.custom_css_configuration`. On `SaveSubdomainSettings`, an unset `custom_css` keeps the stored stylesheet. |
+| custom_frontend_host | [string](#string) | optional | A domain the owner points at this server to serve the subdomain from -- e.g. `usersite.com` as the frontend for `jon.bullcity.social`, whose gRPC backend stays `jon.&lt;ExternalCDNConfig.backend_host&gt;`. The owner owns the DNS/CDN for it, like the server&#39;s own `ExternalCDNConfig.frontend_host`. A request whose `Host` is this domain resolves to the subdomain exactly like `&lt;subdomain&gt;.&lt;frontend_host&gt;` does, and the subdomain&#39;s virtual `ServerConfiguration.external_cdn_config.frontend_host` is this domain instead, so pages adopt it as the site&#39;s identity -- which makes `&lt;subdomain&gt;.&lt;frontend_host&gt;` itself a non-primary address (it still answers, but a page loaded there would turn into this domain). Lower case, a hostname with at least one dot: no scheme, port or path, not an IP address, and not the server&#39;s own `frontend_host`/`backend_host` or anything beneath them. Unique among users; a domain held by a user whose subdomain is no longer enabled is free for another to take. On `SaveSubdomainSettings`: unset keeps the stored value, an empty string clears it. Unset in a `GetServerConfiguration` reply when there is none. |
 
 
 

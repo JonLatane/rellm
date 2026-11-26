@@ -11,7 +11,9 @@ use crate::schema::users;
 /// `share_content_from_*` toggles and `custom_css_configuration` -- onto their user row, and nothing else
 /// (`subdomain_of`/`subdomain` are server-assigned and ignored). The subdomain must be enabled (a subscription in
 /// force, or an admin's grant). The CSS is validated exactly like `ConfigureCustomCSS`; an unset `custom_css` keeps
-/// the stored text, and no `custom_css_configuration` at all keeps the stored stylesheet settings.
+/// the stored text, and no `custom_css_configuration` at all keeps the stored stylesheet settings. An unset
+/// `custom_frontend_host` keeps the stored domain, `""` clears it, anything else is validated and claimed
+/// (`subdomains::set_custom_frontend_host`).
 pub fn save_subdomain_settings(
     request: SaveSubdomainSettingsRequest,
     current_user: &models::User,
@@ -44,6 +46,12 @@ pub fn save_subdomain_settings(
             })
         })
         .transpose()?;
+
+    // The owner's own frontend domain: unset keeps it, an empty string clears it. Before anything is written, so a refusal
+    // (invalid, reserved, taken) saves nothing.
+    if let Some(requested) = incoming.custom_frontend_host.as_deref() {
+        subdomains::set_custom_frontend_host(current_user, requested, conn)?;
+    }
 
     let (followers, following, friends) = if request.keep_sharing_settings {
         (summary.subdomain_share_followers, summary.subdomain_share_following, summary.subdomain_share_friends)
@@ -78,5 +86,6 @@ pub fn save_subdomain_settings(
     }
 
     subdomains::invalidate_cache();
-    Ok(subdomains::user_subdomain_proto(&models::get_subdomain_summary(current_user.id, conn)?, subscribed))
+    let frontend_host = models::get_subdomain_frontend_host(current_user.id, conn)?;
+    Ok(subdomains::user_subdomain_proto(&models::get_subdomain_summary(current_user.id, conn)?, subscribed, frontend_host))
 }

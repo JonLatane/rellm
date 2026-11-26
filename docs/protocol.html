@@ -4081,7 +4081,7 @@ directory</a> is (<code>{name}</code> denotes a
           <td>subdomain_settings</td>
           <td><a href="#rellm-SubdomainSettings">SubdomainSettings</a></td>
           <td></td>
-          <td>The new settings. Only <code>share_content_from_followers</code>/<code>_following</code>/<code>_friends</code> and <code>custom_css_configuration</code> are read -- <code>subdomain_of</code>/<code>subdomain</code> are server-assigned and ignored.</td>
+          <td>The new settings. Only <code>share_content_from_followers</code>/<code>_following</code>/<code>_friends</code>, <code>custom_css_configuration</code> and <code>custom_frontend_host</code> are read -- <code>subdomain_of</code>/<code>subdomain</code> are server-assigned and ignored.</td>
         </tr>
         <tr>
           <td>keep_sharing_settings</td>
@@ -9127,6 +9127,12 @@ directory</a> is (<code>{name}</code> denotes a
           <td><a href="#rellm-CustomCSSConfiguration">CustomCSSConfiguration</a></td>
           <td>optional</td>
           <td>The subdomain's own custom stylesheet, edited in the Theme tab and served at <code>/custom_css.css</code> on the subdomain. Same validation as <a href="#grpc-api-ConfigureCustomCSS"><code>ConfigureCustomCSS</code></a> (<code>media_ids</code> must be <code>GLOBAL_PUBLIC</code>). <code>custom_css</code> is never carried in <code>User.subdomain</code> or in <code>GetServerConfiguration</code>'s copy -- read the text with <code>GetCustomCSS</code> on the subdomain's host, same as <code>ServerConfiguration.custom_css_configuration</code>. On <code>SaveSubdomainSettings</code>, an unset <code>custom_css</code> keeps the stored stylesheet.</td>
+        </tr>
+        <tr>
+          <td>custom_frontend_host</td>
+          <td><a href="#string">string</a></td>
+          <td>optional</td>
+          <td>A domain the owner points at this server to serve the subdomain from -- e.g. <code>usersite.com</code> as the frontend for <code>jon.bullcity.social</code>, whose gRPC backend stays <code>jon.&#x26;lt;ExternalCDNConfig.backend_host&#x26;gt;</code>. The owner owns the DNS/CDN for it, like the server's own <code>ExternalCDNConfig.frontend_host</code>. A request whose <code>Host</code> is this domain resolves to the subdomain exactly like <code>&#x26;lt;subdomain&#x26;gt;.&#x26;lt;frontend_host&#x26;gt;</code> does, and the subdomain's virtual <code>ServerConfiguration.external_cdn_config.frontend_host</code> is this domain instead, so pages adopt it as the site's identity -- which makes <code>&#x26;lt;subdomain&#x26;gt;.&#x26;lt;frontend_host&#x26;gt;</code> itself a non-primary address (it still answers, but a page loaded there would turn into this domain). Lower case, a hostname with at least one dot: no scheme, port or path, not an IP address, and not the server's own <code>frontend_host</code>/<code>backend_host</code> or anything beneath them. Unique among users; a domain held by a user whose subdomain is no longer enabled is free for another to take. On <code>SaveSubdomainSettings</code>: unset keeps the stored value, an empty string clears it. Unset in a <code>GetServerConfiguration</code> reply when there is none.</td>
         </tr>
       </tbody>
     </table>

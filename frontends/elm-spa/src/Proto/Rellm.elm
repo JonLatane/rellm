@@ -4939,8 +4939,8 @@ encodeSaveSubdomainSettingsRequest =
 
 ### subdomainSettings
 
- The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
- read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+ The new settings. Only `share_content_from_followers`/`_following`/`_friends`, `custom_css_configuration` and
+ `custom_frontend_host` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
 
 
 ### keepSharingSettings
@@ -7528,6 +7528,7 @@ fieldNumbersSubdomainSettings :
     , shareContentFromFollowing : Int
     , shareContentFromFriends : Int
     , customCssConfiguration : Int
+    , customFrontendHost : Int
     }
 fieldNumbersSubdomainSettings =
     Proto.Rellm.Internals_.fieldNumbersProto__Rellm__SubdomainSettings

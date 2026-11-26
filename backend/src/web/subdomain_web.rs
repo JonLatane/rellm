@@ -32,7 +32,7 @@ pub fn request_configuration(conn: &mut PgPooledConnection, host: &Host<'_>) -> 
 }
 
 /// The public frontend domain for links in a feed served at `request_host` (the request's own domain, no port):
-/// the subdomain itself on a subdomain. `configured_frontend_domain` is the parent's configured host -- or, with
+/// the subdomain itself on a subdomain (its `custom_frontend_host` when it has one). `configured_frontend_domain` is the parent's configured host -- or, with
 /// `cdn_grpc` on (or no CDN configuration), the request's own host, which already *is* the subdomain. That case is
 /// told apart by comparing the two *whole* hosts (never a label prefix: an owner named like the parent's first
 /// label, `bullcity` on `bullcity.test`, must still be prefixed), and is left as it is.
@@ -42,6 +42,10 @@ pub fn feed_frontend_domain(
     subdomain: &Option<SubdomainContext>,
 ) -> String {
     match subdomain {
+        // The owner's own domain, if they set one.
+        Some(subdomain) if subdomain.settings.custom_frontend_host.as_deref().is_some_and(|host| !host.is_empty()) => {
+            subdomain.settings.custom_frontend_host.clone().unwrap_or_default()
+        }
         Some(subdomain) if !subdomain.settings.subdomain.is_empty() => {
             if configured_frontend_domain.eq_ignore_ascii_case(request_host) {
                 configured_frontend_domain

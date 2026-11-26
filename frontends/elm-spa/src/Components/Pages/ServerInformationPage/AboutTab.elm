@@ -168,7 +168,7 @@ update shared targetHost msg model =
             case Common.subdomainOwnerAccountFor shared targetHost of
                 Just account ->
                     ( { model | subdomainSettings = Just settings, subdomainStatus = AccountsPanel.Submitting }
-                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, targetHost ) False { settings | customCssConfiguration = Nothing }
+                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, targetHost ) False { settings | customCssConfiguration = Nothing, customFrontendHost = Nothing }
                         |> Task.attempt GotSubdomainSaved
                         |> Effect.fromCmd
                     )

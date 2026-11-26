@@ -384,8 +384,8 @@ export interface UserSubdomain {
 /** Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings). */
 export interface SaveSubdomainSettingsRequest {
   /**
-   * The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
-   * read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+   * The new settings. Only `share_content_from_followers`/`_following`/`_friends`, `custom_css_configuration` and
+   * `custom_frontend_host` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
    */
   subdomainSettings:
     | SubdomainSettings

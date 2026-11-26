@@ -20,7 +20,7 @@ use crate::marshaling::{ToProtoId, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
-use crate::schema::{market_subscriptions, users};
+use crate::schema::{market_subscriptions, subdomain_frontend_hosts, users};
 
 /// A tiny TTL map for the two things every subdomain-aware request would otherwise ask the database for: the
 /// parent's `frontend_host`/`backend_host`, and which subscription (if any) a host resolves to. Entries expire
@@ -207,9 +207,13 @@ pub fn is_enabled(
 }
 
 /// `UserSubdomain` for the profile -- the settings (no stylesheet), and why the subdomain is (not) enabled.
-pub fn user_subdomain_proto(summary: &models::UserSubdomainSummary, subscribed: bool) -> UserSubdomain {
+pub fn user_subdomain_proto(
+    summary: &models::UserSubdomainSummary,
+    subscribed: bool,
+    frontend_host: Option<String>,
+) -> UserSubdomain {
     UserSubdomain {
-        settings: Some(settings_for(summary, None)),
+        settings: Some(settings_for(summary, None, frontend_host)),
         enabled: summary.subdomain_granted_by_admin || subscribed,
         subscribed,
         granted_by_admin: summary.subdomain_granted_by_admin,
@@ -221,6 +225,7 @@ pub fn user_subdomain_proto(summary: &models::UserSubdomainSummary, subscribed: 
 pub fn settings_for(
     summary: &models::UserSubdomainSummary,
     custom_css: Option<serde_json::Value>,
+    frontend_host: Option<String>,
 ) -> SubdomainSettings {
     SubdomainSettings {
         subdomain_of: summary.subdomain.as_ref().map(|_| summary.id.to_proto_id()).unwrap_or_default(),
@@ -229,7 +234,112 @@ pub fn settings_for(
         share_content_from_following: summary.subdomain_share_following,
         share_content_from_friends: summary.subdomain_share_friends,
         custom_css_configuration: custom_css.and_then(|v| serde_json::from_value(v).ok()),
+        custom_frontend_host: frontend_host,
     }
+}
+
+/// Whether `host` (already lower case, no port) is shaped like a registrable domain a user could own: at least two
+/// labels of `a-z`, `0-9` and inner `-` (1-63 characters each, 253 in all) and a TLD that isn't all digits -- which
+/// also rules out IP addresses, `localhost` and bare names. Says nothing about whether it may be a subdomain's host.
+pub fn is_domain_like(host: &str) -> bool {
+    let labels: Vec<&str> = host.split('.').collect();
+    host.len() <= 253
+        && labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+        && !labels.last().is_some_and(|tld| tld.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether `host` is `parent` itself or anything beneath it (`a.b.parent`). False for an empty `parent`.
+fn is_parent_or_beneath(host: &str, parent: &str) -> bool {
+    let parent = normalize_host(parent);
+    !parent.is_empty() && (host == parent || host.ends_with(&format!(".{parent}")))
+}
+
+/// A user's requested `custom_frontend_host` as it would be stored (trimmed, lower case), or the refusal: not a domain
+/// (`invalid_frontend_host`), or the server's own `frontend_host`/`backend_host` or something beneath them
+/// (`frontend_host_reserved` -- those are the parent's and its subdomains', and `<label>.<frontend_host>` already
+/// serves every subdomain).
+pub fn validate_custom_frontend_host(raw: &str, frontend_host: &str, backend_host: &str) -> Result<String, Status> {
+    let host = raw.trim().to_ascii_lowercase();
+    if !is_domain_like(&host) {
+        return Err(Status::new(Code::InvalidArgument, "invalid_frontend_host"));
+    }
+    if is_parent_or_beneath(&host, frontend_host) || is_parent_or_beneath(&host, backend_host) {
+        return Err(Status::new(Code::FailedPrecondition, "frontend_host_reserved"));
+    }
+    Ok(host)
+}
+
+/// Sets (or, with an empty `requested`, clears) `user`'s `custom_frontend_host`. Validates it, refuses one another user
+/// holds whose subdomain is still enabled (`frontend_host_taken`) and takes it over from one whose subdomain no longer is
+/// -- the same rule as labels. Setting what the user already has changes nothing and re-validates nothing, so a later
+/// change to the CDN configuration can't make unrelated saves fail. All under the user's row lock; the unique index
+/// the table's primary key backstops a race for the same domain.
+pub fn set_custom_frontend_host(user: &models::User, requested: &str, conn: &mut PgPooledConnection) -> Result<(), Status> {
+    in_transaction(conn, |conn| {
+        lock_user_row(user.id, conn)?;
+        let current = models::get_subdomain_frontend_host(user.id, conn)?;
+        let wanted = if requested.trim().is_empty() {
+            None
+        } else {
+            // What the user already has is left alone *before* anything is validated, so a later CDN change that makes it
+            // reserved can't make an unrelated save of the same value fail.
+            if current.as_deref() == Some(requested.trim().to_ascii_lowercase().as_str()) {
+                return Ok(());
+            }
+            let cdn = get_server_configuration_proto(conn)?.external_cdn_config.unwrap_or_default();
+            let host = validate_custom_frontend_host(requested, &cdn.frontend_host, &cdn.backend_host)?;
+            if let Some(holder) = models::get_user_by_subdomain_frontend_host(&host, conn)? {
+                if holder.id != user.id {
+                    // An enabled holder is refused without taking their lock: two owners asking for each other's
+                    // domains at once must both be refused, not wait on each other's row locks (a deadlock).
+                    if is_enabled(&models::get_subdomain_summary(holder.id, conn)?, conn)? {
+                        return Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"));
+                    }
+                    // Only a holder that looks lapsed is locked and their entitlement re-read under the lock (as
+                    // `release_label_if_not_enabled` does), so an admin re-enabling them can't slip in between the check
+                    // and the release and have their domain taken from under an enabled owner.
+                    lock_user_row(holder.id, conn)?;
+                    if is_enabled(&models::get_subdomain_summary(holder.id, conn)?, conn)? {
+                        return Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"));
+                    }
+                    diesel::delete(subdomain_frontend_hosts::table.filter(subdomain_frontend_hosts::user_id.eq(holder.id)))
+                        .execute(conn)
+                        .map_err(internal("Failed to release a frontend host", "failed_to_update_user"))?;
+                }
+            }
+            Some(host)
+        };
+        if current == wanted {
+            return Ok(());
+        }
+        // A savepoint, so a lost race doesn't abort a surrounding transaction -- it is just a refusal.
+        let saved = conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            diesel::delete(subdomain_frontend_hosts::table.filter(subdomain_frontend_hosts::user_id.eq(user.id))).execute(conn)?;
+            match &wanted {
+                Some(host) => diesel::insert_into(subdomain_frontend_hosts::table)
+                    .values((subdomain_frontend_hosts::host.eq(host), subdomain_frontend_hosts::user_id.eq(user.id)))
+                    .execute(conn),
+                None => Ok(0),
+            }
+        });
+        match saved {
+            Ok(_) => {
+                invalidate_cache();
+                Ok(())
+            }
+            Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
+                Err(Status::new(Code::FailedPrecondition, "frontend_host_taken"))
+            }
+            Err(e) => Err(internal("Failed to save a frontend host", "failed_to_update_user")(e)),
+        }
+    })
 }
 
 /// Whether `user` may hold the subdomain label their username makes, as far as the label itself goes: a valid DNS label,
@@ -305,7 +415,11 @@ pub fn lock_user_row(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), 
         .for_update()
         .first::<i64>(conn)
         .map(|_| ())
-        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => Status::new(Code::NotFound, "user_not_found"),
+            // A lock failure (a deadlock Postgres broke, a dropped connection) is not a missing user.
+            e => internal("Failed to lock a user row", "failed_to_lock_user")(e),
+        })
 }
 
 /// Reserves `user`'s label for them and returns it: the one they already hold (fixed once claimed -- a later rename
@@ -415,22 +529,41 @@ pub fn resolve_subdomain(
     };
     // A subdomain is reached at `<label>.<frontend_host>` (pages) and, for gRPC when the backend is a separate host,
     // at `<label>.<backend_host>` (what `/backend_host` returns on a subdomain) -- so every request carries which
-    // server it is for, and the parent and a subdomain are never confused even though they share a backend.
-    let Some(label) = subdomain_label_for_request_host(host, &frontend_host, &backend_host) else {
-        // The parent itself, or a host that isn't one label beneath it: no database work at all.
-        return Ok(None);
+    // server it is for, and the parent and a subdomain are never confused even though they share a backend. Or at the
+    // owner's own `custom_frontend_host`, for a host outside the parent's domains that looks like a domain at all.
+    let lookup = match subdomain_label_for_request_host(host, &frontend_host, &backend_host) {
+        Some(label) => Lookup::Label(label),
+        None => {
+            let bare = normalize_host(host);
+            if is_parent_or_beneath(&bare, &frontend_host) || is_parent_or_beneath(&bare, &backend_host) || !is_domain_like(&bare) {
+                // The parent itself, a host beneath it that isn't a held label, or something that can't be a custom domain
+                // (an IP, `localhost`): no database work at all.
+                return Ok(None);
+            }
+            Lookup::CustomHost(bare)
+        }
+    };
+    let cache_key = match &lookup {
+        Lookup::Label(label) => label.clone(),
+        // Labels never contain a dot, so the two kinds of key can't collide.
+        Lookup::CustomHost(host) => format!("host:{host}"),
     };
     if cache_enabled() {
-        if let Some(cached) = RESOLVED.lock().ok().and_then(|c| c.get(&label, now)) {
+        if let Some(cached) = RESOLVED.lock().ok().and_then(|c| c.get(&cache_key, now)) {
             return Ok(cached);
         }
     }
-    let resolved = match models::get_user_by_subdomain_label(&label, conn)? {
+    let holder = match &lookup {
+        Lookup::Label(label) => models::get_user_by_subdomain_label(label, conn)?,
+        Lookup::CustomHost(host) => models::get_user_by_subdomain_frontend_host(host, conn)?,
+    };
+    let resolved = match holder {
         Some(owner) => {
             let summary = models::get_subdomain_summary(owner.id, conn)?;
-            if is_enabled(&summary, conn)? {
+            // A custom host only serves a subdomain whose label the user actually holds.
+            if summary.subdomain.is_some() && is_enabled(&summary, conn)? {
                 let css = models::get_subdomain_custom_css(owner.id, conn)?;
-                Some(SubdomainContext { settings: settings_for(&summary, css), owner })
+                Some(SubdomainContext { settings: settings_for(&summary, css, models::get_subdomain_frontend_host(owner.id, conn)?), owner })
             } else {
                 None
             }
@@ -439,10 +572,16 @@ pub fn resolve_subdomain(
     };
     if cache_enabled() {
         if let Ok(mut cache) = RESOLVED.lock() {
-            cache.put(label, resolved.clone(), now);
+            cache.put(cache_key, resolved.clone(), now);
         }
     }
     Ok(resolved)
+}
+
+/// What a request's host asks for: a subdomain by label, or whoever set the host as their own frontend.
+enum Lookup {
+    Label(String),
+    CustomHost(String),
 }
 
 impl SubdomainContext {
@@ -513,7 +652,11 @@ impl SubdomainContext {
         // frontend's), which is how the backend knows the request is for the subdomain and not the parent.
         if let Some(cdn) = config.external_cdn_config.as_mut() {
             if !cdn.frontend_host.is_empty() {
-                cdn.frontend_host = format!("{}.{}", self.settings.subdomain, cdn.frontend_host);
+                cdn.frontend_host = match self.settings.custom_frontend_host.as_deref() {
+                    // The owner's own domain is the site's identity; gRPC still goes to `<label>.<backend_host>` below.
+                    Some(custom) if !custom.is_empty() => custom.to_string(),
+                    _ => format!("{}.{}", self.settings.subdomain, cdn.frontend_host),
+                };
             }
             if !cdn.backend_host.is_empty() {
                 cdn.backend_host = format!("{}.{}", self.settings.subdomain, cdn.backend_host);

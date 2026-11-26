@@ -9541,6 +9541,7 @@ fieldNumbersProto__Rellm__SubdomainSettings :
     , shareContentFromFollowing : Int
     , shareContentFromFriends : Int
     , customCssConfiguration : Int
+    , customFrontendHost : Int
     }
 fieldNumbersProto__Rellm__SubdomainSettings =
     { subdomainOf = 1
@@ -9549,6 +9550,7 @@ fieldNumbersProto__Rellm__SubdomainSettings =
     , shareContentFromFollowing = 4
     , shareContentFromFriends = 5
     , customCssConfiguration = 6
+    , customFrontendHost = 7
     }
 
 
@@ -9563,6 +9565,7 @@ defaultProto__Rellm__SubdomainSettings =
     , shareContentFromFollowing = False
     , shareContentFromFriends = False
     , customCssConfiguration = Nothing
+    , customFrontendHost = Nothing
     }
 
 
@@ -9582,6 +9585,10 @@ decodeProto__Rellm__SubdomainSettings =
             6
             (Protobuf.Decode.map Just decodeProto__Rellm__CustomCSSConfiguration)
             (\a r -> { r | customCssConfiguration = a })
+        , Protobuf.Decode.optional
+            7
+            (Protobuf.Decode.map Just Protobuf.Decode.string)
+            (\a r -> { r | customFrontendHost = a })
         ]
 
 
@@ -9600,6 +9607,7 @@ encodeProto__Rellm__SubdomainSettings value =
           , (Maybe.map encodeProto__Rellm__CustomCSSConfiguration >> Maybe.withDefault Protobuf.Encode.none)
                 value.customCssConfiguration
           )
+        , ( 7, (Maybe.map Protobuf.Encode.string >> Maybe.withDefault Protobuf.Encode.none) value.customFrontendHost )
         ]
 
 
@@ -9613,6 +9621,7 @@ type alias Proto__Rellm__SubdomainSettings =
     , shareContentFromFollowing : Bool
     , shareContentFromFriends : Bool
     , customCssConfiguration : Maybe Proto__Rellm__CustomCSSConfiguration
+    , customFrontendHost : Maybe String
     }
 
 

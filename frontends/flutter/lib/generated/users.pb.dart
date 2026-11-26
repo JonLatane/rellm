@@ -741,8 +741,8 @@ class SaveSubdomainSettingsRequest extends $pb.GeneratedMessage {
   static SaveSubdomainSettingsRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SaveSubdomainSettingsRequest>(create);
   static SaveSubdomainSettingsRequest? _defaultInstance;
 
-  /// The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
-  /// read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  /// The new settings. Only `share_content_from_followers`/`_following`/`_friends`, `custom_css_configuration` and
+  /// `custom_frontend_host` are read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
   @$pb.TagNumber(1)
   $2.SubdomainSettings get subdomainSettings => $_getN(0);
   @$pb.TagNumber(1)

@@ -329,9 +329,11 @@ const SubdomainSettings$json = {
     {'1': 'share_content_from_following', '3': 4, '4': 1, '5': 8, '10': 'shareContentFromFollowing'},
     {'1': 'share_content_from_friends', '3': 5, '4': 1, '5': 8, '10': 'shareContentFromFriends'},
     {'1': 'custom_css_configuration', '3': 6, '4': 1, '5': 11, '6': '.rellm.CustomCSSConfiguration', '9': 0, '10': 'customCssConfiguration', '17': true},
+    {'1': 'custom_frontend_host', '3': 7, '4': 1, '5': 9, '9': 1, '10': 'customFrontendHost', '17': true},
   ],
   '8': [
     {'1': '_custom_css_configuration'},
+    {'1': '_custom_frontend_host'},
   ],
 };
 
@@ -343,8 +345,9 @@ final $typed_data.Uint8List subdomainSettingsDescriptor = $convert.base64Decode(
     '9mcm9tX2ZvbGxvd2luZxgEIAEoCFIZc2hhcmVDb250ZW50RnJvbUZvbGxvd2luZxI7ChpzaGFy'
     'ZV9jb250ZW50X2Zyb21fZnJpZW5kcxgFIAEoCFIXc2hhcmVDb250ZW50RnJvbUZyaWVuZHMSXA'
     'oYY3VzdG9tX2Nzc19jb25maWd1cmF0aW9uGAYgASgLMh0ucmVsbG0uQ3VzdG9tQ1NTQ29uZmln'
-    'dXJhdGlvbkgAUhZjdXN0b21Dc3NDb25maWd1cmF0aW9uiAEBQhsKGV9jdXN0b21fY3NzX2Nvbm'
-    'ZpZ3VyYXRpb24=');
+    'dXJhdGlvbkgAUhZjdXN0b21Dc3NDb25maWd1cmF0aW9uiAEBEjUKFGN1c3RvbV9mcm9udGVuZF'
+    '9ob3N0GAcgASgJSAFSEmN1c3RvbUZyb250ZW5kSG9zdIgBAUIbChlfY3VzdG9tX2Nzc19jb25m'
+    'aWd1cmF0aW9uQhcKFV9jdXN0b21fZnJvbnRlbmRfaG9zdA==');
 
 @$core.Deprecated('Use clusterResourcesDescriptor instead')
 const ClusterResources$json = {

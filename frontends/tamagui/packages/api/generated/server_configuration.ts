@@ -913,7 +913,23 @@ export interface SubdomainSettings {
    * `ServerConfiguration.custom_css_configuration`. On `SaveSubdomainSettings`, an unset `custom_css` keeps the
    * stored stylesheet.
    */
-  customCssConfiguration?: CustomCSSConfiguration | undefined;
+  customCssConfiguration?:
+    | CustomCSSConfiguration
+    | undefined;
+  /**
+   * A domain the owner points at this server to serve the subdomain from -- e.g. `usersite.com` as the frontend for
+   * `jon.bullcity.social`, whose gRPC backend stays `jon.<ExternalCDNConfig.backend_host>`. The owner owns the DNS/CDN for
+   * it, like the server's own `ExternalCDNConfig.frontend_host`. A request whose `Host` is this domain resolves to the
+   * subdomain exactly like `<subdomain>.<frontend_host>` does, and the subdomain's virtual
+   * `ServerConfiguration.external_cdn_config.frontend_host` is this domain instead, so pages adopt it as the site's
+   * identity -- which makes `<subdomain>.<frontend_host>` itself a non-primary address (it still answers, but a page
+   * loaded there would turn into this domain). Lower case, a hostname with at least one dot: no scheme, port or path, not
+   * an IP address, and not the server's own `frontend_host`/`backend_host` or anything beneath them. Unique among users;
+   * a domain held by a user whose subdomain is no longer enabled is free for another to take.
+   * On `SaveSubdomainSettings`: unset keeps the stored value, an empty string clears it. Unset in a
+   * `GetServerConfiguration` reply when there is none.
+   */
+  customFrontendHost?: string | undefined;
 }
 
 /**
@@ -2768,6 +2784,7 @@ function createBaseSubdomainSettings(): SubdomainSettings {
     shareContentFromFollowing: false,
     shareContentFromFriends: false,
     customCssConfiguration: undefined,
+    customFrontendHost: undefined,
   };
 }
 
@@ -2790,6 +2807,9 @@ export const SubdomainSettings: MessageFns<SubdomainSettings> = {
     }
     if (message.customCssConfiguration !== undefined) {
       CustomCSSConfiguration.encode(message.customCssConfiguration, writer.uint32(50).fork()).join();
+    }
+    if (message.customFrontendHost !== undefined) {
+      writer.uint32(58).string(message.customFrontendHost);
     }
     return writer;
   },
@@ -2849,6 +2869,14 @@ export const SubdomainSettings: MessageFns<SubdomainSettings> = {
           message.customCssConfiguration = CustomCSSConfiguration.decode(reader, reader.uint32());
           continue;
         }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.customFrontendHost = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -2874,6 +2902,7 @@ export const SubdomainSettings: MessageFns<SubdomainSettings> = {
       customCssConfiguration: isSet(object.customCssConfiguration)
         ? CustomCSSConfiguration.fromJSON(object.customCssConfiguration)
         : undefined,
+      customFrontendHost: isSet(object.customFrontendHost) ? globalThis.String(object.customFrontendHost) : undefined,
     };
   },
 
@@ -2897,6 +2926,9 @@ export const SubdomainSettings: MessageFns<SubdomainSettings> = {
     if (message.customCssConfiguration !== undefined) {
       obj.customCssConfiguration = CustomCSSConfiguration.toJSON(message.customCssConfiguration);
     }
+    if (message.customFrontendHost !== undefined) {
+      obj.customFrontendHost = message.customFrontendHost;
+    }
     return obj;
   },
 
@@ -2914,6 +2946,7 @@ export const SubdomainSettings: MessageFns<SubdomainSettings> = {
       (object.customCssConfiguration !== undefined && object.customCssConfiguration !== null)
         ? CustomCSSConfiguration.fromPartial(object.customCssConfiguration)
         : undefined;
+    message.customFrontendHost = object.customFrontendHost ?? undefined;
     return message;
   },
 };
