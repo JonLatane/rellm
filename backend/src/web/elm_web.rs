@@ -12,7 +12,7 @@ use crate::rpcs::get_server_configuration_proto;
 use crate::web::RocketState;
 
 use super::spa_path::SpaPath;
-use super::{index_summary, spa_web_path, RellmResponder, SpaApp};
+use super::{index_summary, spa_web_path, PreviewContext, RellmResponder, SpaApp};
 
 lazy_static! {
     pub static ref ELM_PAGES: Vec<Route> = routes![
@@ -83,6 +83,7 @@ pub async fn elm_index(
         "index.html",
         index_summary(&server_name, server_logo),
         false,
+        &PreviewContext::new(host, "/elm", &server_name),
     )
     .await
 }

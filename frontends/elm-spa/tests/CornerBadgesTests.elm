@@ -16,7 +16,16 @@ import UI.CornerBadges as CornerBadges
 
 render : List (Maybe Bool) -> List (Maybe Int) -> Query.Single msg
 render spinners counts =
-    div [] (CornerBadges.view "example.com" spinners counts)
+    renderBadges
+        (List.indexedMap
+            (\i count -> { count = count, more = False, spinner = spinners |> List.drop i |> List.head |> Maybe.andThen identity })
+            counts
+        )
+
+
+renderBadges : List CornerBadges.Badge -> Query.Single msg
+renderBadges badges =
+    div [] (CornerBadges.view "example.com" badges)
         |> Query.fromHtml
 
 
@@ -103,5 +112,23 @@ suite =
                         |> badge "corner-badge-top-right"
                         |> Query.find [ Selector.class "starred-count-number" ]
                         |> Query.has [ Selector.text "7" ]
+            ]
+        , describe "more than loaded (\"40+\")"
+            [ test "a badge with more than it loaded shows a + after the count" <|
+                \_ ->
+                    renderBadges [ { count = Just 1, more = False, spinner = Nothing }, { count = Just 300, more = True, spinner = Nothing } ]
+                        |> badge "corner-badge-bottom-right"
+                        |> Query.has [ Selector.text "300+" ]
+            , test "...and the others do not" <|
+                \_ ->
+                    renderBadges [ { count = Just 1, more = False, spinner = Nothing }, { count = Just 300, more = True, spinner = Nothing } ]
+                        |> badge "corner-badge-top-right"
+                        |> Query.hasNot [ Selector.text "+" ]
+            , test "a spinner badge keeps its + inside the number element" <|
+                \_ ->
+                    renderBadges [ { count = Just 300, more = True, spinner = Just True } ]
+                        |> badge "corner-badge-top-right"
+                        |> Query.find [ Selector.class "starred-count-number" ]
+                        |> Query.has [ Selector.text "300+" ]
             ]
         ]

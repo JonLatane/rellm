@@ -58,6 +58,7 @@ pub async fn main_index(
         "index.html",
         index_summary(&server_name, server_logo),
         false,
+        &PreviewContext::new(host, "/", &server_name),
     )
     .await
 }

@@ -32,6 +32,8 @@ module Shared.Federation.Mastodon exposing
     , maxIdParam
     , pageOf
     , fetchFavourites
+    , isOnInstance
+    , nextLink
     , fetchEmbeddedStatus
     , fetchStatus
     , fetchStatusWithQuotes
@@ -76,7 +78,7 @@ import Proto.Rellm.MediaConversion exposing (MediaConversion(..))
 import Proto.Rellm.PostContext exposing (PostContext(..))
 import Proto.Rellm.Visibility exposing (Visibility(..))
 import Shared.Conversions exposing (int64FromInt, posixToTimestamp)
-import Shared.Federation.Common exposing (Thread, jsonResolver, nonEmpty, sensitiveMediaHiddenId)
+import Shared.Federation.Common exposing (Thread, jsonResolver, jsonResolverWithHeaders, maxServerStarPages, maxServerStars, nonEmpty, sensitiveMediaHiddenId)
 import Task exposing (Task)
 import Time
 import Url
@@ -823,22 +825,93 @@ resolveStatusId instanceHost accessToken statusUrl =
 
 
 {-| `GET /api/v1/favourites?limit=40` -- the connected account's own server-side favourites, newest
-first (first page only; Mastodon paginates via a `Link` header this doesn't follow). Needs the
-`read:favourites` scope -- covered by the `read` scope Rellm has always requested. Statuses are
-translated with `toPost instanceHost` -- see `Shared.StarredPanel`'s own doc on how these show up as
-its "Server" tab.
+first, following the `Link: <...>; rel="next"` header page by page until `maxServerStars` are loaded (or there
+are no more). The pair is the favourites and whether there are more than were loaded -- Mastodon (like
+Bluesky) never says how many there are in total. Needs the `read:favourites` scope -- covered by the `read`
+scope Rellm has always requested. Statuses are translated with `toPost instanceHost` -- see
+`Shared.StarredPanel`'s own doc on how these show up as its "Server" tab.
+
+The next page's URL comes from the server's response, and this request carries the account's access token,
+so it is only followed if it is on the account's own instance.
 -}
-fetchFavourites : String -> String -> Task Http.Error (List Post)
+fetchFavourites : String -> String -> Task Http.Error ( List Post, Bool )
 fetchFavourites instanceHost accessToken =
+    favouritesFrom instanceHost accessToken ("https://" ++ instanceHost ++ "/api/v1/favourites?limit=40") [] 1
+
+
+favouritesFrom : String -> String -> String -> List Post -> Int -> Task Http.Error ( List Post, Bool )
+favouritesFrom instanceHost accessToken url collected page =
     Http.task
         { method = "GET"
         , headers = [ Http.header "Authorization" ("Bearer " ++ accessToken) ]
-        , url = "https://" ++ instanceHost ++ "/api/v1/favourites?limit=40"
+        , url = url
         , body = Http.emptyBody
-        , resolver = jsonResolver (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
+        , resolver = jsonResolverWithHeaders (Decode.list decoder) (\metadata _ -> Http.BadStatus metadata.statusCode)
         , timeout = Just 10000
         }
-        |> Task.map (List.map (toPost instanceHost))
+        |> Task.andThen
+            (\( statuses, headers ) ->
+                let
+                    all : List Post
+                    all =
+                        collected ++ List.map (toPost instanceHost) statuses
+
+                    next : Maybe String
+                    next =
+                        Dict.get "link" headers |> Maybe.andThen nextLink
+                in
+                case next of
+                    Nothing ->
+                        Task.succeed ( List.take maxServerStars all, List.length all > maxServerStars )
+
+                    Just nextUrl ->
+                        if not (isOnInstance instanceHost nextUrl) then
+                            -- A next page we won't follow (our token only goes to the account's own instance) is
+                            -- still more favourites than are loaded.
+                            Task.succeed ( List.take maxServerStars all, True )
+
+                        else if List.length all >= maxServerStars || page >= maxServerStarPages then
+                            Task.succeed ( List.take maxServerStars all, True )
+
+                        else
+                            -- A later page failing keeps what is already loaded (and says there is more) instead
+                            -- of failing the whole list; only the first page's failure is a failure.
+                            -- ...except a rejected token (401): `performWithMastodonAccount` has to see that to
+                            -- refresh the session and run the whole fetch again, so it is passed on.
+                            favouritesFrom instanceHost accessToken nextUrl all (page + 1)
+                                |> Task.onError
+                                    (\err ->
+                                        if err == Http.BadStatus 401 then
+                                            Task.fail err
+
+                                        else
+                                            Task.succeed ( List.take maxServerStars all, True )
+                                    )
+            )
+
+
+{-| Whether `url` is an `https` URL on `instanceHost` itself -- the only place the account's access token may be
+sent. Hostnames are case-insensitive, so `Mastodon.Social` is `mastodon.social`; the host must end at a `/`
+(so `https://mastodon.social.evil.example/` and `https://mastodon.social@evil.example/` are not it), and any
+port is part of the host.
+-}
+isOnInstance : String -> String -> Bool
+isOnInstance instanceHost url =
+    String.startsWith (String.toLower ("https://" ++ instanceHost ++ "/")) (String.toLower url)
+
+
+{-| The `rel="next"` URL of an HTTP `Link` header (`<https://x/api/v1/favourites?max_id=1>; rel="next", <...>;
+rel="prev"`), if it has one.
+-}
+nextLink : String -> Maybe String
+nextLink header =
+    header
+        |> String.split ","
+        |> List.filter (String.contains "rel=\"next\"")
+        |> List.head
+        |> Maybe.andThen (String.split "<" >> List.drop 1 >> List.head)
+        |> Maybe.andThen (String.split ">" >> List.head)
+        |> Maybe.map String.trim
 
 
 toAuthor : String -> Status -> Author

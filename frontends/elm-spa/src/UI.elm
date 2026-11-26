@@ -4990,9 +4990,11 @@ starredPostsToggle shared =
             ]
             (text "⭐"
                 :: CornerBadges.view shared.accounts.mainFrontendHost
-                    [ Nothing, Just (StarredPanel.serverStarsLoading shared.panels.starredPanel) ]
-                    [ Just (StarredPanel.browserStarCount shared.panels.starredPanel)
-                    , CornerBadges.nonZero (StarredPanel.serverTabCount shared.panels.starredPanel)
+                    [ { count = Just (StarredPanel.browserStarCount shared.panels.starredPanel), more = False, spinner = Nothing }
+                    , { count = CornerBadges.nonZero (StarredPanel.serverTabCount shared.panels.starredPanel)
+                      , more = StarredPanel.serverTabHasMore shared.panels.starredPanel
+                      , spinner = Just (StarredPanel.serverStarsLoading shared.panels.starredPanel)
+                      }
                     ]
             )
         ]
@@ -5117,10 +5119,9 @@ messagingToggle shared currentRoute =
             ]
             (text "✉️"
                 :: CornerBadges.view shared.accounts.mainFrontendHost
-                    [ Just refreshing.messages, Just refreshing.subscriptions, Just refreshing.fulfillment ]
-                    [ CornerBadges.nonZero unreadCounts.messages
-                    , CornerBadges.nonZero unreadCounts.subscriptions
-                    , CornerBadges.nonZero unreadCounts.fulfillment
+                    [ { count = CornerBadges.nonZero unreadCounts.messages, more = False, spinner = Just refreshing.messages }
+                    , { count = CornerBadges.nonZero unreadCounts.subscriptions, more = False, spinner = Just refreshing.subscriptions }
+                    , { count = CornerBadges.nonZero unreadCounts.fulfillment, more = False, spinner = Just refreshing.fulfillment }
                     ]
             )
         ]

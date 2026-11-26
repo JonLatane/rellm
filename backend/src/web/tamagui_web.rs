@@ -5,7 +5,7 @@ use rocket_cache_response::CacheResponse;
 
 use crate::web::RocketState;
 
-use super::{index_summary, spa_file_or_username_or_custom_tab, spa_web_path, RellmResponder, SpaApp};
+use super::{index_summary, spa_file_or_username_or_custom_tab, spa_web_path, PreviewContext, RellmResponder, SpaApp};
 
 lazy_static! {
     pub static ref TAMAGUI_PAGES: Vec<Route> =
@@ -38,6 +38,7 @@ pub async fn index(
         "index.html",
         index_summary(&server_name, server_logo),
         true,
+        &PreviewContext::new(host, "/tamagui", &server_name),
     )
     .await
 }
