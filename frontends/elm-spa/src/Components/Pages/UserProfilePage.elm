@@ -5319,7 +5319,7 @@ profileDetail shared model server maybeAccount user =
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
         , subscriptionsSection shared.time.browserTimeZone shared.basePath shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
-        , subdomainSection shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subdomainExpanded model.subdomainStatus user
+        , subdomainSection shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) (connectedToSubdomain shared (maybeAccount |> Maybe.map .server)) isAdmin (isOwnProfile maybeAccount user) model.subdomainExpanded model.subdomainStatus user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , accountActionsSection canEdit model.passwordResetEdit user
         ]
@@ -6514,6 +6514,17 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
         ]
 
 
+{-| Whether `maybeHost` (the connected server's frontend host) is itself a Rellm Subdomain, per the configuration it served
+(`ServerConfiguration.subdomain_settings`).
+-}
+connectedToSubdomain : Shared.Model -> Maybe String -> Bool
+connectedToSubdomain shared maybeHost =
+    maybeHost
+        |> Maybe.andThen (RellmServers.rellmServerForHost shared.accounts.servers)
+        |> Maybe.map (\server -> (RellmServers.configurationOf server).subdomainSettings /= Nothing)
+        |> Maybe.withDefault False
+
+
 {-| "Subdomain" -- the user's Rellm Subdomain (`User.subdomain`, `users.proto`): its address, why it is (not) enabled, and
 the "Share Content From Followers / Following / Friends" toggles (`SubdomainSettings`). The subdomain is enabled by a
 `PURCHASE_TYPE_SUBDOMAIN` subscription *or* by an admin; an `ADMIN` also gets the button that enables it for this user
@@ -6523,8 +6534,8 @@ immediately. Shown to the profile's own owner or an Admin, same gating as `subsc
 populated for those two viewers). Hidden for an owner with nothing to see (not enabled, no way to buy it is not this
 section's business -- the Market page sells it).
 -}
-subdomainSection : String -> Maybe String -> Bool -> Bool -> Bool -> SubmitStatus -> User -> Html Msg
-subdomainSection mainFrontendHost maybeHost isAdmin isOwn expanded status user =
+subdomainSection : String -> Maybe String -> Bool -> Bool -> Bool -> Bool -> SubmitStatus -> User -> Html Msg
+subdomainSection mainFrontendHost maybeHost hostIsSubdomain isAdmin isOwn expanded status user =
     case user.subdomain of
         Nothing ->
             text ""
@@ -6556,8 +6567,6 @@ subdomainSection mainFrontendHost maybeHost isAdmin isOwn expanded status user =
                             , text labelText
                             ]
 
-                    -- On the subdomain itself the connected host already *is* `<label>.<parent>`; anywhere else it is the
-                    -- parent, so the label goes in front.
                     address : String
                     address =
                         if settings.subdomain == "" then
@@ -6569,7 +6578,10 @@ subdomainSection mainFrontendHost maybeHost isAdmin isOwn expanded status user =
                                 host =
                                     maybeHost |> Maybe.withDefault mainFrontendHost
                             in
-                            if String.startsWith (settings.subdomain ++ ".") host then
+                            -- On the subdomain itself the connected host already *is* `<label>.<parent>` (the server says so
+                            -- through `subdomainSettings`; a matching prefix alone proves nothing -- user `bullcity` on
+                            -- `bullcity.social`); anywhere else it is the parent, so the label goes in front.
+                            if hostIsSubdomain then
                                 host
 
                             else
