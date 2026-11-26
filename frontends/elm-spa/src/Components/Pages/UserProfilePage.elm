@@ -6560,19 +6560,20 @@ subdomainSection mainFrontendHost maybeHost isAdmin isOwn expanded status user =
                     -- parent, so the label goes in front.
                     address : String
                     address =
-                        let
-                            host : String
-                            host =
-                                maybeHost |> Maybe.withDefault mainFrontendHost
-                        in
                         if settings.subdomain == "" then
                             "None"
 
-                        else if String.startsWith (settings.subdomain ++ ".") host then
-                            host
-
                         else
-                            settings.subdomain ++ "." ++ host
+                            let
+                                host : String
+                                host =
+                                    maybeHost |> Maybe.withDefault mainFrontendHost
+                            in
+                            if String.startsWith (settings.subdomain ++ ".") host then
+                                host
+
+                            else
+                                settings.subdomain ++ "." ++ host
 
                     why : String
                     why =
