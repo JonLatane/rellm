@@ -1,23 +1,26 @@
 //! Rellm Subdomains (`PURCHASE_TYPE_SUBDOMAIN`): `bullcity.social/jon` is also served as
 //! `jon.bullcity.social`, by the same Rocket and Tonic servers as the parent -- a "virtual server" scoped
-//! to one user. This module resolves a request's `Host` to that user's subscription and derives everything
-//! the scoped RPCs/pages need from it (the visible authors, the virtual `ServerConfiguration`, the
-//! stylesheet). See `SubdomainSettings` in `server_configuration.proto`.
+//! to one user. This module resolves a request's `Host` to that user and derives everything the scoped
+//! RPCs/pages need from them (the visible authors, the virtual `ServerConfiguration`, the stylesheet). See
+//! `SubdomainSettings` in `server_configuration.proto`.
+//!
+//! The label and settings live on the `users` row (`users.subdomain*`). A user's subdomain is *enabled* -- resolves --
+//! while they hold an in-force `PURCHASE_TYPE_SUBDOMAIN` subscription **or** an admin enabled it for them
+//! (`users.subdomain_granted_by_admin`, `SetUserSubdomain`); the label is claimed when it first becomes enabled and
+//! released when it stops being (`release_label_if_not_enabled`).
 
 use std::time::SystemTime;
 
-use diesel::dsl::sql;
-use diesel::sql_types::{Bool, Text};
 use diesel::*;
 use tonic::{Code, Status};
 
 use crate::db_connection::PgPooledConnection;
 use crate::logic::{public_string_visibilities, subscription_state};
-use crate::marshaling::{ToProtoId, ToProtoPurchaseType, ToStringPurchaseType};
+use crate::marshaling::{ToProtoId, ToStringPurchaseType};
 use crate::models;
 use crate::protos::*;
 use crate::rpcs::get_server_configuration_proto;
-use crate::schema::market_subscriptions;
+use crate::schema::{market_subscriptions, users};
 
 /// A tiny TTL map for the two things every subdomain-aware request would otherwise ask the database for: the
 /// parent's `frontend_host`/`backend_host`, and which subscription (if any) a host resolves to. Entries expire
@@ -64,15 +67,15 @@ lazy_static::lazy_static! {
         std::sync::Mutex::new(TtlCache::new(std::time::Duration::from_secs(15)));
 }
 
-/// Forgets every cached resolution -- called wherever a subscription's settings, state or label change in this
-/// process (save, cancel, checkout, lapse). Other processes catch up within the cache's TTL.
+/// Forgets every cached resolution -- called wherever a user's settings, label or entitlement change in this
+/// process (save, grant, cancel, checkout, lapse). Other processes catch up within the cache's TTL.
 pub fn invalidate_cache() {
     if let Ok(mut resolved) = RESOLVED.lock() {
         resolved.clear();
     }
 }
 
-/// Specs share one process and each rewrites subscriptions and server configuration inside a rolled-back
+/// Specs share one process and each rewrites users and server configuration inside a rolled-back
 /// transaction, so a process-wide cache would leak state between them: it is simply off under `cargo test`.
 const fn cache_enabled() -> bool {
     !cfg!(test)
@@ -86,13 +89,12 @@ pub struct RequestHost(pub String);
 /// Labels that must never be handed out as a subdomain (they'd shadow real infrastructure hosts).
 const RESERVED_LABELS: &[&str] = &["www", "api", "admin", "mail", "smtp", "imap", "ftp", "cdn", "media", "static"];
 
-/// An active subdomain, resolved from a request's host.
+/// An enabled subdomain, resolved from a request's host.
 #[derive(Clone, Debug)]
 pub struct SubdomainContext {
-    pub subscription: models::MarketSubscription,
-    /// The subdomain's owner (the subscription's buyer).
+    /// The subdomain's owner.
     pub owner: models::User,
-    /// The subscription's settings, `custom_css_configuration.custom_css` included.
+    /// The owner's settings, `custom_css_configuration.custom_css` included.
     pub settings: SubdomainSettings,
 }
 
@@ -161,34 +163,81 @@ fn strip_port(host: &str) -> &str {
     }
 }
 
-/// The active (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription holding `label`.
-pub fn find_active_subdomain_subscription(
-    label: &str,
-    conn: &mut PgPooledConnection,
-) -> Result<Option<models::MarketSubscription>, Status> {
-    let candidates = market_subscriptions::table
-        .filter(market_subscriptions::product_type.eq(PurchaseType::Subdomain.to_string_purchase_type()))
-        .filter(market_subscriptions::service_terminated_at.is_null())
-        .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
-        .load::<models::MarketSubscription>(conn)
-        .map_err(|e| {
-            log::error!("Failed to look up a subdomain: {:?}", e);
-            Status::new(Code::Internal, "failed_to_load_subscriptions")
-        })?;
-    let now = SystemTime::now();
-    Ok(candidates.into_iter().find(|s| {
-        subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, now)
-            != MarketSubscriptionState::SubscriptionCanceled
-    }))
+fn internal(what: &'static str, code: &'static str) -> impl Fn(diesel::result::Error) -> Status {
+    move |e| {
+        log::error!("{}: {:?}", what, crate::logic::log_redaction::safe_error(&e));
+        Status::new(Code::Internal, code)
+    }
 }
 
-/// Whether `buyer` may start a (new) subdomain subscription: their username is a valid label, nobody holds it, and
-/// they don't already hold an in-force subdomain subscription of their own (resuming a canceled-but-paid-up one is
-/// `MakeMarketPurchase`'s resume path, which never gets here). Returns the label. A label whose holder has canceled
-/// and run out of paid time is free even if the renewal job hasn't terminated it yet -- see
-/// `release_lapsed_subdomain_labels`, which the webhook runs before inserting.
-pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
-    let label = label_for_username(&buyer.username);
+/// Whether `subscription` is still in force: not terminated, and not canceled with its paid period run out.
+fn subscription_in_force(s: &models::MarketSubscription, now: SystemTime) -> bool {
+    s.service_terminated_at.is_none()
+        && subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, now)
+            != MarketSubscriptionState::SubscriptionCanceled
+}
+
+/// The ids among `user_ids` that hold an in-force `PURCHASE_TYPE_SUBDOMAIN` subscription -- one query (an index probe
+/// on `buyer_id`), however many users are asked about.
+pub fn subscribed_user_ids(
+    user_ids: &[i64],
+    conn: &mut PgPooledConnection,
+) -> Result<std::collections::HashSet<i64>, Status> {
+    let candidates = market_subscriptions::table
+        .filter(market_subscriptions::buyer_id.eq_any(user_ids))
+        .filter(market_subscriptions::product_type.eq(PurchaseType::Subdomain.to_string_purchase_type()))
+        .filter(market_subscriptions::service_terminated_at.is_null())
+        .load::<models::MarketSubscription>(conn)
+        .map_err(internal("Failed to look up subdomain subscriptions", "failed_to_load_subscriptions"))?;
+    let now = SystemTime::now();
+    Ok(candidates.iter().filter(|s| subscription_in_force(s, now)).map(|s| s.buyer_id).collect())
+}
+
+/// Whether `user_id` holds an in-force `PURCHASE_TYPE_SUBDOMAIN` subscription.
+pub fn has_subscription(user_id: i64, conn: &mut PgPooledConnection) -> Result<bool, Status> {
+    Ok(subscribed_user_ids(&[user_id], conn)?.contains(&user_id))
+}
+
+/// Whether the user's subdomain is enabled: an admin granted it, or a subscription is in force.
+pub fn is_enabled(
+    summary: &models::UserSubdomainSummary,
+    conn: &mut PgPooledConnection,
+) -> Result<bool, Status> {
+    Ok(summary.subdomain_granted_by_admin || has_subscription(summary.id, conn)?)
+}
+
+/// `UserSubdomain` for the profile -- the settings (no stylesheet), and why the subdomain is (not) enabled.
+pub fn user_subdomain_proto(summary: &models::UserSubdomainSummary, subscribed: bool) -> UserSubdomain {
+    UserSubdomain {
+        settings: Some(settings_for(summary, None)),
+        enabled: summary.subdomain_granted_by_admin || subscribed,
+        subscribed,
+        granted_by_admin: summary.subdomain_granted_by_admin,
+    }
+}
+
+/// `SubdomainSettings` from a user's stored state. `custom_css` is the stored `CustomCSSConfiguration` JSON (None where
+/// the text isn't wanted -- `User.subdomain`).
+pub fn settings_for(
+    summary: &models::UserSubdomainSummary,
+    custom_css: Option<serde_json::Value>,
+) -> SubdomainSettings {
+    SubdomainSettings {
+        subdomain_of: summary.subdomain.as_ref().map(|_| summary.id.to_proto_id()).unwrap_or_default(),
+        subdomain: summary.subdomain.clone().unwrap_or_default(),
+        share_content_from_followers: summary.subdomain_share_followers,
+        share_content_from_following: summary.subdomain_share_following,
+        share_content_from_friends: summary.subdomain_share_friends,
+        custom_css_configuration: custom_css.and_then(|v| serde_json::from_value(v).ok()),
+    }
+}
+
+/// Whether `user` may hold the subdomain label their username makes, as far as the label itself goes: a valid DNS label,
+/// not one the CDN setup uses, and not held by another user whose subdomain is still enabled. A holder that is no longer
+/// entitled (canceled and run out, grant withdrawn) is released here, so the label is free for the new claimant even if
+/// the renewal job hasn't cleaned up yet. Returns the label.
+pub fn check_label_for(user: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
+    let label = label_for_username(&user.username);
     if !is_valid_label(&label) {
         return Err(Status::new(Code::FailedPrecondition, "username_not_a_valid_subdomain"));
     }
@@ -198,58 +247,126 @@ pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnect
     if label_reserved_by_cdn(&label, &cdn.frontend_host, &cdn.backend_host) {
         return Err(Status::new(Code::FailedPrecondition, "subdomain_reserved"));
     }
-    if let Some(existing) = find_active_subdomain_subscription(&label, conn)? {
-        return Err(if existing.buyer_id == buyer.id {
-            Status::new(Code::FailedPrecondition, "already_subscribed")
-        } else {
-            Status::new(Code::FailedPrecondition, "subdomain_taken")
-        });
+    if let Some(holder) = models::get_user_by_subdomain_label(&label, conn)? {
+        if holder.id != user.id {
+            let summary = models::get_subdomain_summary(holder.id, conn)?;
+            if is_enabled(&summary, conn)? {
+                return Err(Status::new(Code::FailedPrecondition, "subdomain_taken"));
+            }
+            release_label_if_not_enabled(holder.id, conn)?;
+        }
     }
-    // One in-force subdomain per buyer -- also what lets `SaveMarketSubscription` take an empty id.
-    let now = SystemTime::now();
-    let holds_another = models::get_market_subscriptions_for_buyer(buyer.id, conn)?.into_iter().any(|s| {
-        s.product_type.to_owned().to_proto_purchase_type() == Some(PurchaseType::Subdomain)
-            && subscription_state(s.canceled_at, s.renews_at, s.service_terminated_at, now)
-                != MarketSubscriptionState::SubscriptionCanceled
-    });
-    if holds_another {
+    Ok(label)
+}
+
+/// Whether `buyer` may start a (new) subdomain subscription: the label is theirs to take (`check_label_for`) and they
+/// don't already hold an in-force subdomain subscription (resuming a canceled-but-paid-up one is `MakeMarketPurchase`'s
+/// resume path, which never gets here). Returns the label.
+pub fn validate_label_available(buyer: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
+    let label = check_label_for(buyer, conn)?;
+    if has_subscription(buyer.id, conn)? {
         return Err(Status::new(Code::FailedPrecondition, "already_subscribed"));
     }
     Ok(label)
 }
 
-/// Marks as terminated every subdomain subscription holding `label` whose buyer canceled and whose paid-for period
-/// has run out -- exactly what `renew_market_subscriptions` does a little later. Frees the label for the unique
-/// index (`idx_market_subscriptions_subdomain_label`, which only counts rows with no `service_terminated_at`) when a
-/// new buyer's paid checkout arrives before that job has run.
-pub fn release_lapsed_subdomain_labels(label: &str, conn: &mut PgPooledConnection) -> Result<(), Status> {
-    diesel::update(
-        market_subscriptions::table
-            .filter(market_subscriptions::product_type.eq(PurchaseType::Subdomain.to_string_purchase_type()))
-            .filter(market_subscriptions::service_terminated_at.is_null())
-            .filter(market_subscriptions::canceled_at.is_not_null())
-            .filter(sql::<Bool>("market_subscriptions.details #>> '{settings,subdomain}' = ").bind::<Text, _>(label.to_string()))
-            .filter(sql::<Bool>(
-                "GREATEST(market_subscriptions.canceled_at, COALESCE(market_subscriptions.renews_at, market_subscriptions.canceled_at)) <= clock_timestamp()",
-            )),
-    )
-    .set(market_subscriptions::service_terminated_at.eq(Some(SystemTime::now())))
-    .execute(conn)
-    .map(|_| invalidate_cache())
-    .map_err(|e| {
-        log::error!("Failed to release a lapsed subdomain label: {:?}", e);
-        Status::new(Code::Internal, "failed_to_release_subdomain")
+/// `conn.transaction`'s error type must absorb Diesel's own errors (it rolls back through them) while carrying the
+/// `Status` the steps inside return.
+pub struct TxError(pub Status);
+
+impl From<diesel::result::Error> for TxError {
+    fn from(e: diesel::result::Error) -> Self {
+        log::error!("Subdomain transaction failed: {:?}", crate::logic::log_redaction::safe_error(&e));
+        TxError(Status::new(Code::Internal, "db_error"))
+    }
+}
+
+impl From<Status> for TxError {
+    fn from(status: Status) -> Self {
+        TxError(status)
+    }
+}
+
+/// Runs `f` in a transaction (a savepoint when already inside one), rolling back on a `Status` error.
+pub fn in_transaction<T>(
+    conn: &mut PgPooledConnection,
+    f: impl FnOnce(&mut PgPooledConnection) -> Result<T, Status>,
+) -> Result<T, Status> {
+    conn.transaction::<T, TxError, _>(|conn| f(conn).map_err(TxError)).map_err(|e| e.0)
+}
+
+/// Locks `user_id`'s row (`SELECT ... FOR UPDATE`) until the surrounding transaction ends, so a grant, a claim and a
+/// release for one user can't interleave. Callers must be inside a transaction (a savepoint inside one counts -- the lock
+/// is held until the outermost commit).
+pub fn lock_user_row(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), Status> {
+    users::table
+        .filter(users::id.eq(user_id))
+        .select(users::id)
+        .for_update()
+        .first::<i64>(conn)
+        .map(|_| ())
+        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+}
+
+/// Reserves `user`'s label for them and returns it: the one they already hold (fixed once claimed -- a later rename
+/// never invalidates it, so a renewal after a username change still works), else their lower-cased username if
+/// `check_label_for` allows it. The caller has checked the subdomain is (about to be) enabled. A unique violation -- a
+/// racing claimant got the label between `check_label_for` and here -- is `subdomain_taken`; `idx_users_subdomain` is the
+/// backstop that makes the claim atomic.
+pub fn claim_label(user: &models::User, conn: &mut PgPooledConnection) -> Result<String, Status> {
+    in_transaction(conn, |conn| {
+        lock_user_row(user.id, conn)?;
+        let held = users::table
+            .filter(users::id.eq(user.id))
+            .select(users::subdomain)
+            .first::<Option<String>>(conn)
+            .map_err(|_| Status::new(Code::NotFound, "user_not_found"))?;
+        if let Some(held) = held {
+            return Ok(held);
+        }
+        let label = check_label_for(user, conn)?;
+        // A savepoint, so a lost race doesn't abort a surrounding transaction (the webhook's) -- it is just a refusal.
+        let claimed = conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            diesel::update(users::table.filter(users::id.eq(user.id)).filter(users::subdomain.is_null()))
+                .set(users::subdomain.eq(Some(label.clone())))
+                .execute(conn)
+        });
+        match claimed {
+            Ok(_) => {
+                invalidate_cache();
+                Ok(label)
+            }
+            Err(diesel::result::Error::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _)) => {
+                Err(Status::new(Code::FailedPrecondition, "subdomain_taken"))
+            }
+            Err(e) => Err(internal("Failed to claim a subdomain label", "failed_to_claim_subdomain")(e)),
+        }
     })
 }
 
-/// `market_subscriptions.details` for a brand-new subdomain subscription owned by `owner`.
-pub fn new_subscription_details_json(owner: &models::User) -> serde_json::Value {
+/// Releases `user_id`'s label if their subdomain is no longer enabled -- no grant, no in-force subscription. Their
+/// settings stay, so enabling it again brings the old theme and toggles back. Called wherever an entitlement can end
+/// (a grant withdrawn, a subscription terminated) and for a label someone else wants (`check_label_for`). The decision
+/// and the write happen under the user's row lock, so a grant or claim racing it can't have its label cleared.
+pub fn release_label_if_not_enabled(user_id: i64, conn: &mut PgPooledConnection) -> Result<(), Status> {
+    in_transaction(conn, |conn| {
+        lock_user_row(user_id, conn)?;
+        let summary = models::get_subdomain_summary(user_id, conn)?;
+        if summary.subdomain.is_none() || is_enabled(&summary, conn)? {
+            return Ok(());
+        }
+        diesel::update(users::table.filter(users::id.eq(user_id)))
+            .set(users::subdomain.eq(None::<String>))
+            .execute(conn)
+            .map(|_| invalidate_cache())
+            .map_err(internal("Failed to release a subdomain label", "failed_to_release_subdomain"))
+    })
+}
+
+/// `market_subscriptions.details` for a brand-new subdomain subscription -- just the (automatic) fulfillment status; the
+/// settings live on the user.
+pub fn new_subscription_details_json() -> serde_json::Value {
     serde_json::to_value(SubdomainSubscriptionDetails {
-        settings: Some(SubdomainSettings {
-            subdomain_of: owner.id.to_proto_id(),
-            subdomain: label_for_username(&owner.username),
-            ..Default::default()
-        }),
         fulfillment_status: FulfillmentStatus::Fulfilled as i32,
         ..Default::default()
     })
@@ -261,27 +378,18 @@ pub fn subdomain_purchase_details_json_for_label(label: &str) -> serde_json::Val
     serde_json::to_value(SubdomainPurchaseDetails { subdomain: label.to_string() }).unwrap_or_default()
 }
 
-/// The `SubdomainPurchaseDetails` for a renewal, from the subscription's own details.
-pub fn subdomain_purchase_details_json(subscription_details: &serde_json::Value) -> serde_json::Value {
-    let label = serde_json::from_value::<SubdomainSubscriptionDetails>(subscription_details.clone())
-        .ok()
-        .and_then(|d| d.settings)
-        .map(|s| s.subdomain)
-        .unwrap_or_default();
-    subdomain_purchase_details_json_for_label(&label)
-}
-
-/// A subscription's `SubdomainSettings` (empty if its details don't parse).
-pub fn settings_of(subscription: &models::MarketSubscription) -> SubdomainSettings {
-    serde_json::from_value::<SubdomainSubscriptionDetails>(subscription.details.clone())
-        .ok()
-        .and_then(|d| d.settings)
-        .unwrap_or_default()
+/// The `SubdomainPurchaseDetails` for a renewal: the label the subscription's buyer holds.
+pub fn subdomain_purchase_details_json_for_buyer(
+    buyer_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<serde_json::Value, Status> {
+    let label = models::get_subdomain_summary(buyer_id, conn)?.subdomain.unwrap_or_default();
+    Ok(subdomain_purchase_details_json_for_label(&label))
 }
 
 /// Resolves `host` (a request's `Host`/`:authority`) to the subdomain it addresses, if any: the parent
-/// server's `ExternalCDNConfig.frontend_host` must be configured, `host` must be one label beneath it, and an
-/// active `PURCHASE_TYPE_SUBDOMAIN` subscription must hold that label. Everything else is `Ok(None)` -- the
+/// server's `ExternalCDNConfig.frontend_host` must be configured, `host` must be one label beneath it, and the user
+/// holding that label must have their subdomain enabled (a subscription in force, or an admin's grant). Everything else is `Ok(None)` -- the
 /// request is simply for the parent server.
 pub fn resolve_subdomain(
     host: Option<&str>,
@@ -317,11 +425,15 @@ pub fn resolve_subdomain(
             return Ok(cached);
         }
     }
-    let resolved = match find_active_subdomain_subscription(&label, conn)? {
-        Some(subscription) => {
-            let owner = models::get_user(subscription.buyer_id, conn)?;
-            let settings = settings_of(&subscription);
-            Some(SubdomainContext { subscription, owner, settings })
+    let resolved = match models::get_user_by_subdomain_label(&label, conn)? {
+        Some(owner) => {
+            let summary = models::get_subdomain_summary(owner.id, conn)?;
+            if is_enabled(&summary, conn)? {
+                let css = models::get_subdomain_custom_css(owner.id, conn)?;
+                Some(SubdomainContext { settings: settings_for(&summary, css), owner })
+            } else {
+                None
+            }
         }
         None => None,
     };

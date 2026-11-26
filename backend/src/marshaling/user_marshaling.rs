@@ -161,6 +161,8 @@ impl ToProtoUser for models::User {
             // across every listing type, self-or-Admin gated (see `market.proto`'s own doc on
             // `User.market_subscriptions`).
             market_subscriptions: vec![],
+            // Same deal -- populated by `attach_advanced_admin_data`, self-or-Admin gated.
+            subdomain: None,
             current_user_follow: follow.as_ref().map(|f| f.to_proto()),
             target_current_user_follow: target_follow.as_ref().map(|f| f.to_proto()),
             current_group_membership: None, // TODO

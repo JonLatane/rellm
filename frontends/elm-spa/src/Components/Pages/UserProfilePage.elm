@@ -59,7 +59,7 @@ import Json.Decode as Decode
 import Ports
 import Process
 import Proto.Google.Protobuf
-import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SyncDestination, SyncSource, User, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
+import Proto.Rellm exposing (AIProvider, AIProviderGrant, ContactConsentChange, ContactMethod, FederatedAccount, MarketPurchase, MarketPurchase_, MarketSubscription, SubdomainSettings, SyncDestination, SyncSource, User, UserSubdomain, defaultAIProvider, defaultDigitalOceanCredentials, defaultGeminiCredentials, defaultMediaReference, defaultOpenAICredentials, defaultSyncDestination, defaultSyncSource, unwrapMarketPurchase)
 import Proto.Rellm.AIProvider.Provider as AIProviderProvider
 import Proto.Rellm.ContactConsentState exposing (ContactConsentState(..))
 import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
@@ -117,6 +117,8 @@ type alias Model =
     , storageQuotaExpanded : Bool
     , subscriptionsExpanded : Bool
     , cancelingSubscriptions : Dict String SubmitStatus
+    , subdomainExpanded : Bool
+    , subdomainStatus : SubmitStatus
     , permissionsEdit : Maybe PermissionsEdit
     , permissionsExpanded : Bool
     , federatedProfilesEdit : Maybe FederatedProfilesEdit
@@ -240,7 +242,10 @@ type Msg
     | ShowMyMediaClicked
     | SubscriptionsExpandedToggled
     | CancelSubscriptionClicked MarketSubscription
-    | SaveSubdomainSettingsClicked MarketSubscription Proto.Rellm.SubdomainSettings
+    | SubdomainExpandedToggled
+    | SaveSubdomainSettingsClicked SubdomainSettings
+    | SetUserSubdomainClicked Bool
+    | GotSubdomainResult (Result Grpc.Error ( Maybe AccountsPanel.Msg, UserSubdomain ))
     | GotCancelSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
     | ResumeSubscriptionClicked MarketSubscription
     | GotResumeSubscriptionResult String (Result Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.MakeMarketPurchaseResponse ))
@@ -1173,6 +1178,8 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , storageQuotaExpanded = False
             , subscriptionsExpanded = fragment == Just "subscriptions"
             , cancelingSubscriptions = Dict.empty
+            , subdomainExpanded = fragment == Just "subdomain"
+            , subdomainStatus = Idle
             , permissionsEdit = Nothing
             , permissionsExpanded = False
             , federatedProfilesEdit = Nothing
@@ -1192,7 +1199,7 @@ init shared pageIsSecure targetHost lookup navKey path query fragment =
             , query = query
             , actingEpoch = 0
             , pendingScrollSectionId =
-                if List.member fragment (List.map Just [ "subscriptions", "sync-sources", "sync-destinations", "ai-providers", "ai-models", "contact-methods" ]) then
+                if List.member fragment (List.map Just [ "subscriptions", "subdomain", "sync-sources", "sync-destinations", "ai-providers", "ai-models", "contact-methods" ]) then
                     fragment
 
                 else
@@ -1399,6 +1406,9 @@ expandProfileSection sectionId model =
 
         "subscriptions" ->
             { model | subscriptionsExpanded = True }
+
+        "subdomain" ->
+            { model | subdomainExpanded = True }
 
         "sync-sources" ->
             { model | syncSourcesExpanded = True }
@@ -2697,20 +2707,42 @@ updateInner shared msg model =
                 Nothing ->
                     ( model, Effect.none )
 
-        -- A "Share Content From ..." toggle on the user's own `PURCHASE_TYPE_SUBDOMAIN` subscription -- saved right
-        -- away (`SaveMarketSubscription`); its result is handled like a cancel's (`GotCancelSubscriptionResult`
-        -- just swaps in the returned subscription and clears the in-flight marker).
-        SaveSubdomainSettingsClicked subscription settings ->
+        SubdomainExpandedToggled ->
+            ( { model | subdomainExpanded = not model.subdomainExpanded }, Effect.none )
+
+        -- A "Share Content From ..." toggle on the user's own subdomain -- saved right away (`SaveSubdomainSettings`).
+        SaveSubdomainSettingsClicked settings ->
             case serverAndAccount shared model of
                 Just ( server, account ) ->
-                    ( { model | cancelingSubscriptions = Dict.insert subscription.id Submitting model.cancelingSubscriptions }
-                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, server.frontendHost ) subscription.id False { settings | customCssConfiguration = Nothing }
-                        |> attemptInActingEpoch model (GotCancelSubscriptionResult subscription.id)
+                    ( { model | subdomainStatus = Submitting }
+                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, server.frontendHost ) False { settings | customCssConfiguration = Nothing }
+                        |> attemptInActingEpoch model GotSubdomainResult
                         |> Effect.fromCmd
                     )
 
                 Nothing ->
                     ( model, Effect.none )
+
+        -- An admin enabling/withdrawing the grant of this user's subdomain (`SetUserSubdomain`), no subscription needed.
+        SetUserSubdomainClicked enabled ->
+            case ( serverAndAccount shared model, model.resolver.status ) of
+                ( Just ( server, account ), Resolver.Loaded user ) ->
+                    ( { model | subdomainStatus = Submitting }
+                    , Market.setUserSubdomain shared.accounts ( Just account.userId, server.frontendHost ) user.id enabled
+                        |> attemptInActingEpoch model GotSubdomainResult
+                        |> Effect.fromCmd
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        GotSubdomainResult (Ok ( maybeAccountsPanelMsg, updated )) ->
+            ( { model | subdomainStatus = Idle, resolver = withResolvedSubdomain updated model.resolver }
+            , accountsPanelEffect maybeAccountsPanelMsg
+            )
+
+        GotSubdomainResult (Err err) ->
+            ( { model | subdomainStatus = SubmitFailed (AccountsPanel.grpcErrorToString err) }, Effect.none )
 
         GotCancelSubscriptionResult subscriptionId (Ok ( maybeAccountsPanelMsg, updated )) ->
             ( { model
@@ -5092,6 +5124,19 @@ withResolvedSubscription updated resolver =
             resolver
 
 
+{-| Puts a just-saved `UserSubdomain` (from `SaveSubdomainSettings`/`SetUserSubdomain`) on `model.resolver`'s currently
+loaded `User` -- mirrors `withResolvedSubscription` (a no-op if `resolver.status` isn't `Loaded`).
+-}
+withResolvedSubdomain : UserSubdomain -> Resolver.Model -> Resolver.Model
+withResolvedSubdomain updated resolver =
+    case resolver.status of
+        Resolver.Loaded user ->
+            { resolver | status = Resolver.Loaded { user | subdomain = Just updated } }
+
+        _ ->
+            resolver
+
+
 {-| `AvatarSaveClicked`'s transform, passed to `Users.updateUser` the same way
 `RealNameSaveClicked`'s inline lambda is -- applied to a freshly re-fetched
 `User`, not `model.resolver`'s own possibly-stale one (see `Users.updateUser`'s
@@ -5274,6 +5319,7 @@ profileDetail shared model server maybeAccount user =
         , aiProviderGrantedSection model canEdit user
         , storageQuotaSection isAdmin (isOwnProfile maybeAccount user) model.storageQuotaExpanded model.storageQuotaEdit user
         , subscriptionsSection shared.time.browserTimeZone shared.basePath shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) isAdmin (isOwnProfile maybeAccount user) model.subscriptionsExpanded model.cancelingSubscriptions user
+        , subdomainSection shared.accounts.mainFrontendHost (maybeAccount |> Maybe.map .server) (connectedToSubdomain shared (maybeAccount |> Maybe.map .server)) isAdmin (isOwnProfile maybeAccount user) model.subdomainExpanded model.subdomainStatus user
         , permissionsSection isAdmin model.permissionsExpanded model.permissionsEdit user
         , accountActionsSection canEdit model.passwordResetEdit user
         ]
@@ -6424,7 +6470,6 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
         , timestampLineView "Canceled" browserTimeZone subscription.canceledAt
         , timestampLineView "Service ended" browserTimeZone subscription.serviceTerminatedAt
         , threadLink
-        , subdomainSettingsView (maybeThreadHost /= Nothing && state /= SUBSCRIPTIONCANCELED) actionStatus subscription
         , if canCancel && state == SUBSCRIPTIONACTIVE then
             div [ class "profile-subscription-cancel" ]
                 [ button
@@ -6469,38 +6514,126 @@ subscriptionRowView browserTimeZone basePath mainFrontendHost maybeThreadHost ca
         ]
 
 
-{-| A `PURCHASE_TYPE_SUBDOMAIN` subscription's address and its "Share Content From Followers / Following / Friends"
-toggles (`SubdomainSettings`); nothing for any other type. Only the buyer can change them (`editable`) -- an admin
-looking at the profile sees them read-only. Each toggle saves immediately.
+{-| Whether `maybeHost` (the connected server's frontend host) is itself a Rellm Subdomain, per the configuration it served
+(`ServerConfiguration.subdomain_settings`).
 -}
-subdomainSettingsView : Bool -> SubmitStatus -> MarketSubscription -> Html Msg
-subdomainSettingsView editable status subscription =
-    case Market.subdomainSettingsOf subscription of
+connectedToSubdomain : Shared.Model -> Maybe String -> Bool
+connectedToSubdomain shared maybeHost =
+    maybeHost
+        |> Maybe.andThen (RellmServers.rellmServerForHost shared.accounts.servers)
+        |> Maybe.map (\server -> (RellmServers.configurationOf server).subdomainSettings /= Nothing)
+        |> Maybe.withDefault False
+
+
+{-| "Subdomain" -- the user's Rellm Subdomain (`User.subdomain`, `users.proto`): its address, why it is (not) enabled, and
+the "Share Content From Followers / Following / Friends" toggles (`SubdomainSettings`). The subdomain is enabled by a
+`PURCHASE_TYPE_SUBDOMAIN` subscription *or* by an admin; an `ADMIN` also gets the button that enables it for this user
+without a subscription (`SetUserSubdomain`) or withdraws that grant. Only the owner can change the toggles (they are the
+owner's -- an admin looking at the profile sees them read-only), and only while it is enabled; each toggle saves
+immediately. Shown to the profile's own owner or an Admin, same gating as `subscriptionsSection` (`User.subdomain` is only
+populated for those two viewers). Hidden for an owner with nothing to see (not enabled, no way to buy it is not this
+section's business -- the Market page sells it).
+-}
+subdomainSection : String -> Maybe String -> Bool -> Bool -> Bool -> Bool -> SubmitStatus -> User -> Html Msg
+subdomainSection mainFrontendHost maybeHost hostIsSubdomain isAdmin isOwn expanded status user =
+    case user.subdomain of
         Nothing ->
             text ""
 
-        Just settings ->
-            let
-                toggle : String -> Bool -> (Bool -> Proto.Rellm.SubdomainSettings) -> Html Msg
-                toggle labelText isOn withValue =
-                    label [ class "profile-subdomain-toggle" ]
-                        [ input
-                            [ type_ "checkbox"
-                            , checked isOn
-                            , disabled (not editable || status == Submitting)
-                            , onCheck (\on -> SaveSubdomainSettingsClicked subscription (withValue on))
+        Just subdomain ->
+            if not (isAdmin || isOwn) || (not isAdmin && not subdomain.enabled) then
+                text ""
+
+            else
+                let
+                    settings : SubdomainSettings
+                    settings =
+                        subdomain.settings |> Maybe.withDefault Proto.Rellm.defaultSubdomainSettings
+
+                    editable : Bool
+                    editable =
+                        isOwn && subdomain.enabled && status /= Submitting
+
+                    toggle : String -> Bool -> (Bool -> SubdomainSettings) -> Html Msg
+                    toggle labelText isOn withValue =
+                        label [ class "profile-subdomain-toggle" ]
+                            [ input
+                                [ type_ "checkbox"
+                                , checked isOn
+                                , disabled (not editable)
+                                , onCheck (\on -> SaveSubdomainSettingsClicked (withValue on))
+                                ]
+                                []
+                            , text labelText
                             ]
-                            []
-                        , text labelText
+
+                    address : String
+                    address =
+                        if settings.subdomain == "" then
+                            "None"
+
+                        else
+                            let
+                                host : String
+                                host =
+                                    maybeHost |> Maybe.withDefault mainFrontendHost
+                            in
+                            -- On the subdomain itself the connected host already *is* `<label>.<parent>` (the server says so
+                            -- through `subdomainSettings`; a matching prefix alone proves nothing -- user `bullcity` on
+                            -- `bullcity.social`); anywhere else it is the parent, so the label goes in front.
+                            if hostIsSubdomain then
+                                host
+
+                            else
+                                settings.subdomain ++ "." ++ host
+
+                    why : String
+                    why =
+                        case ( subdomain.subscribed, subdomain.grantedByAdmin ) of
+                            ( True, True ) ->
+                                "Enabled by a subscription and by an admin"
+
+                            ( True, False ) ->
+                                "Enabled by a subscription"
+
+                            ( False, True ) ->
+                                "Enabled by an admin"
+
+                            ( False, False ) ->
+                                "Not enabled"
+                in
+                expandableProfileSection "profile-subdomain-section"
+                    "subdomain"
+                    "Subdomain"
+                    Nothing
+                    expanded
+                    SubdomainExpandedToggled
+                    [ div [ class "profile-subscription-subdomain" ]
+                        [ span [ class "profile-subscription-row-status" ] [ text ("Address: " ++ address) ]
+                        , span [ class "profile-subscription-row-status" ] [ text why ]
+                        , toggle "Share Content From Followers" settings.shareContentFromFollowers (\on -> { settings | shareContentFromFollowers = on })
+                        , toggle "Share Content From Following" settings.shareContentFromFollowing (\on -> { settings | shareContentFromFollowing = on })
+                        , toggle "Share Content From Friends" settings.shareContentFromFriends (\on -> { settings | shareContentFromFriends = on })
+                        , if isAdmin then
+                            button
+                                [ class "profile-edit-button"
+                                , onClick (SetUserSubdomainClicked (not subdomain.grantedByAdmin))
+                                , disabled (status == Submitting)
+                                ]
+                                [ text
+                                    (if subdomain.grantedByAdmin then
+                                        "Withdraw Admin-Enabled Subdomain"
+
+                                     else
+                                        "Enable Subdomain (No Subscription Needed)"
+                                    )
+                                ]
+
+                          else
+                            text ""
+                        , editErrorView status
                         ]
-            in
-            div [ class "profile-subscription-subdomain" ]
-                [ span [ class "profile-subscription-row-status" ] [ text ("Subdomain: " ++ settings.subdomain) ]
-                , toggle "Share Content From Followers" settings.shareContentFromFollowers (\on -> { settings | shareContentFromFollowers = on })
-                , toggle "Share Content From Following" settings.shareContentFromFollowing (\on -> { settings | shareContentFromFollowing = on })
-                , toggle "Share Content From Friends" settings.shareContentFromFriends (\on -> { settings | shareContentFromFriends = on })
-                , editErrorView status
-                ]
+                    ]
 
 
 {-| The subscription's `state` (`MarketSubscriptionState`) in words. A canceled-but-paid-up

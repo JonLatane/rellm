@@ -21,8 +21,8 @@ module Components.Market exposing
     , priceLabel
     , productDescription
     , productName
-    , saveMarketSubscription
-    , subdomainSettingsOf
+    , saveSubdomainSettings
+    , setUserSubdomain
     , purchasePeriodLabel
     , purchaseTypeDescription
     , purchaseTypeEmoji
@@ -65,7 +65,6 @@ import Proto.Rellm
         )
 import Proto.Rellm.GetMarketSubscriptionsRequestType exposing (GetMarketSubscriptionsRequestType(..))
 import Proto.Rellm.MarketProduct.Details as ProductDetails
-import Proto.Rellm.MarketSubscription.Details as SubscriptionDetails
 import Proto.Rellm.MarketSubscriptionState exposing (MarketSubscriptionState(..))
 import Proto.Rellm.Permission exposing (Permission)
 import Proto.Rellm.PurchasePeriod exposing (PurchasePeriod(..))
@@ -309,42 +308,51 @@ updateMarketSubscription accountsPanelModel maybeAccountServer subscription =
         )
 
 
-{-| Saves the buyer-editable `SubdomainSettings` (the `shareContentFrom*` toggles and/or `customCssConfiguration`) of
-one of the caller's own `PURCHASE_TYPE_SUBDOMAIN` subscriptions (`SaveMarketSubscription`). `subdomainOf`/`subdomain`
-are server-assigned and ignored; a `customCssConfiguration` of `Nothing` keeps the stored stylesheet, and so does a
-`customCss` of `Nothing` inside it. `keepSharingSettings` (a CSS-only save) keeps the stored `shareContentFrom*` toggles
-whatever `settings` carries, so a stale copy of them can't undo a change made elsewhere.
+{-| Saves the caller's own `SubdomainSettings` (the `shareContentFrom*` toggles and/or `customCssConfiguration`), which live
+on their user row (`SaveSubdomainSettings`); the subdomain must be enabled. `subdomainOf`/`subdomain` are server-assigned
+and ignored; a `customCssConfiguration` of `Nothing` keeps the stored stylesheet, and so does a `customCss` of `Nothing`
+inside it. `keepSharingSettings` (a CSS-only save) keeps the stored `shareContentFrom*` toggles whatever `settings`
+carries, so a stale copy of them can't undo a change made elsewhere. Returns the updated `UserSubdomain` (without the
+stylesheet text).
 -}
-saveMarketSubscription :
+saveSubdomainSettings :
     AccountsPanel.Model
     -> AccountsPanel.MaybeAccountServer
-    -> String
     -> Bool
     -> Proto.Rellm.SubdomainSettings
-    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription )
-saveMarketSubscription accountsPanelModel maybeAccountServer subscriptionId keepSharingSettings settings =
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.UserSubdomain )
+saveSubdomainSettings accountsPanelModel maybeAccountServer keepSharingSettings settings =
     AccountsPanel.performWithAccountServer
         accountsPanelModel
         maybeAccountServer
         (\server token ->
-            Grpc.new Rellm.saveMarketSubscription
-                { marketSubscriptionId = subscriptionId, subdomainSettings = Just settings, keepSharingSettings = keepSharingSettings }
+            Grpc.new Rellm.saveSubdomainSettings
+                { subdomainSettings = Just settings, keepSharingSettings = keepSharingSettings }
                 |> Grpc.setHost (RellmServers.rellmServerUrl server)
                 |> withAccessToken (Just token)
                 |> Grpc.toTask
         )
 
 
-{-| The `SubdomainSettings` of a `PURCHASE_TYPE_SUBDOMAIN` subscription (`Nothing` for every other type).
+{-| An admin enabling (`True`) or withdrawing the grant of (`False`) a user's Rellm Subdomain without a subscription
+(`SetUserSubdomain`; `Admin` only). Returns the user's updated `UserSubdomain`.
 -}
-subdomainSettingsOf : MarketSubscription -> Maybe Proto.Rellm.SubdomainSettings
-subdomainSettingsOf subscription =
-    case subscription.details of
-        Just (SubscriptionDetails.SubdomainSubscriptionDetails details) ->
-            details.settings
-
-        _ ->
-            Nothing
+setUserSubdomain :
+    AccountsPanel.Model
+    -> AccountsPanel.MaybeAccountServer
+    -> String
+    -> Bool
+    -> Task Grpc.Error ( Maybe AccountsPanel.Msg, Proto.Rellm.UserSubdomain )
+setUserSubdomain accountsPanelModel maybeAccountServer userId enabled =
+    AccountsPanel.performWithAccountServer
+        accountsPanelModel
+        maybeAccountServer
+        (\server token ->
+            Grpc.new Rellm.setUserSubdomain { userId = userId, enabled = enabled }
+                |> Grpc.setHost (RellmServers.rellmServerUrl server)
+                |> withAccessToken (Just token)
+                |> Grpc.toTask
+        )
 
 
 {-| `subscription.state`, or -- for a server too old to send `state` at all (the decoder then defaults it to

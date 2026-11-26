@@ -620,26 +620,27 @@ final $typed_data.Uint8List markFulfillmentNotesReadRequestDescriptor = $convert
 const SubdomainSubscriptionDetails$json = {
   '1': 'SubdomainSubscriptionDetails',
   '2': [
-    {'1': 'settings', '3': 1, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '9': 0, '10': 'settings', '17': true},
     {'1': 'fulfillment_status', '3': 7, '4': 1, '5': 14, '6': '.rellm.FulfillmentStatus', '10': 'fulfillmentStatus'},
     {'1': 'fulfillment_notes', '3': 8, '4': 3, '5': 11, '6': '.rellm.FulfillmentNote', '10': 'fulfillmentNotes'},
-    {'1': 'notes_last_read', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 1, '10': 'notesLastRead', '17': true},
+    {'1': 'notes_last_read', '3': 9, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 0, '10': 'notesLastRead', '17': true},
   ],
   '8': [
-    {'1': '_settings'},
     {'1': '_notes_last_read'},
   ],
+  '9': [
+    {'1': 1, '2': 2},
+  ],
+  '10': ['settings'],
 };
 
 /// Descriptor for `SubdomainSubscriptionDetails`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List subdomainSubscriptionDetailsDescriptor = $convert.base64Decode(
-    'ChxTdWJkb21haW5TdWJzY3JpcHRpb25EZXRhaWxzEjkKCHNldHRpbmdzGAEgASgLMhgucmVsbG'
-    '0uU3ViZG9tYWluU2V0dGluZ3NIAFIIc2V0dGluZ3OIAQESRwoSZnVsZmlsbG1lbnRfc3RhdHVz'
-    'GAcgASgOMhgucmVsbG0uRnVsZmlsbG1lbnRTdGF0dXNSEWZ1bGZpbGxtZW50U3RhdHVzEkMKEW'
-    'Z1bGZpbGxtZW50X25vdGVzGAggAygLMhYucmVsbG0uRnVsZmlsbG1lbnROb3RlUhBmdWxmaWxs'
-    'bWVudE5vdGVzEkcKD25vdGVzX2xhc3RfcmVhZBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW'
-    '1lc3RhbXBIAVINbm90ZXNMYXN0UmVhZIgBAUILCglfc2V0dGluZ3NCEgoQX25vdGVzX2xhc3Rf'
-    'cmVhZA==');
+    'ChxTdWJkb21haW5TdWJzY3JpcHRpb25EZXRhaWxzEkcKEmZ1bGZpbGxtZW50X3N0YXR1cxgHIA'
+    'EoDjIYLnJlbGxtLkZ1bGZpbGxtZW50U3RhdHVzUhFmdWxmaWxsbWVudFN0YXR1cxJDChFmdWxm'
+    'aWxsbWVudF9ub3RlcxgIIAMoCzIWLnJlbGxtLkZ1bGZpbGxtZW50Tm90ZVIQZnVsZmlsbG1lbn'
+    'ROb3RlcxJHCg9ub3Rlc19sYXN0X3JlYWQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0'
+    'YW1wSABSDW5vdGVzTGFzdFJlYWSIAQFCEgoQX25vdGVzX2xhc3RfcmVhZEoECAEQAlIIc2V0dG'
+    'luZ3M=');
 
 @$core.Deprecated('Use subdomainPurchaseDetailsDescriptor instead')
 const SubdomainPurchaseDetails$json = {
@@ -653,21 +654,4 @@ const SubdomainPurchaseDetails$json = {
 final $typed_data.Uint8List subdomainPurchaseDetailsDescriptor = $convert.base64Decode(
     'ChhTdWJkb21haW5QdXJjaGFzZURldGFpbHMSHAoJc3ViZG9tYWluGAEgASgJUglzdWJkb21haW'
     '4=');
-
-@$core.Deprecated('Use saveMarketSubscriptionRequestDescriptor instead')
-const SaveMarketSubscriptionRequest$json = {
-  '1': 'SaveMarketSubscriptionRequest',
-  '2': [
-    {'1': 'market_subscription_id', '3': 1, '4': 1, '5': 9, '10': 'marketSubscriptionId'},
-    {'1': 'subdomain_settings', '3': 2, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '10': 'subdomainSettings'},
-    {'1': 'keep_sharing_settings', '3': 3, '4': 1, '5': 8, '10': 'keepSharingSettings'},
-  ],
-};
-
-/// Descriptor for `SaveMarketSubscriptionRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List saveMarketSubscriptionRequestDescriptor = $convert.base64Decode(
-    'Ch1TYXZlTWFya2V0U3Vic2NyaXB0aW9uUmVxdWVzdBI0ChZtYXJrZXRfc3Vic2NyaXB0aW9uX2'
-    'lkGAEgASgJUhRtYXJrZXRTdWJzY3JpcHRpb25JZBJHChJzdWJkb21haW5fc2V0dGluZ3MYAiAB'
-    'KAsyGC5yZWxsbS5TdWJkb21haW5TZXR0aW5nc1IRc3ViZG9tYWluU2V0dGluZ3MSMgoVa2VlcF'
-    '9zaGFyaW5nX3NldHRpbmdzGAMgASgIUhNrZWVwU2hhcmluZ1NldHRpbmdz');
 

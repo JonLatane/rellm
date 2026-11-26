@@ -185,3 +185,68 @@ pub struct NewFollow {
     pub target_user_id: i64,
     pub target_user_moderation: String,
 }
+
+/// The small, public-ish part of a user's Rellm Subdomain state, stored on `users` (see
+/// `migrations/2026-11-26-000000_subdomain_settings_on_users`): the label they hold, whether an admin enabled it for
+/// them, and the three sharing toggles. The stylesheet (`users.subdomain_custom_css`, up to 64 KiB) is deliberately
+/// not here -- `get_subdomain_custom_css` loads it only where it is served.
+#[derive(Queryable, Selectable, Clone, Debug, Default, PartialEq, Eq)]
+#[diesel(table_name = users)]
+pub struct UserSubdomainSummary {
+    pub id: i64,
+    pub subdomain: Option<String>,
+    pub subdomain_granted_by_admin: bool,
+    pub subdomain_share_followers: bool,
+    pub subdomain_share_following: bool,
+    pub subdomain_share_friends: bool,
+}
+
+/// The user holding the subdomain `label`, if any (an index probe on `idx_users_subdomain`). Holding the label is not
+/// the same as being entitled to it -- see `logic::subdomains::is_enabled`.
+pub fn get_user_by_subdomain_label(label: &str, conn: &mut PgPooledConnection) -> Result<Option<User>, Status> {
+    users::table
+        .select(USER_COLUMNS)
+        .filter(users::subdomain.eq(label))
+        .first::<User>(conn)
+        .optional()
+        .map_err(|e| {
+            log::error!("Failed to look up a subdomain: {:?}", crate::logic::log_redaction::safe_error(&e));
+            Status::new(Code::Internal, "failed_to_load_user")
+        })
+}
+
+/// `get_subdomain_summaries` for one user.
+pub fn get_subdomain_summary(user_id: i64, conn: &mut PgPooledConnection) -> Result<UserSubdomainSummary, Status> {
+    users::table
+        .filter(users::id.eq(user_id))
+        .select(UserSubdomainSummary::as_select())
+        .first::<UserSubdomainSummary>(conn)
+        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+}
+
+/// The subdomain state of `user_ids`, in one query.
+pub fn get_subdomain_summaries(
+    user_ids: &[i64],
+    conn: &mut PgPooledConnection,
+) -> Result<Vec<UserSubdomainSummary>, Status> {
+    users::table
+        .filter(users::id.eq_any(user_ids))
+        .select(UserSubdomainSummary::as_select())
+        .load::<UserSubdomainSummary>(conn)
+        .map_err(|e| {
+            log::error!("Failed to load subdomain summaries: {:?}", crate::logic::log_redaction::safe_error(&e));
+            Status::new(Code::Internal, "failed_to_load_users")
+        })
+}
+
+/// A user's stored `CustomCSSConfiguration` (as JSON, `custom_css` text included), if they ever set one.
+pub fn get_subdomain_custom_css(
+    user_id: i64,
+    conn: &mut PgPooledConnection,
+) -> Result<Option<serde_json::Value>, Status> {
+    users::table
+        .filter(users::id.eq(user_id))
+        .select(users::subdomain_custom_css)
+        .first::<Option<serde_json::Value>>(conn)
+        .map_err(|_| Status::new(Code::NotFound, "user_not_found"))
+}

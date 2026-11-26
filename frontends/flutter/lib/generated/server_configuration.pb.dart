@@ -586,8 +586,8 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   /// Set *only* on the virtual configuration a server returns to requests addressed to a user's
   /// Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon` -- see [`SubdomainSettings`](#rellm-SubdomainSettings)).
   /// Never stored on a real `ServerConfiguration` and ignored by [`ConfigureServer`](#grpc-api-ConfigureServer): it is
-  /// derived from the owner's `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription), and edited through
-  /// [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription). Clients tell a subdomain from a full server by
+  /// derived from the owner's [`UserSubdomain`](#rellm-UserSubdomain) (stored on the user), and edited through
+  /// [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings). Clients tell a subdomain from a full server by
   /// checking `subdomain_settings?.subdomain_of`.
   @$pb.TagNumber(130)
   SubdomainSettings get subdomainSettings => $_getN(29);
@@ -637,13 +637,14 @@ class ServerConfiguration extends $pb.GeneratedMessage {
   MailgunConfig ensureMailgunConfig() => $_ensure(32);
 }
 
-/// A user's Rellm Subdomain -- the settings of a `PURCHASE_TYPE_SUBDOMAIN` [`MarketSubscription`](#rellm-MarketSubscription).
+/// A user's Rellm Subdomain settings (stored on the user -- see [`UserSubdomain`](#rellm-UserSubdomain)).
 /// A server answers requests whose `Host` is `<subdomain>.<its frontend_host>` (`ExternalCDNConfig.frontend_host`) over
 /// both gRPC and HTTP, as a "virtual server" that shares everything with its parent (CDN configuration, contact
 /// integrations, media, login) except that it is scoped to one user: `GetPosts`/`GetEvents` only return that user's
 /// content (plus whatever the `share_content_from_*` toggles add), and `GetServerConfiguration` describes the user
-/// (see `subdomain_of`) rather than the whole server. The subscription's `details` hold these settings; the
-/// subscriber edits them with [`SaveMarketSubscription`](#grpc-api-SaveMarketSubscription).
+/// (see `subdomain_of`) rather than the whole server. The owner edits these settings with
+/// [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings); the subdomain exists while the owner has a
+/// `PURCHASE_TYPE_SUBDOMAIN` subscription in force or an `ADMIN` enabled it for them.
 class SubdomainSettings extends $pb.GeneratedMessage {
   factory SubdomainSettings({
     $core.String? subdomainOf,
@@ -710,7 +711,7 @@ class SubdomainSettings extends $pb.GeneratedMessage {
   static SubdomainSettings? _defaultInstance;
 
   /// The user ID of the subdomain's owner -- the user whose profile the subdomain's About tab shows and whose content it
-  /// is scoped to. Server-assigned; ignored on `SaveMarketSubscription`.
+  /// is scoped to. Server-assigned; ignored on `SaveSubdomainSettings`.
   @$pb.TagNumber(1)
   $core.String get subdomainOf => $_getSZ(0);
   @$pb.TagNumber(1)
@@ -721,7 +722,7 @@ class SubdomainSettings extends $pb.GeneratedMessage {
   void clearSubdomainOf() => clearField(1);
 
   /// The subdomain's DNS label (`jon` for `jon.bullcity.social`), lower case. Set to the owner's username when the
-  /// subscription is fulfilled. Server-assigned; ignored on `SaveMarketSubscription`.
+  /// subdomain is first enabled. Server-assigned; ignored on `SaveSubdomainSettings`.
   @$pb.TagNumber(2)
   $core.String get subdomain => $_getSZ(1);
   @$pb.TagNumber(2)
@@ -763,9 +764,9 @@ class SubdomainSettings extends $pb.GeneratedMessage {
 
   /// The subdomain's own custom stylesheet, edited in the Theme tab and served at `/custom_css.css` on the subdomain.
   /// Same validation as [`ConfigureCustomCSS`](#grpc-api-ConfigureCustomCSS) (`media_ids` must be `GLOBAL_PUBLIC`).
-  /// `custom_css` is never carried in subscription listings (`GetMarketSubscriptions`, `User.market_subscriptions`) or in
+  /// `custom_css` is never carried in `User.subdomain` or in
   /// `GetServerConfiguration`'s copy -- read the text with `GetCustomCSS` on the subdomain's host, same as
-  /// `ServerConfiguration.custom_css_configuration`. On `SaveMarketSubscription`, an unset `custom_css` keeps the
+  /// `ServerConfiguration.custom_css_configuration`. On `SaveSubdomainSettings`, an unset `custom_css` keeps the
   /// stored stylesheet.
   @$pb.TagNumber(6)
   CustomCSSConfiguration get customCssConfiguration => $_getN(5);

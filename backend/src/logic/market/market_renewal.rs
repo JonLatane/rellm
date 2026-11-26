@@ -111,7 +111,7 @@ fn renew_one(
             product_type: subscription.product_type.clone(),
             // Renewals repeat the same entitlement the subscription was created with.
             details: if purchase_type == PurchaseType::Subdomain {
-                crate::logic::subdomains::subdomain_purchase_details_json(&subscription.details)
+                crate::logic::subdomains::subdomain_purchase_details_json_for_buyer(subscription.buyer_id, conn)?
             } else {
                 subscription.details.clone()
             },

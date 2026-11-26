@@ -38,7 +38,7 @@ adminAccountFor shared targetHost =
 
 {-| The `SubdomainSettings` of `targetHost`'s configuration -- `Just` only when `targetHost` is a Rellm Subdomain
 (`jon.bullcity.social`; see `ServerConfiguration.subdomain_settings`), whose page shows only the tabs that make
-sense for one user and whose saves go through `SaveMarketSubscription` instead of `ConfigureServer`.
+sense for one user and whose saves go through `SaveSubdomainSettings` instead of `ConfigureServer`.
 -}
 subdomainSettingsFor : Shared.Model -> String -> Maybe SubdomainSettings
 subdomainSettingsFor shared targetHost =
@@ -48,7 +48,7 @@ subdomainSettingsFor shared targetHost =
 
 {-| On a subdomain, the signed-in account that *owns* it (`SubdomainSettings.subdomainOf` is its user id) -- the
 subdomain's equivalent of `adminAccountFor`: the only account whose Edit buttons show, saving via
-`SaveMarketSubscription`. `Nothing` on a normal server, or for anyone else.
+`SaveSubdomainSettings`. `Nothing` on a normal server, or for anyone else.
 -}
 subdomainOwnerAccountFor : Shared.Model -> String -> Maybe RellmAccount
 subdomainOwnerAccountFor shared targetHost =

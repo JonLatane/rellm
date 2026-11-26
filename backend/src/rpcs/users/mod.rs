@@ -9,6 +9,12 @@ pub use start_contact_method_verification::{
 mod verify_contact_method;
 pub use verify_contact_method::verify_contact_method;
 
+mod save_subdomain_settings;
+pub use save_subdomain_settings::save_subdomain_settings;
+
+mod set_user_subdomain;
+pub use set_user_subdomain::set_user_subdomain;
+
 mod delete_user;
 pub use delete_user::delete_user;
 

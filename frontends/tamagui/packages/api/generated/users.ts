@@ -12,6 +12,7 @@ import { Timestamp } from "./google/protobuf/timestamp";
 import { MarketSubscription } from "./market";
 import { MediaReference } from "./media";
 import { Permission, permissionFromJSON, permissionToJSON } from "./permissions";
+import { SubdomainSettings } from "./server_configuration";
 import { SyncDestination, SyncSource } from "./sync";
 import {
   Moderation,
@@ -336,6 +337,16 @@ export interface User {
    * user themselves or an `ADMIN`; `true` for everyone else (so it's never read as a signal).
    */
   hasPassword: boolean;
+  /**
+   * The user's Rellm Subdomain -- see [`UserSubdomain`](#rellm-UserSubdomain). Gated and populated the same way as
+   * `market_subscriptions` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing
+   * type, plus `Login`/`CreateAccount`/`GetCurrentUser`); unset for everyone else, and ignored by
+   * [`UpdateUser`](#grpc-api-UpdateUser) -- use [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) and
+   * [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+   */
+  subdomain?:
+    | UserSubdomain
+    | undefined;
   /** The time the user was created. */
   createdAt:
     | string
@@ -344,7 +355,59 @@ export interface User {
   updatedAt?: string | undefined;
 }
 
-/** Model for a user's follow of another user. */
+/**
+ * Model for a user's follow of another user.
+ * A user's Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon`), stored on the user -- the settings, who may
+ * use them and why. A subdomain is *enabled* while the user holds an in-force `PURCHASE_TYPE_SUBDOMAIN`
+ * [`MarketSubscription`](#rellm-MarketSubscription) (`subscribed`) **or** an `ADMIN` enabled it for them
+ * (`granted_by_admin`, [`SetUserSubdomain`](#grpc-api-SetUserSubdomain)) -- no subscription needed. The user edits the
+ * settings with [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) while it is enabled; they are kept when it
+ * lapses, so re-enabling brings the old theme and toggles back.
+ */
+export interface UserSubdomain {
+  /**
+   * The settings. `subdomain_of`/`subdomain` are set while the user holds the label (always the user's lower-cased
+   * username, fixed when first enabled, released when the subdomain stops being enabled); `custom_css` is never carried
+   * here -- read it with `GetCustomCSS` on the subdomain's own host.
+   */
+  settings:
+    | SubdomainSettings
+    | undefined;
+  /** Whether the subdomain resolves right now: `subscribed || granted_by_admin`. */
+  enabled: boolean;
+  /** The user holds an in-force (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription. */
+  subscribed: boolean;
+  /** An `ADMIN` enabled the subdomain for this user without a subscription. */
+  grantedByAdmin: boolean;
+}
+
+/** Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings). */
+export interface SaveSubdomainSettingsRequest {
+  /**
+   * The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
+   * read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+   */
+  subdomainSettings:
+    | SubdomainSettings
+    | undefined;
+  /**
+   * When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+   * only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+   */
+  keepSharingSettings: boolean;
+}
+
+/** Request for [`SetUserSubdomain`](#grpc-api-SetUserSubdomain). */
+export interface SetUserSubdomainRequest {
+  /** The ID of the user to enable/disable a subdomain for. */
+  userId: string;
+  /**
+   * True to enable the subdomain without a subscription; false to withdraw that grant (a subscription, if the user has
+   * one, keeps the subdomain enabled).
+   */
+  enabled: boolean;
+}
+
 export interface Follow {
   /** The follower in the relationship. */
   userId: string;
@@ -599,6 +662,7 @@ function createBaseUser(): User {
     aiModels: [],
     marketSubscriptions: [],
     hasPassword: false,
+    subdomain: undefined,
     createdAt: undefined,
     updatedAt: undefined,
   };
@@ -697,6 +761,9 @@ export const User: MessageFns<User> = {
     }
     if (message.hasPassword !== false) {
       writer.uint32(688).bool(message.hasPassword);
+    }
+    if (message.subdomain !== undefined) {
+      UserSubdomain.encode(message.subdomain, writer.uint32(698).fork()).join();
     }
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(802).fork()).join();
@@ -964,6 +1031,14 @@ export const User: MessageFns<User> = {
           message.hasPassword = reader.bool();
           continue;
         }
+        case 87: {
+          if (tag !== 698) {
+            break;
+          }
+
+          message.subdomain = UserSubdomain.decode(reader, reader.uint32());
+          continue;
+        }
         case 100: {
           if (tag !== 802) {
             break;
@@ -1041,6 +1116,7 @@ export const User: MessageFns<User> = {
         ? object.marketSubscriptions.map((e: any) => MarketSubscription.fromJSON(e))
         : [],
       hasPassword: isSet(object.hasPassword) ? globalThis.Boolean(object.hasPassword) : false,
+      subdomain: isSet(object.subdomain) ? UserSubdomain.fromJSON(object.subdomain) : undefined,
       createdAt: isSet(object.createdAt) ? globalThis.String(object.createdAt) : undefined,
       updatedAt: isSet(object.updatedAt) ? globalThis.String(object.updatedAt) : undefined,
     };
@@ -1138,6 +1214,9 @@ export const User: MessageFns<User> = {
     if (message.hasPassword !== false) {
       obj.hasPassword = message.hasPassword;
     }
+    if (message.subdomain !== undefined) {
+      obj.subdomain = UserSubdomain.toJSON(message.subdomain);
+    }
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt;
     }
@@ -1196,8 +1275,277 @@ export const User: MessageFns<User> = {
     message.aiModels = object.aiModels?.map((e) => AIModel.fromPartial(e)) || [];
     message.marketSubscriptions = object.marketSubscriptions?.map((e) => MarketSubscription.fromPartial(e)) || [];
     message.hasPassword = object.hasPassword ?? false;
+    message.subdomain = (object.subdomain !== undefined && object.subdomain !== null)
+      ? UserSubdomain.fromPartial(object.subdomain)
+      : undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.updatedAt = object.updatedAt ?? undefined;
+    return message;
+  },
+};
+
+function createBaseUserSubdomain(): UserSubdomain {
+  return { settings: undefined, enabled: false, subscribed: false, grantedByAdmin: false };
+}
+
+export const UserSubdomain: MessageFns<UserSubdomain> = {
+  encode(message: UserSubdomain, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.settings !== undefined) {
+      SubdomainSettings.encode(message.settings, writer.uint32(10).fork()).join();
+    }
+    if (message.enabled !== false) {
+      writer.uint32(16).bool(message.enabled);
+    }
+    if (message.subscribed !== false) {
+      writer.uint32(24).bool(message.subscribed);
+    }
+    if (message.grantedByAdmin !== false) {
+      writer.uint32(32).bool(message.grantedByAdmin);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UserSubdomain {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUserSubdomain();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.settings = SubdomainSettings.decode(reader, reader.uint32());
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.subscribed = reader.bool();
+          continue;
+        }
+        case 4: {
+          if (tag !== 32) {
+            break;
+          }
+
+          message.grantedByAdmin = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UserSubdomain {
+    return {
+      settings: isSet(object.settings) ? SubdomainSettings.fromJSON(object.settings) : undefined,
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+      subscribed: isSet(object.subscribed) ? globalThis.Boolean(object.subscribed) : false,
+      grantedByAdmin: isSet(object.grantedByAdmin) ? globalThis.Boolean(object.grantedByAdmin) : false,
+    };
+  },
+
+  toJSON(message: UserSubdomain): unknown {
+    const obj: any = {};
+    if (message.settings !== undefined) {
+      obj.settings = SubdomainSettings.toJSON(message.settings);
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    if (message.subscribed !== false) {
+      obj.subscribed = message.subscribed;
+    }
+    if (message.grantedByAdmin !== false) {
+      obj.grantedByAdmin = message.grantedByAdmin;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UserSubdomain>, I>>(base?: I): UserSubdomain {
+    return UserSubdomain.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UserSubdomain>, I>>(object: I): UserSubdomain {
+    const message = createBaseUserSubdomain();
+    message.settings = (object.settings !== undefined && object.settings !== null)
+      ? SubdomainSettings.fromPartial(object.settings)
+      : undefined;
+    message.enabled = object.enabled ?? false;
+    message.subscribed = object.subscribed ?? false;
+    message.grantedByAdmin = object.grantedByAdmin ?? false;
+    return message;
+  },
+};
+
+function createBaseSaveSubdomainSettingsRequest(): SaveSubdomainSettingsRequest {
+  return { subdomainSettings: undefined, keepSharingSettings: false };
+}
+
+export const SaveSubdomainSettingsRequest: MessageFns<SaveSubdomainSettingsRequest> = {
+  encode(message: SaveSubdomainSettingsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.subdomainSettings !== undefined) {
+      SubdomainSettings.encode(message.subdomainSettings, writer.uint32(10).fork()).join();
+    }
+    if (message.keepSharingSettings !== false) {
+      writer.uint32(16).bool(message.keepSharingSettings);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SaveSubdomainSettingsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSaveSubdomainSettingsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.subdomainSettings = SubdomainSettings.decode(reader, reader.uint32());
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.keepSharingSettings = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SaveSubdomainSettingsRequest {
+    return {
+      subdomainSettings: isSet(object.subdomainSettings)
+        ? SubdomainSettings.fromJSON(object.subdomainSettings)
+        : undefined,
+      keepSharingSettings: isSet(object.keepSharingSettings) ? globalThis.Boolean(object.keepSharingSettings) : false,
+    };
+  },
+
+  toJSON(message: SaveSubdomainSettingsRequest): unknown {
+    const obj: any = {};
+    if (message.subdomainSettings !== undefined) {
+      obj.subdomainSettings = SubdomainSettings.toJSON(message.subdomainSettings);
+    }
+    if (message.keepSharingSettings !== false) {
+      obj.keepSharingSettings = message.keepSharingSettings;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SaveSubdomainSettingsRequest>, I>>(base?: I): SaveSubdomainSettingsRequest {
+    return SaveSubdomainSettingsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SaveSubdomainSettingsRequest>, I>>(object: I): SaveSubdomainSettingsRequest {
+    const message = createBaseSaveSubdomainSettingsRequest();
+    message.subdomainSettings = (object.subdomainSettings !== undefined && object.subdomainSettings !== null)
+      ? SubdomainSettings.fromPartial(object.subdomainSettings)
+      : undefined;
+    message.keepSharingSettings = object.keepSharingSettings ?? false;
+    return message;
+  },
+};
+
+function createBaseSetUserSubdomainRequest(): SetUserSubdomainRequest {
+  return { userId: "", enabled: false };
+}
+
+export const SetUserSubdomainRequest: MessageFns<SetUserSubdomainRequest> = {
+  encode(message: SetUserSubdomainRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.userId !== "") {
+      writer.uint32(10).string(message.userId);
+    }
+    if (message.enabled !== false) {
+      writer.uint32(16).bool(message.enabled);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SetUserSubdomainRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSetUserSubdomainRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.userId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.enabled = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SetUserSubdomainRequest {
+    return {
+      userId: isSet(object.userId) ? globalThis.String(object.userId) : "",
+      enabled: isSet(object.enabled) ? globalThis.Boolean(object.enabled) : false,
+    };
+  },
+
+  toJSON(message: SetUserSubdomainRequest): unknown {
+    const obj: any = {};
+    if (message.userId !== "") {
+      obj.userId = message.userId;
+    }
+    if (message.enabled !== false) {
+      obj.enabled = message.enabled;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SetUserSubdomainRequest>, I>>(base?: I): SetUserSubdomainRequest {
+    return SetUserSubdomainRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SetUserSubdomainRequest>, I>>(object: I): SetUserSubdomainRequest {
+    const message = createBaseSetUserSubdomainRequest();
+    message.userId = object.userId ?? "";
+    message.enabled = object.enabled ?? false;
     return message;
   },
 };

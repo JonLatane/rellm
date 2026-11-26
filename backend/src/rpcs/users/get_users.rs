@@ -483,6 +483,20 @@ pub fn attach_advanced_admin_data(
         }
     }
 
+    // Rellm Subdomain state (stored on the user; no stylesheet text) -- two batched queries however many users.
+    if let (Ok(summaries), Ok(subscribed)) = (
+        models::get_subdomain_summaries(&allowed_ids, conn),
+        crate::logic::subdomains::subscribed_user_ids(&allowed_ids, conn),
+    ) {
+        let mut by_id: HashMap<i64, models::UserSubdomainSummary> = summaries.into_iter().map(|s| (s.id, s)).collect();
+        for proto_user in users.iter_mut() {
+            if let Some(summary) = proto_user.id.to_db_id().ok().and_then(|id| by_id.remove(&id)) {
+                proto_user.subdomain =
+                    Some(crate::logic::subdomains::user_subdomain_proto(&summary, subscribed.contains(&summary.id)));
+            }
+        }
+    }
+
     if let Ok(mut subscriptions_by_id) = build_subscriptions_for_buyers(&allowed_ids, conn) {
         for proto_user in users.iter_mut() {
             if let Ok(id) = proto_user.id.to_db_id() {

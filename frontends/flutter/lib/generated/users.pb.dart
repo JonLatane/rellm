@@ -20,6 +20,7 @@ import 'google/protobuf/timestamp.pb.dart' as $14;
 import 'market.pb.dart' as $12;
 import 'media.pb.dart' as $5;
 import 'permissions.pbenum.dart' as $16;
+import 'server_configuration.pb.dart' as $2;
 import 'sync.pb.dart' as $10;
 import 'users.pbenum.dart';
 import 'visibility_moderation.pbenum.dart' as $15;
@@ -60,6 +61,7 @@ class User extends $pb.GeneratedMessage {
     $core.Iterable<$11.AIModel>? aiModels,
     $core.Iterable<$12.MarketSubscription>? marketSubscriptions,
     $core.bool? hasPassword,
+    UserSubdomain? subdomain,
     $14.Timestamp? createdAt,
     $14.Timestamp? updatedAt,
   }) {
@@ -154,6 +156,9 @@ class User extends $pb.GeneratedMessage {
     if (hasPassword != null) {
       $result.hasPassword = hasPassword;
     }
+    if (subdomain != null) {
+      $result.subdomain = subdomain;
+    }
     if (createdAt != null) {
       $result.createdAt = createdAt;
     }
@@ -197,6 +202,7 @@ class User extends $pb.GeneratedMessage {
     ..pc<$11.AIModel>(84, _omitFieldNames ? '' : 'aiModels', $pb.PbFieldType.PM, subBuilder: $11.AIModel.create)
     ..pc<$12.MarketSubscription>(85, _omitFieldNames ? '' : 'marketSubscriptions', $pb.PbFieldType.PM, subBuilder: $12.MarketSubscription.create)
     ..aOB(86, _omitFieldNames ? '' : 'hasPassword')
+    ..aOM<UserSubdomain>(87, _omitFieldNames ? '' : 'subdomain', subBuilder: UserSubdomain.create)
     ..aOM<$14.Timestamp>(100, _omitFieldNames ? '' : 'createdAt', subBuilder: $14.Timestamp.create)
     ..aOM<$14.Timestamp>(101, _omitFieldNames ? '' : 'updatedAt', subBuilder: $14.Timestamp.create)
     ..hasRequiredFields = false
@@ -541,32 +547,293 @@ class User extends $pb.GeneratedMessage {
   @$pb.TagNumber(86)
   void clearHasPassword() => clearField(86);
 
+  /// The user's Rellm Subdomain -- see [`UserSubdomain`](#rellm-UserSubdomain). Gated and populated the same way as
+  /// `market_subscriptions` (target user themselves, or an Admin, across any [`GetUsers`](#grpc-api-GetUsers) listing
+  /// type, plus `Login`/`CreateAccount`/`GetCurrentUser`); unset for everyone else, and ignored by
+  /// [`UpdateUser`](#grpc-api-UpdateUser) -- use [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) and
+  /// [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+  @$pb.TagNumber(87)
+  UserSubdomain get subdomain => $_getN(30);
+  @$pb.TagNumber(87)
+  set subdomain(UserSubdomain v) { setField(87, v); }
+  @$pb.TagNumber(87)
+  $core.bool hasSubdomain() => $_has(30);
+  @$pb.TagNumber(87)
+  void clearSubdomain() => clearField(87);
+  @$pb.TagNumber(87)
+  UserSubdomain ensureSubdomain() => $_ensure(30);
+
   /// The time the user was created.
   @$pb.TagNumber(100)
-  $14.Timestamp get createdAt => $_getN(30);
+  $14.Timestamp get createdAt => $_getN(31);
   @$pb.TagNumber(100)
   set createdAt($14.Timestamp v) { setField(100, v); }
   @$pb.TagNumber(100)
-  $core.bool hasCreatedAt() => $_has(30);
+  $core.bool hasCreatedAt() => $_has(31);
   @$pb.TagNumber(100)
   void clearCreatedAt() => clearField(100);
   @$pb.TagNumber(100)
-  $14.Timestamp ensureCreatedAt() => $_ensure(30);
+  $14.Timestamp ensureCreatedAt() => $_ensure(31);
 
   /// The time the user was last updated.
   @$pb.TagNumber(101)
-  $14.Timestamp get updatedAt => $_getN(31);
+  $14.Timestamp get updatedAt => $_getN(32);
   @$pb.TagNumber(101)
   set updatedAt($14.Timestamp v) { setField(101, v); }
   @$pb.TagNumber(101)
-  $core.bool hasUpdatedAt() => $_has(31);
+  $core.bool hasUpdatedAt() => $_has(32);
   @$pb.TagNumber(101)
   void clearUpdatedAt() => clearField(101);
   @$pb.TagNumber(101)
-  $14.Timestamp ensureUpdatedAt() => $_ensure(31);
+  $14.Timestamp ensureUpdatedAt() => $_ensure(32);
 }
 
 /// Model for a user's follow of another user.
+/// A user's Rellm Subdomain (`jon.bullcity.social` for `bullcity.social/jon`), stored on the user -- the settings, who may
+/// use them and why. A subdomain is *enabled* while the user holds an in-force `PURCHASE_TYPE_SUBDOMAIN`
+/// [`MarketSubscription`](#rellm-MarketSubscription) (`subscribed`) **or** an `ADMIN` enabled it for them
+/// (`granted_by_admin`, [`SetUserSubdomain`](#grpc-api-SetUserSubdomain)) -- no subscription needed. The user edits the
+/// settings with [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings) while it is enabled; they are kept when it
+/// lapses, so re-enabling brings the old theme and toggles back.
+class UserSubdomain extends $pb.GeneratedMessage {
+  factory UserSubdomain({
+    $2.SubdomainSettings? settings,
+    $core.bool? enabled,
+    $core.bool? subscribed,
+    $core.bool? grantedByAdmin,
+  }) {
+    final $result = create();
+    if (settings != null) {
+      $result.settings = settings;
+    }
+    if (enabled != null) {
+      $result.enabled = enabled;
+    }
+    if (subscribed != null) {
+      $result.subscribed = subscribed;
+    }
+    if (grantedByAdmin != null) {
+      $result.grantedByAdmin = grantedByAdmin;
+    }
+    return $result;
+  }
+  UserSubdomain._() : super();
+  factory UserSubdomain.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory UserSubdomain.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'UserSubdomain', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOM<$2.SubdomainSettings>(1, _omitFieldNames ? '' : 'settings', subBuilder: $2.SubdomainSettings.create)
+    ..aOB(2, _omitFieldNames ? '' : 'enabled')
+    ..aOB(3, _omitFieldNames ? '' : 'subscribed')
+    ..aOB(4, _omitFieldNames ? '' : 'grantedByAdmin')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  UserSubdomain clone() => UserSubdomain()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  UserSubdomain copyWith(void Function(UserSubdomain) updates) => super.copyWith((message) => updates(message as UserSubdomain)) as UserSubdomain;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static UserSubdomain create() => UserSubdomain._();
+  UserSubdomain createEmptyInstance() => create();
+  static $pb.PbList<UserSubdomain> createRepeated() => $pb.PbList<UserSubdomain>();
+  @$core.pragma('dart2js:noInline')
+  static UserSubdomain getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<UserSubdomain>(create);
+  static UserSubdomain? _defaultInstance;
+
+  /// The settings. `subdomain_of`/`subdomain` are set while the user holds the label (always the user's lower-cased
+  /// username, fixed when first enabled, released when the subdomain stops being enabled); `custom_css` is never carried
+  /// here -- read it with `GetCustomCSS` on the subdomain's own host.
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings get settings => $_getN(0);
+  @$pb.TagNumber(1)
+  set settings($2.SubdomainSettings v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSettings() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSettings() => clearField(1);
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings ensureSettings() => $_ensure(0);
+
+  /// Whether the subdomain resolves right now: `subscribed || granted_by_admin`.
+  @$pb.TagNumber(2)
+  $core.bool get enabled => $_getBF(1);
+  @$pb.TagNumber(2)
+  set enabled($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasEnabled() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearEnabled() => clearField(2);
+
+  /// The user holds an in-force (not canceled-and-lapsed) `PURCHASE_TYPE_SUBDOMAIN` subscription.
+  @$pb.TagNumber(3)
+  $core.bool get subscribed => $_getBF(2);
+  @$pb.TagNumber(3)
+  set subscribed($core.bool v) { $_setBool(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasSubscribed() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSubscribed() => clearField(3);
+
+  /// An `ADMIN` enabled the subdomain for this user without a subscription.
+  @$pb.TagNumber(4)
+  $core.bool get grantedByAdmin => $_getBF(3);
+  @$pb.TagNumber(4)
+  set grantedByAdmin($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasGrantedByAdmin() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearGrantedByAdmin() => clearField(4);
+}
+
+/// Request for [`SaveSubdomainSettings`](#grpc-api-SaveSubdomainSettings).
+class SaveSubdomainSettingsRequest extends $pb.GeneratedMessage {
+  factory SaveSubdomainSettingsRequest({
+    $2.SubdomainSettings? subdomainSettings,
+    $core.bool? keepSharingSettings,
+  }) {
+    final $result = create();
+    if (subdomainSettings != null) {
+      $result.subdomainSettings = subdomainSettings;
+    }
+    if (keepSharingSettings != null) {
+      $result.keepSharingSettings = keepSharingSettings;
+    }
+    return $result;
+  }
+  SaveSubdomainSettingsRequest._() : super();
+  factory SaveSubdomainSettingsRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SaveSubdomainSettingsRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SaveSubdomainSettingsRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOM<$2.SubdomainSettings>(1, _omitFieldNames ? '' : 'subdomainSettings', subBuilder: $2.SubdomainSettings.create)
+    ..aOB(2, _omitFieldNames ? '' : 'keepSharingSettings')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SaveSubdomainSettingsRequest clone() => SaveSubdomainSettingsRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SaveSubdomainSettingsRequest copyWith(void Function(SaveSubdomainSettingsRequest) updates) => super.copyWith((message) => updates(message as SaveSubdomainSettingsRequest)) as SaveSubdomainSettingsRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SaveSubdomainSettingsRequest create() => SaveSubdomainSettingsRequest._();
+  SaveSubdomainSettingsRequest createEmptyInstance() => create();
+  static $pb.PbList<SaveSubdomainSettingsRequest> createRepeated() => $pb.PbList<SaveSubdomainSettingsRequest>();
+  @$core.pragma('dart2js:noInline')
+  static SaveSubdomainSettingsRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SaveSubdomainSettingsRequest>(create);
+  static SaveSubdomainSettingsRequest? _defaultInstance;
+
+  /// The new settings. Only `share_content_from_followers`/`_following`/`_friends` and `custom_css_configuration` are
+  /// read -- `subdomain_of`/`subdomain` are server-assigned and ignored.
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings get subdomainSettings => $_getN(0);
+  @$pb.TagNumber(1)
+  set subdomainSettings($2.SubdomainSettings v) { setField(1, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasSubdomainSettings() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearSubdomainSettings() => clearField(1);
+  @$pb.TagNumber(1)
+  $2.SubdomainSettings ensureSubdomainSettings() => $_ensure(0);
+
+  /// When true, `subdomain_settings.share_content_from_*` are ignored and the stored toggles are kept -- for a save that
+  /// only changes the stylesheet (the Theme tab), so a stale copy of the toggles can't undo a change made elsewhere.
+  @$pb.TagNumber(2)
+  $core.bool get keepSharingSettings => $_getBF(1);
+  @$pb.TagNumber(2)
+  set keepSharingSettings($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasKeepSharingSettings() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearKeepSharingSettings() => clearField(2);
+}
+
+/// Request for [`SetUserSubdomain`](#grpc-api-SetUserSubdomain).
+class SetUserSubdomainRequest extends $pb.GeneratedMessage {
+  factory SetUserSubdomainRequest({
+    $core.String? userId,
+    $core.bool? enabled,
+  }) {
+    final $result = create();
+    if (userId != null) {
+      $result.userId = userId;
+    }
+    if (enabled != null) {
+      $result.enabled = enabled;
+    }
+    return $result;
+  }
+  SetUserSubdomainRequest._() : super();
+  factory SetUserSubdomainRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory SetUserSubdomainRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'SetUserSubdomainRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'rellm'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'userId')
+    ..aOB(2, _omitFieldNames ? '' : 'enabled')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  SetUserSubdomainRequest clone() => SetUserSubdomainRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  SetUserSubdomainRequest copyWith(void Function(SetUserSubdomainRequest) updates) => super.copyWith((message) => updates(message as SetUserSubdomainRequest)) as SetUserSubdomainRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SetUserSubdomainRequest create() => SetUserSubdomainRequest._();
+  SetUserSubdomainRequest createEmptyInstance() => create();
+  static $pb.PbList<SetUserSubdomainRequest> createRepeated() => $pb.PbList<SetUserSubdomainRequest>();
+  @$core.pragma('dart2js:noInline')
+  static SetUserSubdomainRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<SetUserSubdomainRequest>(create);
+  static SetUserSubdomainRequest? _defaultInstance;
+
+  /// The ID of the user to enable/disable a subdomain for.
+  @$pb.TagNumber(1)
+  $core.String get userId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set userId($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasUserId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearUserId() => clearField(1);
+
+  /// True to enable the subdomain without a subscription; false to withdraw that grant (a subscription, if the user has
+  /// one, keeps the subdomain enabled).
+  @$pb.TagNumber(2)
+  $core.bool get enabled => $_getBF(1);
+  @$pb.TagNumber(2)
+  set enabled($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasEnabled() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearEnabled() => clearField(2);
+}
+
 class Follow extends $pb.GeneratedMessage {
   factory Follow({
     $core.String? userId,

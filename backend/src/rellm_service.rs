@@ -315,6 +315,20 @@ impl Rellm for RellmService {
         authenticated_rpc!(self, rpcs::update_user, request)
     }
 
+    async fn save_subdomain_settings(
+        &self,
+        request: Request<SaveSubdomainSettingsRequest>,
+    ) -> Result<Response<UserSubdomain>, Status> {
+        authenticated_rpc!(self, rpcs::save_subdomain_settings, request)
+    }
+
+    async fn set_user_subdomain(
+        &self,
+        request: Request<SetUserSubdomainRequest>,
+    ) -> Result<Response<UserSubdomain>, Status> {
+        authenticated_rpc!(self, rpcs::set_user_subdomain, request)
+    }
+
     async fn start_contact_method_verification(
         &self,
         request: Request<ContactMethod>,
@@ -707,12 +721,7 @@ impl Rellm for RellmService {
         rpcs::update_market_subscription_and_notify(request.into_inner(), &user, &mut conn, self.pool.clone())
             .map(Response::new)
     }
-    async fn save_market_subscription(
-        &self,
-        request: Request<SaveMarketSubscriptionRequest>,
-    ) -> Result<Response<MarketSubscription>, Status> {
-        authenticated_rpc!(self, rpcs::save_market_subscription, request)
-    }
+
     async fn mark_fulfillment_notes_read(
         &self,
         request: Request<MarkFulfillmentNotesReadRequest>,

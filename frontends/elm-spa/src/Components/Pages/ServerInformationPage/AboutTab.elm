@@ -22,7 +22,7 @@ import Html exposing (Html, button, div, h2, h3, input, label, p, span, text)
 import Grpc
 import Html.Attributes exposing (checked, class, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
-import Proto.Rellm exposing (MarketSubscription, SubdomainSettings, User)
+import Proto.Rellm exposing (SubdomainSettings, User, UserSubdomain)
 import Shared
 import Shared.AccountsPanel as AccountsPanel
 import Shared.AccountsPanel.RellmAccounts as RellmAccounts exposing (RellmAccount)
@@ -59,7 +59,7 @@ type Msg
     | EditPrivacyPolicyClicked RellmServer
     | EditMediaPolicyClicked RellmServer
     | SubdomainSettingsChanged SubdomainSettings
-    | GotSubdomainSaved (Result Grpc.Error ( Maybe AccountsPanel.Msg, MarketSubscription ))
+    | GotSubdomainSaved (Result Grpc.Error ( Maybe AccountsPanel.Msg, UserSubdomain ))
 
 
 {-| Live only while the server's name (or, via `Model.shortNameStatus`, its short name) is being
@@ -162,13 +162,13 @@ update shared targetHost msg model =
         EditPrivacyPolicyClicked server ->
             ( model, Effect.fromShared (Shared.MarkdownPanelMsg (MarkdownPanel.Open (MarkdownPanel.ServerPrivacyPolicy server) targetHost)) )
 
-        -- A "Share Content From ..." toggle: on a Rellm Subdomain the owner's settings live in their `PURCHASE_TYPE_SUBDOMAIN`
-        -- subscription, so the save is `SaveMarketSubscription` (empty id = "my subdomain subscription"), not `ConfigureServer`.
+        -- A "Share Content From ..." toggle: on a Rellm Subdomain the owner's settings live on their user, so the save is
+        -- `SaveSubdomainSettings`, not `ConfigureServer`.
         SubdomainSettingsChanged settings ->
             case Common.subdomainOwnerAccountFor shared targetHost of
                 Just account ->
                     ( { model | subdomainSettings = Just settings, subdomainStatus = AccountsPanel.Submitting }
-                    , Market.saveMarketSubscription shared.accounts ( Just account.userId, targetHost ) "" False { settings | customCssConfiguration = Nothing }
+                    , Market.saveSubdomainSettings shared.accounts ( Just account.userId, targetHost ) False { settings | customCssConfiguration = Nothing }
                         |> Task.attempt GotSubdomainSaved
                         |> Effect.fromCmd
                     )
@@ -176,9 +176,9 @@ update shared targetHost msg model =
                 Nothing ->
                     ( model, Effect.none )
 
-        GotSubdomainSaved (Ok ( maybeAccountsPanelMsg, subscription )) ->
+        GotSubdomainSaved (Ok ( maybeAccountsPanelMsg, saved )) ->
             ( { model
-                | subdomainSettings = Market.subdomainSettingsOf subscription |> Maybe.map (\s -> { s | customCssConfiguration = Nothing })
+                | subdomainSettings = saved.settings |> Maybe.map (\s -> { s | customCssConfiguration = Nothing })
                 , subdomainStatus = AccountsPanel.Idle
               }
             , Common.accountsPanelEffect maybeAccountsPanelMsg

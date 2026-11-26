@@ -86,6 +86,14 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/UpdateUser',
       ($4.User value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $4.User.fromBuffer(value));
+  static final _$saveSubdomainSettings = $grpc.ClientMethod<$4.SaveSubdomainSettingsRequest, $4.UserSubdomain>(
+      '/rellm.Rellm/SaveSubdomainSettings',
+      ($4.SaveSubdomainSettingsRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $4.UserSubdomain.fromBuffer(value));
+  static final _$setUserSubdomain = $grpc.ClientMethod<$4.SetUserSubdomainRequest, $4.UserSubdomain>(
+      '/rellm.Rellm/SetUserSubdomain',
+      ($4.SetUserSubdomainRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $4.UserSubdomain.fromBuffer(value));
   static final _$startContactMethodVerification = $grpc.ClientMethod<$4.ContactMethod, $4.ContactMethod>(
       '/rellm.Rellm/StartContactMethodVerification',
       ($4.ContactMethod value) => value.writeToBuffer(),
@@ -338,10 +346,6 @@ class RellmClient extends $grpc.Client {
       '/rellm.Rellm/UpdateMarketSubscription',
       ($12.MarketSubscription value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
-  static final _$saveMarketSubscription = $grpc.ClientMethod<$12.SaveMarketSubscriptionRequest, $12.MarketSubscription>(
-      '/rellm.Rellm/SaveMarketSubscription',
-      ($12.SaveMarketSubscriptionRequest value) => value.writeToBuffer(),
-      ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value));
   static final _$markFulfillmentNotesRead = $grpc.ClientMethod<$12.MarkFulfillmentNotesReadRequest, $12.MarketSubscription>(
       '/rellm.Rellm/MarkFulfillmentNotesRead',
       ($12.MarkFulfillmentNotesReadRequest value) => value.writeToBuffer(),
@@ -467,6 +471,14 @@ class RellmClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$4.User> updateUser($4.User request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$updateUser, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$4.UserSubdomain> saveSubdomainSettings($4.SaveSubdomainSettingsRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$saveSubdomainSettings, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$4.UserSubdomain> setUserSubdomain($4.SetUserSubdomainRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$setUserSubdomain, request, options: options);
   }
 
   $grpc.ResponseFuture<$4.ContactMethod> startContactMethodVerification($4.ContactMethod request, {$grpc.CallOptions? options}) {
@@ -721,10 +733,6 @@ class RellmClient extends $grpc.Client {
     return $createUnaryCall(_$updateMarketSubscription, request, options: options);
   }
 
-  $grpc.ResponseFuture<$12.MarketSubscription> saveMarketSubscription($12.SaveMarketSubscriptionRequest request, {$grpc.CallOptions? options}) {
-    return $createUnaryCall(_$saveMarketSubscription, request, options: options);
-  }
-
   $grpc.ResponseFuture<$12.MarketSubscription> markFulfillmentNotesRead($12.MarkFulfillmentNotesReadRequest request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$markFulfillmentNotesRead, request, options: options);
   }
@@ -890,6 +898,20 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $4.User.fromBuffer(value),
         ($4.User value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$4.SaveSubdomainSettingsRequest, $4.UserSubdomain>(
+        'SaveSubdomainSettings',
+        saveSubdomainSettings_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $4.SaveSubdomainSettingsRequest.fromBuffer(value),
+        ($4.UserSubdomain value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$4.SetUserSubdomainRequest, $4.UserSubdomain>(
+        'SetUserSubdomain',
+        setUserSubdomain_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $4.SetUserSubdomainRequest.fromBuffer(value),
+        ($4.UserSubdomain value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$4.ContactMethod, $4.ContactMethod>(
         'StartContactMethodVerification',
         startContactMethodVerification_Pre,
@@ -1331,13 +1353,6 @@ abstract class RellmServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $12.MarketSubscription.fromBuffer(value),
         ($12.MarketSubscription value) => value.writeToBuffer()));
-    $addMethod($grpc.ServiceMethod<$12.SaveMarketSubscriptionRequest, $12.MarketSubscription>(
-        'SaveMarketSubscription',
-        saveMarketSubscription_Pre,
-        false,
-        false,
-        ($core.List<$core.int> value) => $12.SaveMarketSubscriptionRequest.fromBuffer(value),
-        ($12.MarketSubscription value) => value.writeToBuffer()));
     $addMethod($grpc.ServiceMethod<$12.MarkFulfillmentNotesReadRequest, $12.MarketSubscription>(
         'MarkFulfillmentNotesRead',
         markFulfillmentNotesRead_Pre,
@@ -1509,6 +1524,14 @@ abstract class RellmServiceBase extends $grpc.Service {
 
   $async.Future<$4.User> updateUser_Pre($grpc.ServiceCall call, $async.Future<$4.User> request) async {
     return updateUser(call, await request);
+  }
+
+  $async.Future<$4.UserSubdomain> saveSubdomainSettings_Pre($grpc.ServiceCall call, $async.Future<$4.SaveSubdomainSettingsRequest> request) async {
+    return saveSubdomainSettings(call, await request);
+  }
+
+  $async.Future<$4.UserSubdomain> setUserSubdomain_Pre($grpc.ServiceCall call, $async.Future<$4.SetUserSubdomainRequest> request) async {
+    return setUserSubdomain(call, await request);
   }
 
   $async.Future<$4.ContactMethod> startContactMethodVerification_Pre($grpc.ServiceCall call, $async.Future<$4.ContactMethod> request) async {
@@ -1763,10 +1786,6 @@ abstract class RellmServiceBase extends $grpc.Service {
     return updateMarketSubscription(call, await request);
   }
 
-  $async.Future<$12.MarketSubscription> saveMarketSubscription_Pre($grpc.ServiceCall call, $async.Future<$12.SaveMarketSubscriptionRequest> request) async {
-    return saveMarketSubscription(call, await request);
-  }
-
   $async.Future<$12.MarketSubscription> markFulfillmentNotesRead_Pre($grpc.ServiceCall call, $async.Future<$12.MarkFulfillmentNotesReadRequest> request) async {
     return markFulfillmentNotesRead(call, await request);
   }
@@ -1848,6 +1867,8 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$5.Media> deleteMediaSizes($grpc.ServiceCall call, $5.Media request);
   $async.Future<$4.GetUsersResponse> getUsers($grpc.ServiceCall call, $4.GetUsersRequest request);
   $async.Future<$4.User> updateUser($grpc.ServiceCall call, $4.User request);
+  $async.Future<$4.UserSubdomain> saveSubdomainSettings($grpc.ServiceCall call, $4.SaveSubdomainSettingsRequest request);
+  $async.Future<$4.UserSubdomain> setUserSubdomain($grpc.ServiceCall call, $4.SetUserSubdomainRequest request);
   $async.Future<$4.ContactMethod> startContactMethodVerification($grpc.ServiceCall call, $4.ContactMethod request);
   $async.Future<$4.ContactMethod> verifyContactMethod($grpc.ServiceCall call, $4.VerifyContactMethodRequest request);
   $async.Future<$0.Empty> deleteUser($grpc.ServiceCall call, $4.User request);
@@ -1911,7 +1932,6 @@ abstract class RellmServiceBase extends $grpc.Service {
   $async.Future<$12.MakeMarketPurchaseResponse> makeMarketPurchase($grpc.ServiceCall call, $12.MakeMarketPurchaseRequest request);
   $async.Future<$12.MarketSubscription> cancelMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
   $async.Future<$12.MarketSubscription> updateMarketSubscription($grpc.ServiceCall call, $12.MarketSubscription request);
-  $async.Future<$12.MarketSubscription> saveMarketSubscription($grpc.ServiceCall call, $12.SaveMarketSubscriptionRequest request);
   $async.Future<$12.MarketSubscription> markFulfillmentNotesRead($grpc.ServiceCall call, $12.MarkFulfillmentNotesReadRequest request);
   $async.Future<$5.Media> generateMedia($grpc.ServiceCall call, $11.GenerateMediaRequest request);
   $async.Future<$9.Rsvps> getRsvps($grpc.ServiceCall call, $9.GetRsvpsRequest request);

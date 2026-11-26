@@ -87,8 +87,9 @@ const User$json = {
     {'1': 'ai_models', '3': 84, '4': 3, '5': 11, '6': '.rellm.AIModel', '10': 'aiModels'},
     {'1': 'market_subscriptions', '3': 85, '4': 3, '5': 11, '6': '.rellm.MarketSubscription', '10': 'marketSubscriptions'},
     {'1': 'has_password', '3': 86, '4': 1, '5': 8, '10': 'hasPassword'},
+    {'1': 'subdomain', '3': 87, '4': 1, '5': 11, '6': '.rellm.UserSubdomain', '9': 15, '10': 'subdomain', '17': true},
     {'1': 'created_at', '3': 100, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '10': 'createdAt'},
-    {'1': 'updated_at', '3': 101, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 15, '10': 'updatedAt', '17': true},
+    {'1': 'updated_at', '3': 101, '4': 1, '5': 11, '6': '.google.protobuf.Timestamp', '9': 16, '10': 'updatedAt', '17': true},
   ],
   '8': [
     {'1': '_email'},
@@ -106,6 +107,7 @@ const User$json = {
     {'1': '_current_user_follow'},
     {'1': '_target_current_user_follow'},
     {'1': '_current_group_membership'},
+    {'1': '_subdomain'},
     {'1': '_updated_at'},
   ],
 };
@@ -139,14 +141,63 @@ final $typed_data.Uint8List userDescriptor = $convert.base64Decode(
     'bG0uU3luY1NvdXJjZVILc3luY1NvdXJjZXMSKwoJYWlfbW9kZWxzGFQgAygLMg4ucmVsbG0uQU'
     'lNb2RlbFIIYWlNb2RlbHMSTAoUbWFya2V0X3N1YnNjcmlwdGlvbnMYVSADKAsyGS5yZWxsbS5N'
     'YXJrZXRTdWJzY3JpcHRpb25SE21hcmtldFN1YnNjcmlwdGlvbnMSIQoMaGFzX3Bhc3N3b3JkGF'
-    'YgASgIUgtoYXNQYXNzd29yZBI5CgpjcmVhdGVkX2F0GGQgASgLMhouZ29vZ2xlLnByb3RvYnVm'
-    'LlRpbWVzdGFtcFIJY3JlYXRlZEF0Ej4KCnVwZGF0ZWRfYXQYZSABKAsyGi5nb29nbGUucHJvdG'
-    '9idWYuVGltZXN0YW1wSA9SCXVwZGF0ZWRBdIgBAUIICgZfZW1haWxCCAoGX3Bob25lQgkKB19h'
-    'dmF0YXJCHAoaX21lZGlhX3N0b3JhZ2VfbGltaXRfYnl0ZXNCEQoPX2ZvbGxvd2VyX2NvdW50Qh'
-    'IKEF9mb2xsb3dpbmdfY291bnRCDwoNX2ZyaWVuZF9jb3VudEIOCgxfZ3JvdXBfY291bnRCDQoL'
-    'X3Bvc3RfY291bnRCEQoPX3Jlc3BvbnNlX2NvdW50Qg4KDF9ldmVudF9jb3VudEIRCg9fb2NjYX'
-    'Npb25fY291bnRCFgoUX2N1cnJlbnRfdXNlcl9mb2xsb3dCHQobX3RhcmdldF9jdXJyZW50X3Vz'
-    'ZXJfZm9sbG93QhsKGV9jdXJyZW50X2dyb3VwX21lbWJlcnNoaXBCDQoLX3VwZGF0ZWRfYXQ=');
+    'YgASgIUgtoYXNQYXNzd29yZBI3CglzdWJkb21haW4YVyABKAsyFC5yZWxsbS5Vc2VyU3ViZG9t'
+    'YWluSA9SCXN1YmRvbWFpbogBARI5CgpjcmVhdGVkX2F0GGQgASgLMhouZ29vZ2xlLnByb3RvYn'
+    'VmLlRpbWVzdGFtcFIJY3JlYXRlZEF0Ej4KCnVwZGF0ZWRfYXQYZSABKAsyGi5nb29nbGUucHJv'
+    'dG9idWYuVGltZXN0YW1wSBBSCXVwZGF0ZWRBdIgBAUIICgZfZW1haWxCCAoGX3Bob25lQgkKB1'
+    '9hdmF0YXJCHAoaX21lZGlhX3N0b3JhZ2VfbGltaXRfYnl0ZXNCEQoPX2ZvbGxvd2VyX2NvdW50'
+    'QhIKEF9mb2xsb3dpbmdfY291bnRCDwoNX2ZyaWVuZF9jb3VudEIOCgxfZ3JvdXBfY291bnRCDQ'
+    'oLX3Bvc3RfY291bnRCEQoPX3Jlc3BvbnNlX2NvdW50Qg4KDF9ldmVudF9jb3VudEIRCg9fb2Nj'
+    'YXNpb25fY291bnRCFgoUX2N1cnJlbnRfdXNlcl9mb2xsb3dCHQobX3RhcmdldF9jdXJyZW50X3'
+    'VzZXJfZm9sbG93QhsKGV9jdXJyZW50X2dyb3VwX21lbWJlcnNoaXBCDAoKX3N1YmRvbWFpbkIN'
+    'CgtfdXBkYXRlZF9hdA==');
+
+@$core.Deprecated('Use userSubdomainDescriptor instead')
+const UserSubdomain$json = {
+  '1': 'UserSubdomain',
+  '2': [
+    {'1': 'settings', '3': 1, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '10': 'settings'},
+    {'1': 'enabled', '3': 2, '4': 1, '5': 8, '10': 'enabled'},
+    {'1': 'subscribed', '3': 3, '4': 1, '5': 8, '10': 'subscribed'},
+    {'1': 'granted_by_admin', '3': 4, '4': 1, '5': 8, '10': 'grantedByAdmin'},
+  ],
+};
+
+/// Descriptor for `UserSubdomain`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List userSubdomainDescriptor = $convert.base64Decode(
+    'Cg1Vc2VyU3ViZG9tYWluEjQKCHNldHRpbmdzGAEgASgLMhgucmVsbG0uU3ViZG9tYWluU2V0dG'
+    'luZ3NSCHNldHRpbmdzEhgKB2VuYWJsZWQYAiABKAhSB2VuYWJsZWQSHgoKc3Vic2NyaWJlZBgD'
+    'IAEoCFIKc3Vic2NyaWJlZBIoChBncmFudGVkX2J5X2FkbWluGAQgASgIUg5ncmFudGVkQnlBZG'
+    '1pbg==');
+
+@$core.Deprecated('Use saveSubdomainSettingsRequestDescriptor instead')
+const SaveSubdomainSettingsRequest$json = {
+  '1': 'SaveSubdomainSettingsRequest',
+  '2': [
+    {'1': 'subdomain_settings', '3': 1, '4': 1, '5': 11, '6': '.rellm.SubdomainSettings', '10': 'subdomainSettings'},
+    {'1': 'keep_sharing_settings', '3': 2, '4': 1, '5': 8, '10': 'keepSharingSettings'},
+  ],
+};
+
+/// Descriptor for `SaveSubdomainSettingsRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List saveSubdomainSettingsRequestDescriptor = $convert.base64Decode(
+    'ChxTYXZlU3ViZG9tYWluU2V0dGluZ3NSZXF1ZXN0EkcKEnN1YmRvbWFpbl9zZXR0aW5ncxgBIA'
+    'EoCzIYLnJlbGxtLlN1YmRvbWFpblNldHRpbmdzUhFzdWJkb21haW5TZXR0aW5ncxIyChVrZWVw'
+    'X3NoYXJpbmdfc2V0dGluZ3MYAiABKAhSE2tlZXBTaGFyaW5nU2V0dGluZ3M=');
+
+@$core.Deprecated('Use setUserSubdomainRequestDescriptor instead')
+const SetUserSubdomainRequest$json = {
+  '1': 'SetUserSubdomainRequest',
+  '2': [
+    {'1': 'user_id', '3': 1, '4': 1, '5': 9, '10': 'userId'},
+    {'1': 'enabled', '3': 2, '4': 1, '5': 8, '10': 'enabled'},
+  ],
+};
+
+/// Descriptor for `SetUserSubdomainRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List setUserSubdomainRequestDescriptor = $convert.base64Decode(
+    'ChdTZXRVc2VyU3ViZG9tYWluUmVxdWVzdBIXCgd1c2VyX2lkGAEgASgJUgZ1c2VySWQSGAoHZW'
+    '5hYmxlZBgCIAEoCFIHZW5hYmxlZA==');
 
 @$core.Deprecated('Use followDescriptor instead')
 const Follow$json = {

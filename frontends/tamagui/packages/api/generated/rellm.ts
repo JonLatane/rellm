@@ -48,7 +48,6 @@ import {
   MarketProduct,
   MarketSubscription,
   MarkFulfillmentNotesReadRequest,
-  SaveMarketSubscriptionRequest,
 } from "./market";
 import { GetMediaRequest, GetMediaResponse, Media } from "./media";
 import {
@@ -95,7 +94,10 @@ import {
   GetUsersRequest,
   GetUsersResponse,
   Membership,
+  SaveSubdomainSettingsRequest,
+  SetUserSubdomainRequest,
   User,
+  UserSubdomain,
   VerifyContactMethodRequest,
 } from "./users";
 
@@ -1302,6 +1304,39 @@ export const RellmDefinition = {
       options: {},
     },
     /**
+     * Saves the caller's own Rellm Subdomain settings ([`SubdomainSettings`](#rellm-SubdomainSettings): custom CSS and the
+     * `share_content_from_*` toggles), which live on the user. Validated like `ConfigureCustomCSS` (at most 64 KiB of
+     * CSS, 32 `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+     * *Authenticated* -- the caller's own subdomain only (even an Admin edits just their own), and it must be enabled
+     * (`FailedPrecondition` `subdomain_not_enabled` otherwise): the caller has a `PURCHASE_TYPE_SUBDOMAIN` subscription in
+     * force or an Admin enabled it ([`SetUserSubdomain`](#grpc-api-SetUserSubdomain)). On a subdomain's own host the
+     * owner's saves are the "admin" of that virtual server -- its Theme and About tabs call this. Returns the updated
+     * [`UserSubdomain`](#rellm-UserSubdomain).
+     */
+    saveSubdomainSettings: {
+      name: "SaveSubdomainSettings",
+      requestType: SaveSubdomainSettingsRequest,
+      requestStream: false,
+      responseType: UserSubdomain,
+      responseStream: false,
+      options: {},
+    },
+    /**
+     * Enables or disables a user's Rellm Subdomain without a subscription. *Authenticated*, requires `ADMIN`.
+     * Enabling reserves the user's lower-cased username as their subdomain label (`FailedPrecondition`:
+     * `username_not_a_valid_subdomain`, `subdomain_reserved` for a label the CDN setup uses itself, `subdomain_taken`
+     * if another user holds it); disabling withdraws only the grant -- a subscription in force keeps the subdomain
+     * enabled. Returns the user's [`UserSubdomain`](#rellm-UserSubdomain).
+     */
+    setUserSubdomain: {
+      name: "SetUserSubdomain",
+      requestType: SetUserSubdomainRequest,
+      requestStream: false,
+      responseType: UserSubdomain,
+      responseStream: false,
+      options: {},
+    },
+    /**
      * Starts SMS verification of the current user's own phone
      * [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to
      * have a [`TwilioConfig`](#rellm-TwilioConfig)/[`BirdConfig`](#rellm-BirdConfig)/
@@ -2011,24 +2046,6 @@ export const RellmDefinition = {
       options: {},
     },
     /**
-     * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
-     * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
-     * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
-     * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
-     * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
-     * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
-     * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
-     * call this.
-     */
-    saveMarketSubscription: {
-      name: "SaveMarketSubscription",
-      requestType: SaveMarketSubscriptionRequest,
-      requestStream: false,
-      responseType: MarketSubscription,
-      responseStream: false,
-      options: {},
-    },
-    /**
      * Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
      * by stamping its details' `notes_last_read` with now. *Authenticated*, and only
      * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
@@ -2332,6 +2349,31 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
    * Updating other users requires `ADMIN` permissions.
    */
   updateUser(request: User, context: CallContext & CallContextExt): Promise<DeepPartial<User>>;
+  /**
+   * Saves the caller's own Rellm Subdomain settings ([`SubdomainSettings`](#rellm-SubdomainSettings): custom CSS and the
+   * `share_content_from_*` toggles), which live on the user. Validated like `ConfigureCustomCSS` (at most 64 KiB of
+   * CSS, 32 `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+   * *Authenticated* -- the caller's own subdomain only (even an Admin edits just their own), and it must be enabled
+   * (`FailedPrecondition` `subdomain_not_enabled` otherwise): the caller has a `PURCHASE_TYPE_SUBDOMAIN` subscription in
+   * force or an Admin enabled it ([`SetUserSubdomain`](#grpc-api-SetUserSubdomain)). On a subdomain's own host the
+   * owner's saves are the "admin" of that virtual server -- its Theme and About tabs call this. Returns the updated
+   * [`UserSubdomain`](#rellm-UserSubdomain).
+   */
+  saveSubdomainSettings(
+    request: SaveSubdomainSettingsRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<UserSubdomain>>;
+  /**
+   * Enables or disables a user's Rellm Subdomain without a subscription. *Authenticated*, requires `ADMIN`.
+   * Enabling reserves the user's lower-cased username as their subdomain label (`FailedPrecondition`:
+   * `username_not_a_valid_subdomain`, `subdomain_reserved` for a label the CDN setup uses itself, `subdomain_taken`
+   * if another user holds it); disabling withdraws only the grant -- a subscription in force keeps the subdomain
+   * enabled. Returns the user's [`UserSubdomain`](#rellm-UserSubdomain).
+   */
+  setUserSubdomain(
+    request: SetUserSubdomainRequest,
+    context: CallContext & CallContextExt,
+  ): Promise<DeepPartial<UserSubdomain>>;
   /**
    * Starts SMS verification of the current user's own phone
    * [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to
@@ -2679,20 +2721,6 @@ export interface RellmServiceImplementation<CallContextExt = {}> {
     context: CallContext & CallContextExt,
   ): Promise<DeepPartial<MarketSubscription>>;
   /**
-   * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
-   * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
-   * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
-   * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
-   * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
-   * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
-   * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
-   * call this.
-   */
-  saveMarketSubscription(
-    request: SaveMarketSubscriptionRequest,
-    context: CallContext & CallContextExt,
-  ): Promise<DeepPartial<MarketSubscription>>;
-  /**
    * Marks all of a MarketSubscription's current `fulfillment_notes` read (any `PurchaseType`)
    * by stamping its details' `notes_last_read` with now. *Authenticated*, and only
    * the subscription's own buyer (`PermissionDenied` otherwise -- even an Admin, since the marker is
@@ -2897,6 +2925,31 @@ export interface RellmClient<CallOptionsExt = {}> {
    * Updating other users requires `ADMIN` permissions.
    */
   updateUser(request: DeepPartial<User>, options?: CallOptions & CallOptionsExt): Promise<User>;
+  /**
+   * Saves the caller's own Rellm Subdomain settings ([`SubdomainSettings`](#rellm-SubdomainSettings): custom CSS and the
+   * `share_content_from_*` toggles), which live on the user. Validated like `ConfigureCustomCSS` (at most 64 KiB of
+   * CSS, 32 `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
+   * *Authenticated* -- the caller's own subdomain only (even an Admin edits just their own), and it must be enabled
+   * (`FailedPrecondition` `subdomain_not_enabled` otherwise): the caller has a `PURCHASE_TYPE_SUBDOMAIN` subscription in
+   * force or an Admin enabled it ([`SetUserSubdomain`](#grpc-api-SetUserSubdomain)). On a subdomain's own host the
+   * owner's saves are the "admin" of that virtual server -- its Theme and About tabs call this. Returns the updated
+   * [`UserSubdomain`](#rellm-UserSubdomain).
+   */
+  saveSubdomainSettings(
+    request: DeepPartial<SaveSubdomainSettingsRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<UserSubdomain>;
+  /**
+   * Enables or disables a user's Rellm Subdomain without a subscription. *Authenticated*, requires `ADMIN`.
+   * Enabling reserves the user's lower-cased username as their subdomain label (`FailedPrecondition`:
+   * `username_not_a_valid_subdomain`, `subdomain_reserved` for a label the CDN setup uses itself, `subdomain_taken`
+   * if another user holds it); disabling withdraws only the grant -- a subscription in force keeps the subdomain
+   * enabled. Returns the user's [`UserSubdomain`](#rellm-UserSubdomain).
+   */
+  setUserSubdomain(
+    request: DeepPartial<SetUserSubdomainRequest>,
+    options?: CallOptions & CallOptionsExt,
+  ): Promise<UserSubdomain>;
   /**
    * Starts SMS verification of the current user's own phone
    * [`ContactMethod`](#rellm-ContactMethod). *Authenticated, self-only.* Requires the server to
@@ -3241,20 +3294,6 @@ export interface RellmClient<CallOptionsExt = {}> {
    */
   updateMarketSubscription(
     request: DeepPartial<MarketSubscription>,
-    options?: CallOptions & CallOptionsExt,
-  ): Promise<MarketSubscription>;
-  /**
-   * Saves a buyer-editable setting of one of the caller's own MarketSubscriptions -- today only
-   * `PURCHASE_TYPE_SUBDOMAIN` ones: its [`SubdomainSettings`](#rellm-SubdomainSettings) (custom CSS and the
-   * `share_content_from_*` toggles). Validated like `ConfigureCustomCSS` (at most 64 KiB of CSS, 32
-   * `GLOBAL_PUBLIC` `media_ids`, not both forced themes). An unset `custom_css` keeps the stored stylesheet.
-   * *Authenticated* -- the subscription's own buyer only (`PermissionDenied` otherwise, even for an Admin),
-   * and the subscription must still be in force (not `SUBSCRIPTION_CANCELED`). Returns the updated subscription.
-   * On a subdomain's own host the buyer's saves are the "admin" of that virtual server -- its Theme and About tabs
-   * call this.
-   */
-  saveMarketSubscription(
-    request: DeepPartial<SaveMarketSubscriptionRequest>,
     options?: CallOptions & CallOptionsExt,
   ): Promise<MarketSubscription>;
   /**
