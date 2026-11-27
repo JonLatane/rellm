@@ -8,6 +8,7 @@
 // Scenarios:
 //   A  star a post while Bluesky's AppView is slow to index the new like (the original bug): the
 //      Server tab must keep the post after the refetch, and the badge spinner must show while loading.
+//   M  the post's own "★ N" follows this viewer's star/unstar (and a failed like gives it back)
 //   B  the like write fails (500): the optimistic entry must be rolled back and a reason shown.
 const { chromium } = require("playwright");
 
@@ -300,6 +301,57 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
     check(err && err.visible && /Couldn't unlike on Bluesky/.test(err.text), "G  says it couldn't unlike, instead of pretending it worked");
     check(gEnd.serverTab === gStart.serverTab, "G  the still-liked post stays in the Server tab (not hidden)");
     check(bsky.state.deleted.length === 0, "G  no deleteRecord was sent (there was nothing to delete)");
+    await page.close();
+  }
+
+  // ---- M: the post's own "★ N" follows this viewer's star / unstar --------------------------------------
+  // The stub reports likeCount 3 for every fetch (it never adds our like to it), so a count that moves can only be
+  // the app's own optimistic change -- and one that stays moved across the refetches shows the cached copy wins.
+  if (!only || only === "starcount") {
+    const starText = async page => (await page.locator(".post-star >> visible=true").first().textContent()).trim();
+
+    console.log("\nM  the post's own star count moves with this viewer's star / unstar");
+    let page = await open([OTHER], [FILLER]);
+    const m0 = await starText(page);
+    await clickStar(page);
+    await sleep(300);
+    const m1 = await starText(page);
+    await sleep(6000); // the lag passes, the lists refetch
+    const m1later = await starText(page);
+    await clickStar(page);
+    await sleep(300);
+    const m2 = await starText(page);
+    console.log(`   not liked: ${m0} -> star -> ${m1} (after refetches ${m1later}) -> unstar -> ${m2}`);
+    check(m0 === "★ 3" && m1 === "★ 4", "M  starring a post it wasn't liked raises its count by one, at once");
+    check(m1later === "★ 4", "M  the raised count survives the refetches");
+    check(m2 === "★ 3", "M  unstarring lowers it back");
+    await page.close();
+
+    page = await open([OTHER, TARGET], [FILLER]);
+    const n0 = await starText(page);
+    await clickStar(page);
+    await sleep(300);
+    const n1 = await starText(page);
+    await clickStar(page);
+    await sleep(300);
+    const n2 = await starText(page);
+    console.log(`   already liked: ${n0} -> unstar -> ${n1} -> star -> ${n2}`);
+    check(n1 === "★ 2" && n2 === "★ 3", "M  unstarring an already-liked post lowers its count, starring it again restores it");
+    await page.close();
+
+    page = await open([OTHER], [FILLER], { failWrite: true });
+    const f0 = await starText(page);
+    await clickStar(page);
+    // The stubbed 500 comes back within a few ms, so watch closely: it must go up first, then come back down.
+    const seenF = [];
+    for (let i = 0; i < 40; i++) { seenF.push(await starText(page)); await sleep(25); }
+    const f1 = seenF.includes("★ 4") ? "★ 4" : seenF[0];
+    await sleep(1500);
+    const f2 = await starText(page);
+    const fErr = await errorBanner(page);
+    console.log(`   write fails: ${f0} -> star -> ${f1} -> (failure) -> ${f2}, banner ${JSON.stringify(fErr && fErr.text)}`);
+    check(f1 === "★ 4" && f2 === "★ 3", "M  a failed like gives the optimistic +1 back");
+    check(fErr && fErr.visible, "M  ...and says why");
     await page.close();
   }
 
