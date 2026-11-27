@@ -1,4 +1,4 @@
-module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, serverTabHasMore, subscriptions, toggleStarMsg, update, view, withStarCountChange)
+module Shared.StarredPanel exposing (Model, Msg(..), browserStarCount, freshestPost, hasAnyStars, hasPendingFetches, init, isStarred, knownLike, noteLikeChange, rawKey, refreshHosts, refreshServerStars, serverStarsLoading, serverTabCount, serverTabHasMore, subscriptions, toggleStarMsg, update, view, withStarCountChange, withStarCountDelta)
 
 {-| Tracks which Posts the user has starred, in this browser. `StarPost`/
 `UnstarPost` (see `protos/rellm.proto`) are auth-less, "friendly" counters
@@ -309,10 +309,11 @@ type Msg
       -- like's URI (or forgets it once deleted), then carries on exactly like `GotServerStarPushed`.
     | GotLikeChange String String Bluesky.LikeChange (Maybe AccountsPanel.Msg)
       -- A push that failed: the post's own host (what its cached copy is filed under), the server host the
-      -- star was filed under, whether it was a star (not an unstar), the post, a human-readable reason, and a
-      -- reauth flag to forward. Rolls the optimistic Server-tab entry and star count back, shows the reason
-      -- and refetches the real list.
-    | ServerStarFailed String String Bool Post String (Maybe AccountsPanel.Msg)
+      -- star was filed under, whether it was a star (not an unstar), how much the toggle changed the post's
+      -- cached star count (0 at a floor of zero -- the exact amount to take back), the post, a human-readable
+      -- reason, and a reauth flag to forward. Rolls the optimistic Server-tab entry and star count back, shows
+      -- the reason and refetches the real list.
+    | ServerStarFailed String String Bool Int Post String (Maybe AccountsPanel.Msg)
     | ClearServerStarError Int
       -- The trailing edge of `GotServerStarPushed`'s debounce -- carries the counter value it was
       -- scheduled under.
@@ -672,15 +673,31 @@ sendUpdate accountsPanelModel msg model =
                 -- The cached copy shows the new count right away (`freshestPost` -- the network's own count is
                 -- only as fresh as the fetch): one more star, or one less. Built on the freshest copy, not on
                 -- whatever the caller held, so a quick star-then-unstar lands back where it started.
+                freshest : Post
+                freshest =
+                    freshestPost host post model
+
+                -- Only when a like/favourite is actually sent: with no connected account this is just a browser
+                -- bookmark, which is no star on the network and leaves its count alone. What's recorded is the
+                -- amount really applied (a count at zero can't go lower), so a failed push takes back exactly that.
+                countChange : Int
+                countChange =
+                    case account of
+                        Just _ ->
+                            Posts.postStarCount (withStarCountChange starring freshest) - Posts.postStarCount freshest
+
+                        Nothing ->
+                            0
+
                 newPosts : Dict String PostFetchStatus
                 newPosts =
-                    Dict.insert key (PostFetchLoaded host (withStarCountChange starring (freshestPost host post model))) model.posts
+                    Dict.insert key (PostFetchLoaded host (withStarCountDelta countChange freshest)) model.posts
 
                 pushCmd : Cmd Msg
                 pushCmd =
                     case account of
                         Just acct ->
-                            pushServerStar host acct starring (knownLike (serverAccountKey acct) post.id model) post
+                            pushServerStar host acct starring countChange (knownLike (serverAccountKey acct) post.id model) post
 
                         Nothing ->
                             Cmd.none
@@ -874,7 +891,7 @@ sendUpdate accountsPanelModel msg model =
             , maybeAccountsPanelMsg
             )
 
-        ServerStarFailed postHost serverHost starring post reason maybeAccountsPanelMsg ->
+        ServerStarFailed postHost serverHost starring countChange post reason maybeAccountsPanelMsg ->
             let
                 counter : Int
                 counter =
@@ -893,7 +910,7 @@ sendUpdate accountsPanelModel msg model =
                                     (\status ->
                                         case status of
                                             PostFetchLoaded loadedHost cached ->
-                                                PostFetchLoaded loadedHost (withStarCountChange (not starring) cached)
+                                                PostFetchLoaded loadedHost (withStarCountDelta (negate countChange) cached)
 
                                             other ->
                                                 other
@@ -2024,8 +2041,8 @@ instance is first looked up there for its ActivityPub `uri` (`Mastodon.fetchStat
 `link` if that fails), which the account's instance then resolves to its own copy
 (`Mastodon.resolveStatusId`).
 -}
-pushServerStar : String -> ServerAccount -> Bool -> Maybe String -> Post -> Cmd Msg
-pushServerStar host account starring rememberedLike post =
+pushServerStar : String -> ServerAccount -> Bool -> Int -> Maybe String -> Post -> Cmd Msg
+pushServerStar host account starring countChange rememberedLike post =
     case account of
         MastodonServerAccount a ->
             let
@@ -2076,6 +2093,7 @@ pushServerStar host account starring rememberedLike post =
                                 ServerStarFailed host
                                     ownHost
                                     starring
+                                    countChange
                                     post
                                     (pushFailureText ((if starring then "favourite" else "unfavourite") ++ " on " ++ a.instanceHost) err)
                                     (if MastodonAccounts.isReauthError err then
@@ -2104,6 +2122,7 @@ pushServerStar host account starring rememberedLike post =
                                     ServerStarFailed host
                                         "bluesky:"
                                         False
+                                        countChange
                                         post
                                         "Couldn't unlike on Bluesky: it hasn't finished registering that like yet -- try again in a moment."
                                         maybeAccountsPanelMsg
@@ -2115,6 +2134,7 @@ pushServerStar host account starring rememberedLike post =
                                 ServerStarFailed host
                                     "bluesky:"
                                     starring
+                                    countChange
                                     post
                                     (pushFailureText ((if starring then "like" else "unlike") ++ " on Bluesky") err)
                                     Nothing
@@ -2127,21 +2147,22 @@ unstar by the viewer does to the count the network reported, shown at once rathe
 count back from a like, so this is the optimistic value.
 -}
 withStarCountChange : Bool -> Post -> Post
-withStarCountChange starring post =
-    { post
-        | unauthenticatedStarCount =
-            int64FromInt
-                (max 0
-                    (Posts.postStarCount post
-                        + (if starring then
-                            1
+withStarCountChange starring =
+    withStarCountDelta
+        (if starring then
+            1
 
-                           else
-                            -1
-                          )
-                    )
-                )
-    }
+         else
+            -1
+        )
+
+
+{-| `post` with its star count moved by `delta` (never below zero) -- `withStarCountChange`'s general form,
+which is also how a failed push takes back exactly what its toggle applied.
+-}
+withStarCountDelta : Int -> Post -> Post
+withStarCountDelta delta post =
+    { post | unauthenticatedStarCount = int64FromInt (max 0 (Posts.postStarCount post + delta)) }
 
 
 {-| "Couldn't `action`: reason" for a failed favourite/like push.

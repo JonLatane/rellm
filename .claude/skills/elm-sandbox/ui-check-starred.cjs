@@ -20,12 +20,12 @@ const OTHER = "at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/3aaaaaaa
 /** A JWT whose `exp` is far in the future (the app reads it to decide whether to refresh before a request). */
 const jwt = exp => ["e30", Buffer.from(JSON.stringify({ exp })).toString("base64url"), "sig"].join(".");
 
-const postView = (uri, text, liked) => ({
+const postView = (uri, text, liked, likeCount = 3) => ({
   uri,
   cid: "bafy" + uri.length,
   author: { did: uri.split("/")[2], handle: uri.includes("aaaa") ? "alice.test" : "bob.test", displayName: uri.includes("aaaa") ? "Alice" : "Bob" },
   record: { $type: "app.bsky.feed.post", text, createdAt: "2026-11-20T12:00:00.000Z" },
-  likeCount: 3, replyCount: 0, indexedAt: "2026-11-20T12:00:01.000Z",
+  likeCount, replyCount: 0, indexedAt: "2026-11-20T12:00:01.000Z",
   viewer: liked ? { like: "at://did:plc:me/app.bsky.feed.like/xyz" } : {},
 });
 
@@ -34,7 +34,7 @@ const postView = (uri, text, liked) => ({
  * AppView reports (`getActorLikes`, `viewer.like`) after `indexLagMs` -- in BOTH directions, like the real
  * one: right after an unlike the old list still has the post.
  */
-function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false, failLikesFromOffset = null, expireTokenOnce = false }) {
+function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHER], hideViewerLike = false, dropEveryFifth = false, failLikesFromOffset = null, expireTokenOnce = false, likeCount = 3, failDelete = false }) {
   const state = { likes: initialLikes.slice(), ops: [], log: [], deleted: [], likesPages: [], refreshes: 0, tokensSeen: [], expired: false };
   const visible = () => {
     const now = Date.now();
@@ -72,11 +72,11 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
       }
       if (p.endsWith("getPosts")) {
         const uri = u.searchParams.get("uris");
-        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", !hideViewerLike && visible().includes(uri))] });
+        return json({ posts: [postView(uri, uri === TARGET ? "The post being starred" : "liked post", !hideViewerLike && visible().includes(uri), likeCount)] });
       }
       if (p.endsWith("getPostThread")) {
         const uri = u.searchParams.get("uri");
-        return json({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post: postView(uri, "The post being starred", false), replies: [] } });
+        return json({ thread: { $type: "app.bsky.feed.defs#threadViewPost", post: postView(uri, "The post being starred", false, likeCount), replies: [] } });
       }
       if (p.endsWith("createRecord")) {
         if (failWrite) return json({ error: "InternalServerError", message: "boom" }, 500);
@@ -87,6 +87,7 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
         // Like the real server: deleting a record key that isn't one of the account's like records changes nothing.
         const rkey = JSON.parse(req.postData() || "{}").rkey;
         state.deleted.push(rkey);
+        if (failDelete) return json({ error: "InternalServerError", message: "boom" }, 500);
         if (rkey === "like1" || rkey === "xyz") state.ops.push({ add: false, uri: TARGET, at: Date.now() });
         return json({});
       }
@@ -95,16 +96,16 @@ function makeBluesky({ indexLagMs, likesDelayMs, failWrite, initialLikes = [OTHE
   };
 }
 
-async function newPage(browser, bsky, browserStars = []) {
+async function newPage(browser, bsky, browserStars = [], withAccount = true) {
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 900 }, deviceScaleFactor: Number(process.env.DSF || 1) });
   const token = jwt(9999999999);
-  await ctx.addInitScript(([stars, token]) => {
+  await ctx.addInitScript(([stars, token, withAccount]) => {
     localStorage.setItem("rellmStarredPosts", JSON.stringify(stars));
-    localStorage.setItem("rellmBlueskyAccounts", JSON.stringify([{
+    localStorage.setItem("rellmBlueskyAccounts", JSON.stringify(!withAccount ? [] : [{
       handle: "me.test", accessToken: token, refreshToken: "ref", enabled: true, avatarUrl: null,
       displayName: "Me", sortOrder: 0, needsReauth: false, pdsHost: "bsky.social",
     }]));
-  }, [browserStars, token]);
+  }, [browserStars, token, withAccount]);
   await ctx.route(url => !/localhost|127\.0\.0\.1/.test(new URL(url).host), r => bsky.handle(r));
   const page = await ctx.newPage();
   page.on("pageerror", e => console.log("PAGE ERROR:", String(e).slice(0, 200)));
@@ -177,8 +178,9 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
   const clickStar = page => page.locator(".post-star >> visible=true").first().click();
   const manyLikes = n => Array.from({ length: n }, (_, i) => `at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/app.bsky.feed.post/3x${String(i).padStart(4, "0")}`);
   const open = async (initialLikes, stars, opts = {}) => {
-    const bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes, ...opts });
-    const page = await newPage(browser, bsky, stars);
+    const { noAccount, ...bskyOpts } = opts;
+    const bsky = makeBluesky({ indexLagMs: 3000, likesDelayMs: 600, failWrite: false, initialLikes, ...bskyOpts });
+    const page = await newPage(browser, bsky, stars, !noAccount);
     await page.goto(postUrl, { waitUntil: "load" });
     await page.waitForSelector(".post-star >> visible=true", { timeout: 20000 });
     await page.waitForSelector(".starred-menu:not(.hidden)", { timeout: 20000 });
@@ -352,6 +354,30 @@ const check = (ok, what) => { console.log(`${ok ? "PASS" : "FAIL"}  ${what}`); i
     console.log(`   write fails: ${f0} -> star -> ${f1} -> (failure) -> ${f2}, banner ${JSON.stringify(fErr && fErr.text)}`);
     check(f1 === "★ 4" && f2 === "★ 3", "M  a failed like gives the optimistic +1 back");
     check(fErr && fErr.visible, "M  ...and says why");
+    await page.close();
+
+    // No connected account: the star is just a browser bookmark, nothing is sent, so no network count changes.
+    page = await open([OTHER], [FILLER], { noAccount: true });
+    const b0 = await starText(page);
+    await clickStar(page);
+    await sleep(500);
+    const b1 = await starText(page);
+    console.log(`   no account (bookmark only): ${b0} -> star -> ${b1}, network requests that wrote: ${page.bsky.state.log.filter(l => /createRecord|deleteRecord/.test(l)).length}`);
+    check(b0 === "★ 3" && b1 === "★ 3", "M  a bookmark with no connected account leaves the network's count alone");
+    await page.close();
+
+    // A failed unstar at a count of zero must not invent a like when it rolls back.
+    page = await open([OTHER, TARGET], [FILLER], { likeCount: 0, failDelete: true });
+    const z0 = await starText(page);
+    await clickStar(page);
+    const seenZ = [];
+    for (let i = 0; i < 40; i++) { seenZ.push(await starText(page)); await sleep(25); }
+    await sleep(1500);
+    const z2 = await starText(page);
+    const zErr = await errorBanner(page);
+    console.log(`   failed unstar at zero: ${z0} -> unstar -> ${[...new Set(seenZ)].join(", ")} -> (failure) -> ${z2}, banner ${JSON.stringify(zErr && zErr.text)}`);
+    check(z0 === "★ 0" && z2 === "★ 0", "M  a failed unstar at zero stays at zero (the rollback doesn't add a like that was never there)");
+    check(zErr && zErr.visible, "M  ...and says why");
     await page.close();
   }
 
