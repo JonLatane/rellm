@@ -29,6 +29,7 @@ module Components.Posts exposing
     , postHref
     , postLinkText
     , postMediaLayoutFromText
+    , postStarCount
     , postTimestamp
     , postTitleText
     , postVisibilityText
